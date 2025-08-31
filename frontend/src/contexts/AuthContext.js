@@ -9,7 +9,7 @@ const AuthContext = createContext({});
 // Compute API URL:
 // - If running in Expo Go (debuggerHost available) use the host IP with backend port 5000
 // - Otherwise allow overriding via Constants.expoConfig.extra.apiUrl (EAS) or fallback to localhost
-let API_URL = 'http://localhost:5000/api';
+let API_URL = 'https://stop-the-game-backend.onrender.com/api';
 try {
   // Try several places for the packager/debugger host. This is important when
   // running Expo on a real device: the bundle is served from your machine IP
@@ -56,7 +56,7 @@ try {
     // No packager host found. Don't assume emulator by default — keep localhost
     // and instruct developers to set `extra.apiUrl` in app.json for physical devices.
     // We only fall back to the emulator mapping when explicitly required.
-    API_URL = 'http://localhost:5000/api';
+  API_URL = 'https://stop-the-game-backend.onrender.com/api';
   }
 } catch (e) {
   // ignore and keep default

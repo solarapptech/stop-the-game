@@ -5,7 +5,7 @@ const GameContext = createContext({});
 
 import Constants from 'expo-constants';
 
-let API_URL = 'http://localhost:5000/api';
+let API_URL = 'https://stop-the-game-backend.onrender.com/api';
 try {
   const dbg = Constants.manifest?.debuggerHost ||
               Constants.manifest2?.debuggerHost ||

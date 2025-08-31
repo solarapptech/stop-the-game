@@ -53,7 +53,7 @@ const LoginScreen = ({ navigation }) => {
     setLoading(true);
     try {
       // Send token to backend for verification and user creation/login
-      const response = await fetch('http://localhost:5000/api/auth/google', {
+  const response = await fetch('https://stop-the-game-backend.onrender.com/api/auth/google', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

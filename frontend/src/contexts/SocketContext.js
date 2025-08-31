@@ -6,7 +6,7 @@ const SocketContext = createContext({});
 
 import Constants from 'expo-constants';
 
-let SOCKET_URL = 'http://localhost:5000';
+let SOCKET_URL = 'https://stop-the-game-backend.onrender.com';
 try {
   const dbg = Constants.manifest?.debuggerHost ||
               Constants.manifest2?.debuggerHost ||
