@@ -117,10 +117,9 @@ module.exports = (io, socket) => {
 
       // Create a new game
       const game = new Game({
-        roomId: room._id,
-        players: room.players.map(p => p.user),
-        totalRounds: room.rounds,
-        // initial phase
+        room: room._id,
+        players: room.players.map(p => ({ user: p.user })),
+        rounds: room.rounds,
         phase: 'category-selection',
       });
       await game.save();

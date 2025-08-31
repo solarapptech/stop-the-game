@@ -117,7 +117,10 @@ export const SocketProvider = ({ children }) => {
 
   const startGame = (roomId) => {
     if (socket && connected) {
+      console.log(`[SocketContext] Emitting start-game for room: ${roomId}`);
       socket.emit('start-game', roomId);
+    } else {
+      console.error('[SocketContext] Cannot start game, socket not connected.');
     }
   };
 
