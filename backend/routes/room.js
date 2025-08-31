@@ -33,7 +33,7 @@ router.post('/create', authMiddleware, [
       rounds,
       players: [{
         user: req.user._id,
-        isReady: false
+        isReady: true // Owner is always ready
       }]
     });
 

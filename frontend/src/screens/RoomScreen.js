@@ -12,6 +12,7 @@ const RoomScreen = ({ navigation, route }) => {
   const { socket, setPlayerReady, startGame, sendMessage } = useSocket();
   const { currentRoom, leaveRoom, getRoom, deleteRoom } = useGame();
   const [players, setPlayers] = useState([]);
+  // Host is always ready, so only non-hosts can toggle ready
   const [isReady, setIsReady] = useState(false);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
@@ -22,8 +23,10 @@ const RoomScreen = ({ navigation, route }) => {
     (async () => {
       const r = await getRoom(roomId);
       if (r.success && r.room) {
-  setPlayers(normalizePlayers(r.room.players || []));
-  setMessages(r.room.messages || []);
+        setPlayers(normalizePlayers(r.room.players || []));
+        if (Array.isArray(r.room.messages) && r.room.messages.length > 0) {
+          setMessages(r.room.messages);
+        }
       }
     })();
     let joined = false;
@@ -35,7 +38,9 @@ const RoomScreen = ({ navigation, route }) => {
       socket.on('room-joined', (data) => {
         if (data.room) {
           setPlayers(normalizePlayers(data.room.players || []));
-          setMessages(data.room.messages || []);
+          if (Array.isArray(data.room.messages) && data.room.messages.length > 0) {
+            setMessages(data.room.messages);
+          }
         }
         joined = true;
       });
@@ -68,18 +73,25 @@ const RoomScreen = ({ navigation, route }) => {
 
       socket.on('new-message', async (data) => {
         // backend emits 'new-message' with userId/message
+        // Ignore messages that originated from this client because we already
+        // optimistically appended them locally when sending.
+        const currentUserId = user?.id || user?._id;
+        if (data.userId && currentUserId && data.userId === currentUserId) return;
+
         const found = players.find(p => p.id === data.userId);
         if (found) {
           setMessages(prev => [...prev, { type: 'chat', username: found.username, text: data.message }]);
         } else {
-          // fallback: refresh room (authoritative) and set messages to avoid duplicates
+          // fallback: refresh players (authoritative) and append the incoming message
           const r = await getRoom(roomId);
           if (r.success && r.room) {
             setPlayers(normalizePlayers(r.room.players || []));
-            setMessages(r.room.messages || []);
-          } else {
-            setMessages(prev => [...prev, { type: 'chat', username: 'Player', text: data.message }]);
           }
+          // try to resolve username from refreshed players
+          const refreshedPlayers = (r && r.room) ? normalizePlayers(r.room.players || []) : [];
+          const refreshedFound = refreshedPlayers.find(p => p.id === data.userId);
+          const username = refreshedFound ? refreshedFound.username : 'Player';
+          setMessages(prev => [...prev, { type: 'chat', username, text: data.message }]);
         }
       });
 
@@ -101,7 +113,7 @@ const RoomScreen = ({ navigation, route }) => {
         if (socket && joined) socket.emit('leave-room');
       };
     }
-  }, [socket]);
+  }, [socket, user]);
 
   // handle navigation back (hardware or header back)
   useEffect(() => {
@@ -153,8 +165,12 @@ const RoomScreen = ({ navigation, route }) => {
   };
 
   const handleStartGame = () => {
-    if (!atLeastOneOtherReady) {
-      Alert.alert('Cannot Start', 'At least one other player must be ready');
+    if (!canStartGame) {
+      if (nonOwnerPlayers.length === 0) {
+        Alert.alert('Cannot Start', 'At least one other player must be in the room');
+      } else {
+        Alert.alert('Cannot Start', 'All other players must be ready to start the game');
+      }
       return;
     }
     startGame(roomId);
@@ -185,9 +201,11 @@ const RoomScreen = ({ navigation, route }) => {
 
   const handleSendMessage = () => {
     if (messageInput.trim()) {
-  // send to server; server will emit 'new-message' back to all clients
-  sendMessage(roomId, messageInput);
-  setMessageInput('');
+      const text = messageInput.trim();
+      // optimistic add so sender sees message immediately
+      setMessages(prev => [...prev, { type: 'chat', username: user.username, text, local: true }]);
+      sendMessage(roomId, text);
+      setMessageInput('');
     }
   };
 
@@ -198,10 +216,36 @@ const RoomScreen = ({ navigation, route }) => {
     }
   };
 
-  const isOwner = currentRoom && (currentRoom.owner === user?.id || currentRoom.owner === user?._id);
-  // At least one non-owner player ready
-  const otherPlayers = players.filter(p => !p.isOwner && p.id !== (user?.id || user?._id));
-  const atLeastOneOtherReady = otherPlayers.some(p => p.isReady);
+  const myId = user?.id || user?._id;
+  // Find me from players list
+  const me = players.find(p => String(p.id) === String(myId));
+
+  // Determine the owner id robustly:
+  // 1) if any player has isOwner true -> use that
+  // 2) else if currentRoom.owner provided -> use that
+  // 3) else fall back to first player in players array (common server behavior)
+  const ownerFromPlayers = players.find(p => p.isOwner);
+  const ownerId = ownerFromPlayers ? ownerFromPlayers.id : (currentRoom && currentRoom.owner ? currentRoom.owner : (players[0] ? players[0].id : null));
+
+  const isOwner = currentRoom && (String(currentRoom.owner) === String(myId));
+
+  // Non-owner players (used to determine if the host can start the game)
+  // Exclude the owner by comparing against derived ownerId
+  const nonOwnerPlayers = players.filter(p => String(p.id) !== String(ownerId));
+
+  // Host can start only if there's at least one other (non-owner) player and all non-owner players are ready
+  const canStartGame = nonOwnerPlayers.length > 0 && nonOwnerPlayers.every(p => p.isReady);
+
+  // Host is always ready, so only non-hosts can toggle ready
+  useEffect(() => {
+    if (isOwner) {
+      setIsReady(true);
+    } else {
+      // Sync isReady with server state for non-hosts
+      setIsReady(me?.isReady || false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOwner, me?.isReady]);
 
   return (
     <View style={styles.container}>
@@ -318,12 +362,13 @@ const RoomScreen = ({ navigation, route }) => {
         >
           Leave Room
         </Button>
+        {/* Show Start Game for host, or Ready button for non-hosts */}
         {isOwner ? (
           <Button
             mode="contained"
             onPress={handleStartGame}
             style={styles.startButton}
-            disabled={!atLeastOneOtherReady || loading}
+            disabled={!canStartGame || loading}
             loading={loading}
             icon="play"
           >
