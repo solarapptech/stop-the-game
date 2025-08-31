@@ -123,7 +123,7 @@ export const SocketProvider = ({ children }) => {
 
   const selectCategory = (gameId, category) => {
     if (socket && connected) {
-      socket.emit('category-selected', { gameId, category });
+      socket.emit('select-category', { gameId, category });
     }
   };
 

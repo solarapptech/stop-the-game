@@ -136,6 +136,12 @@ module.exports = (io, socket) => {
         countdown: 3
       });
 
+      // Make all sockets in the room join the game-specific room
+      const socketsInRoom = await io.in(roomId).fetchSockets();
+      for (const sock of socketsInRoom) {
+        sock.join(`game-${game._id}`);
+      }
+
       // Start category selection phase
       setTimeout(() => {
         startCategorySelection(game._id);
