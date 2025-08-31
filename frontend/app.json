@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "Stop! The Game",
+    "slug": "stop-the-game",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#4CAF50"
+    },
+    "scheme": "stopthegame",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.stopthegame.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4CAF50"
+      },
+      "package": "com.stopthegame.app",
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.stopthegame.app",
+          "enableGooglePay": true,
+          "googlePay": {
+            "testEnvironment": true
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://192.168.1.106:5000/api",
+      "eas": {
+        "projectId": "1a29a193-402e-43c9-8121-e03678326ea1"
+      }
+    },
+    "owner": "vrestudio"
+  }
+}
