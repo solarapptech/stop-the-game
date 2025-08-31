@@ -6,22 +6,10 @@ import { Platform } from 'react-native';
 
 const AuthContext = createContext({});
 
-// Compute API URL:
-// - If running in Expo Go (debuggerHost available) use the host IP with backend port 5000
-// - Otherwise allow overriding via Constants.expoConfig.extra.apiUrl (EAS) or fallback to localhost
-const API_URL = 'https://stop-the-game-backend.onrender.com/api';
-
-// Configure axios base URL for convenience. Ensure trailing slash so relative paths
-// like 'auth/register' become '<baseURL>auth/register' -> '<host>/api/auth/register'.
-axios.defaults.baseURL = API_URL.endsWith('/') ? API_URL : `${API_URL}/`;
-
-// Set a reasonable timeout so requests fail fast instead of hanging forever
-// (React Native/fetch has no default network timeout). 10s is a good compromise.
-axios.defaults.timeout = 10000;
+import API_URL from '../config';
 
 // Debug: surface the computed API URL at startup
-console.log('[AuthContext] API_URL =', API_URL);
-console.log('[AuthContext] axios.baseURL =', axios.defaults.baseURL, 'timeout =', axios.defaults.timeout);
+console.log('[AuthContext] API_URL (from config) =', API_URL, ' axios.baseURL =', axios.defaults.baseURL);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -53,7 +41,9 @@ export const AuthProvider = ({ children }) => {
     try {
   console.log('[AuthContext] login called for', username);
   // Log the exact endpoint we will call to help diagnose network problems
-  const loginEndpoint = `${axios.defaults.baseURL || API_URL}auth/login`;
+  const base = API_URL.endsWith('/') ? API_URL : `${API_URL}/`;
+  const loginEndpoint = `${base}auth/login`;
+  console.log('[AuthContext] API_URL =', API_URL, ' axios.defaults.baseURL =', axios.defaults.baseURL);
   console.log('[AuthContext] login endpoint =', loginEndpoint);
 
   // use baseURL + relative path to avoid accidental double-prefixing
@@ -92,7 +82,9 @@ export const AuthProvider = ({ children }) => {
     try {
   console.log('[AuthContext] register called for', email, username);
   // Log the exact endpoint we will call to help diagnose network problems
-  const registerEndpoint = `${axios.defaults.baseURL || API_URL}auth/register`;
+  const baseReg = API_URL.endsWith('/') ? API_URL : `${API_URL}/`;
+  const registerEndpoint = `${baseReg}auth/register`;
+  console.log('[AuthContext] API_URL =', API_URL, ' axios.defaults.baseURL =', axios.defaults.baseURL);
   console.log('[AuthContext] register endpoint =', registerEndpoint);
 
   // use relative path so axios.baseURL is respected and easier to swap during runtime
