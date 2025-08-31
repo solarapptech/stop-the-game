@@ -10,7 +10,7 @@ const RoomScreen = ({ navigation, route }) => {
   const { roomId } = route.params;
   const { user } = useAuth();
   const { socket, setPlayerReady, startGame, sendMessage } = useSocket();
-  const { currentRoom, leaveRoom } = useGame();
+  const { currentRoom, leaveRoom, getRoom, deleteRoom } = useGame();
   const [players, setPlayers] = useState([]);
   const [isReady, setIsReady] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -18,49 +18,133 @@ const RoomScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // fetch current room state when screen mounts
+    (async () => {
+      const r = await getRoom(roomId);
+      if (r.success && r.room) {
+  setPlayers(normalizePlayers(r.room.players || []));
+  setMessages(r.room.messages || []);
+      }
+    })();
+    let joined = false;
     if (socket) {
-      // Socket event listeners
+      // Ask server for current room state by joining the room namespace
+      socket.emit('join-room', roomId);
+
+      // When the server confirms room joined it will send 'room-joined' with full room
+      socket.on('room-joined', (data) => {
+        if (data.room) {
+          setPlayers(normalizePlayers(data.room.players || []));
+          setMessages(data.room.messages || []);
+        }
+        joined = true;
+      });
+
+      // Player joined/left
       socket.on('player-joined', (data) => {
-        setPlayers(data.players);
-        setMessages(prev => [...prev, {
-          type: 'system',
-          text: `${data.username} joined the room`
-        }]);
+        // backend sends the updated players array
+        if (data.players) setPlayers(normalizePlayers(data.players));
+        if (data.username) {
+          setMessages(prev => [...prev, { type: 'system', text: `${data.username} joined the room` }]);
+        }
       });
 
       socket.on('player-left', (data) => {
-        setPlayers(data.players);
-        setMessages(prev => [...prev, {
-          type: 'system',
-          text: `${data.username} left the room`
-        }]);
+        if (data.players) setPlayers(normalizePlayers(data.players));
+        if (data.username) {
+          setMessages(prev => [...prev, { type: 'system', text: `${data.username} left the room` }]);
+        }
       });
 
-      socket.on('player-ready-changed', (data) => {
-        setPlayers(data.players);
+      socket.on('ready-status-changed', async (data) => {
+        // backend doesn't include full players array here — fetch updated room
+        const r = await getRoom(roomId);
+        if (r.success && r.room) setPlayers(normalizePlayers(r.room.players || []));
       });
 
       socket.on('game-starting', (data) => {
         navigation.replace('Gameplay', { gameId: data.gameId });
       });
 
-      socket.on('chat-message', (data) => {
-        setMessages(prev => [...prev, {
-          type: 'chat',
-          username: data.username,
-          text: data.message
-        }]);
+      socket.on('new-message', async (data) => {
+        // backend emits 'new-message' with userId/message
+        const found = players.find(p => p.id === data.userId);
+        if (found) {
+          setMessages(prev => [...prev, { type: 'chat', username: found.username, text: data.message }]);
+        } else {
+          // fallback: refresh room (authoritative) and set messages to avoid duplicates
+          const r = await getRoom(roomId);
+          if (r.success && r.room) {
+            setPlayers(normalizePlayers(r.room.players || []));
+            setMessages(r.room.messages || []);
+          } else {
+            setMessages(prev => [...prev, { type: 'chat', username: 'Player', text: data.message }]);
+          }
+        }
+      });
+
+      socket.on('room-updated', (data) => {
+        if (data.room) {
+          setPlayers(normalizePlayers(data.room.players || []));
+        }
       });
 
       return () => {
+        socket.off('room-joined');
         socket.off('player-joined');
         socket.off('player-left');
-        socket.off('player-ready-changed');
+        socket.off('ready-status-changed');
         socket.off('game-starting');
-        socket.off('chat-message');
+        socket.off('new-message');
+        socket.off('room-updated');
+        // leave the socket room
+        if (socket && joined) socket.emit('leave-room');
       };
     }
   }, [socket]);
+
+  // handle navigation back (hardware or header back)
+  useEffect(() => {
+    const beforeRemove = navigation.addListener('beforeRemove', async (e) => {
+      // prevent default and perform leave/delete
+      e.preventDefault();
+
+      if (isOwner && currentRoom?.id) {
+        await deleteRoom(currentRoom.id);
+      } else {
+        await leaveRoom();
+      }
+
+      // allow navigation to proceed
+      navigation.dispatch(e.data.action);
+    });
+
+    return () => {
+      beforeRemove && beforeRemove();
+    };
+  }, [navigation, isOwner, currentRoom]);
+
+  // helper to normalize player objects coming from different sources
+  const normalizePlayers = (incoming = []) => {
+    return incoming.map((p) => {
+      // possible shapes: { id, username, isReady, isOwner } or { user: { _id, username }, isReady, isOwner }
+      if (!p) return null;
+      if (p.user) {
+        return {
+          id: p.user._id || p.user.id,
+          username: p.user.username || p.user.name,
+          isReady: p.isReady || false,
+          isOwner: p.isOwner || false
+        };
+      }
+      return {
+        id: p.id || p._id || p.userId,
+        username: p.username || p.name || 'Player',
+        isReady: p.isReady || false,
+        isOwner: p.isOwner || false
+      };
+    }).filter(Boolean);
+  };
 
   const handleReady = () => {
     const newReadyState = !isReady;
@@ -69,8 +153,8 @@ const RoomScreen = ({ navigation, route }) => {
   };
 
   const handleStartGame = () => {
-    if (players.filter(p => p.isReady).length < 2) {
-      Alert.alert('Cannot Start', 'At least 2 players must be ready');
+    if (!atLeastOneOtherReady) {
+      Alert.alert('Cannot Start', 'At least one other player must be ready');
       return;
     }
     startGame(roomId);
@@ -85,7 +169,12 @@ const RoomScreen = ({ navigation, route }) => {
         {
           text: 'Leave',
           onPress: async () => {
-            await leaveRoom();
+            // if owner, delete room from server
+            if (isOwner && currentRoom?.id) {
+              await deleteRoom(currentRoom.id);
+            } else {
+              await leaveRoom();
+            }
             navigation.goBack();
           },
           style: 'destructive'
@@ -96,8 +185,9 @@ const RoomScreen = ({ navigation, route }) => {
 
   const handleSendMessage = () => {
     if (messageInput.trim()) {
-      sendMessage(roomId, messageInput);
-      setMessageInput('');
+  // send to server; server will emit 'new-message' back to all clients
+  sendMessage(roomId, messageInput);
+  setMessageInput('');
     }
   };
 
@@ -108,8 +198,10 @@ const RoomScreen = ({ navigation, route }) => {
     }
   };
 
-  const isOwner = currentRoom?.owner === user?.id;
-  const allPlayersReady = players.length >= 2 && players.every(p => p.isReady);
+  const isOwner = currentRoom && (currentRoom.owner === user?.id || currentRoom.owner === user?._id);
+  // At least one non-owner player ready
+  const otherPlayers = players.filter(p => !p.isOwner && p.id !== (user?.id || user?._id));
+  const atLeastOneOtherReady = otherPlayers.some(p => p.isReady);
 
   return (
     <View style={styles.container}>
@@ -231,7 +323,7 @@ const RoomScreen = ({ navigation, route }) => {
             mode="contained"
             onPress={handleStartGame}
             style={styles.startButton}
-            disabled={!allPlayersReady || loading}
+            disabled={!atLeastOneOtherReady || loading}
             loading={loading}
             icon="play"
           >

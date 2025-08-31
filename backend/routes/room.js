@@ -333,4 +333,26 @@ router.post('/:roomId/ready', authMiddleware, [
   }
 });
 
+// Delete room (owner only)
+router.delete('/:roomId', authMiddleware, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    const room = await Room.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    if (room.owner.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only owner can delete the room' });
+    }
+
+    await room.deleteOne();
+    res.json({ message: 'Room deleted' });
+  } catch (error) {
+    console.error('Delete room error:', error);
+    res.status(500).json({ message: 'Error deleting room' });
+  }
+});
+
 module.exports = router;

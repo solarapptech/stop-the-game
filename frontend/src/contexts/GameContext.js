@@ -263,6 +263,19 @@ export const GameProvider = ({ children }) => {
     }
   };
 
+  const getRoom = async (roomId) => {
+    try {
+      const response = await axios.get(`room/${roomId}`);
+      setCurrentRoom(response.data.room);
+      return { success: true, room: response.data.room };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Failed to fetch room'
+      };
+    }
+  };
+
   const resetGame = () => {
     setCurrentGame(null);
     setGameState(null);
@@ -270,6 +283,20 @@ export const GameProvider = ({ children }) => {
     setSelectedCategories([]);
     setCurrentLetter(null);
     setAnswers({});
+  };
+
+  const deleteRoom = async (roomId) => {
+    try {
+      const response = await axios.delete(`room/${roomId}`);
+      // clear currentRoom if it was the deleted one
+      if (currentRoom && currentRoom.id === roomId) setCurrentRoom(null);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Failed to delete room'
+      };
+    }
   };
 
   return (
@@ -296,6 +323,8 @@ export const GameProvider = ({ children }) => {
       validateAnswers,
       nextRound,
       getGameState,
+  getRoom,
+  deleteRoom,
       resetGame
     }}>
       {children}

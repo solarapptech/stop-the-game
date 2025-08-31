@@ -41,24 +41,8 @@ const CreateRoomScreen = ({ navigation }) => {
     setLoading(false);
 
     if (result.success) {
-      const inviteCode = result.room.inviteCode;
-      Alert.alert(
-        'Room Created!',
-        `Room created successfully!\n\nInvite Code: ${inviteCode}`,
-        [
-          {
-            text: 'Copy Code',
-            onPress: () => {
-              Clipboard.setString(inviteCode);
-              Alert.alert('Copied', 'Invite code copied to clipboard');
-            }
-          },
-          {
-            text: 'Go to Room',
-            onPress: () => navigation.replace('Room', { roomId: result.room.id })
-          }
-        ]
-      );
+      // Navigate directly to the room — the Room screen shows the invite code already.
+      navigation.replace('Room', { roomId: result.room.id });
     } else {
       const details = result.status ? ` (status ${result.status})` : '';
       const body = result.data ? `\n\nResponse: ${JSON.stringify(result.data)}` : '';
