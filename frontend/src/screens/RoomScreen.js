@@ -227,7 +227,7 @@ const RoomScreen = ({ navigation, route }) => {
   const ownerFromPlayers = players.find(p => p.isOwner);
   const ownerId = ownerFromPlayers ? ownerFromPlayers.id : (currentRoom && currentRoom.owner ? currentRoom.owner : (players[0] ? players[0].id : null));
 
-  const isOwner = currentRoom && (String(currentRoom.owner) === String(myId));
+  const isOwner = currentRoom?.isOwner;
 
   // Non-owner players (used to determine if the host can start the game)
   // Exclude the owner by comparing against derived ownerId

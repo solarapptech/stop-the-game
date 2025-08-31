@@ -62,6 +62,29 @@ const gameSchema = new mongoose.Schema({
     enum: ['selecting_categories', 'selecting_letter', 'playing', 'validating', 'round_ended', 'finished'],
     default: 'selecting_categories'
   },
+  phase: {
+    type: String,
+    enum: ['loading', 'category-selection', 'letter-selection', 'playing', 'validation', 'round-end', 'finished'],
+    default: 'loading'
+  },
+  playerSelections: {
+    type: Map,
+    of: [String],
+    default: {}
+  },
+  allSelectedCategories: {
+    type: [String],
+    default: []
+  },
+  confirmedPlayers: {
+    type: [mongoose.Schema.Types.ObjectId],
+    ref: 'User',
+    default: []
+  },
+  categoryTimer: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   winner: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
