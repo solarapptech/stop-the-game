@@ -15,35 +15,30 @@ module.exports = (io, socket) => {
   });
 
   // Join room
-  socket.on('join-room', async (roomId) => {
+  socket.on('join-room', async (data) => {
     try {
-      if (!socket.userId) {
-        return socket.emit('error', { message: 'Not authenticated' });
-      }
-
-      const room = await Room.findById(roomId)
-        .populate('players.user', 'username winPoints');
-
+      const { roomId } = data;
+      const room = await Room.findOne({ roomId }).populate('players.user', 'username');
       if (!room) {
         return socket.emit('error', { message: 'Room not found' });
       }
 
-      // Join socket room
+      // Add player to room if not already in it
+      const playerExists = room.players.some(p => p.user._id.toString() === socket.userId);
+      if (!playerExists) {
+        room.players.push({ user: socket.userId, isReady: false });
+        await room.save();
+      }
+      
       socket.join(roomId);
-      socket.roomId = roomId;
+      socket.currentRoom = roomId;
 
-      // Notify others in room
-      socket.to(roomId).emit('player-joined', {
-        roomId,
-        players: room.players
-      });
+      // Notify all players in the room about the updated state
+      const updatedRoom = await Room.findById(room._id).populate('players.user', 'username');
+      io.to(roomId).emit('update-room-state', updatedRoom);
 
-      socket.emit('room-joined', {
-        roomId,
-        room: room.toObject()
-      });
     } catch (error) {
-      console.error('Join room socket error:', error);
+      console.error('Join room error:', error);
       socket.emit('error', { message: 'Failed to join room' });
     }
   });
@@ -88,14 +83,12 @@ module.exports = (io, socket) => {
       room.setPlayerReady(socket.userId, isReady);
       await room.save();
 
-      io.to(roomId).emit('ready-status-changed', {
-        userId: socket.userId,
-        isReady,
-        allReady: room.allPlayersReady()
-      });
+      // Notify all players in the room about the updated state
+      const updatedRoom = await Room.findById(room._id).populate('players.user', 'username');
+      io.to(room.roomId).emit('update-room-state', updatedRoom);
     } catch (error) {
-      console.error('Player ready socket error:', error);
-      socket.emit('error', { message: 'Failed to update ready status' });
+      console.error('Toggle ready error:', error);
+      socket.emit('error', { message: 'Failed to toggle ready status' });
     }
   });
 
