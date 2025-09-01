@@ -124,17 +124,9 @@ roomSchema.methods.setPlayerReady = function(userId, isReady) {
   return false;
 };
 
-// Check if all non-owner players are ready
+// Check if all players are ready
 roomSchema.methods.allPlayersReady = function() {
-  if (this.players.length < 2) {
-    return false;
-  }
-  const nonOwnerPlayers = this.players.filter(p => p.user.toString() !== this.owner.toString());
-  // there must be at least one non-owner player
-  if (nonOwnerPlayers.length === 0) {
-    return false;
-  }
-  return nonOwnerPlayers.every(p => p.isReady);
+  return this.players.length >= 2 && this.players.every(p => p.isReady);
 };
 
 // Check if room can start
