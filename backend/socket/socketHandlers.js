@@ -7,7 +7,7 @@ module.exports = (io, socket) => {
   socket.on('authenticate', async (token) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      socket.userId = decoded.userId;
+      socket.userId = socket.handshake.query.userId;
       socket.emit('authenticated', { success: true });
     } catch (error) {
       socket.emit('authenticated', { success: false, error: 'Invalid token' });
@@ -289,11 +289,23 @@ module.exports = (io, socket) => {
   });
 
   // Letter selected
-  socket.on('letter-selected', async (data) => {
+  socket.on('select-letter', async (data) => {
     try {
-      const { gameId, letter } = data;
+      const { gameId } = data;
+      const game = await Game.findById(gameId);
+
+      if (!game || game.phase !== 'letter-selection') return;
+
+      // Ensure only the current player can select a letter
+      if (game.currentPlayer.toString() !== socket.userId) {
+        return;
+      }
+
+      const letter = game.selectRandomLetter();
+      game.phase = 'playing';
+      await game.save();
       
-      io.to(`game-${gameId}`).emit('letter-chosen', {
+      io.to(`game-${gameId}`).emit('letter-selected', {
         letter,
         roundStarted: true
       });

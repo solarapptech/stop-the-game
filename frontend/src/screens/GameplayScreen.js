@@ -196,7 +196,7 @@ const GameplayScreen = ({ navigation, route }) => {
     setSelectedCategories(newCategories);
 
     // Let the server handle the logic
-    selectCategory(gameId, category);
+    socket.emit('select-category', { gameId, category });
   };
 
   const handleConfirmCategories = () => {
@@ -207,7 +207,7 @@ const GameplayScreen = ({ navigation, route }) => {
 
   const handleLetterSelect = () => {
     if (!isPlayerTurn) return;
-    selectLetter(gameId);
+    socket.emit('select-letter', { gameId });
   };
 
   const handleAnswerChange = (category, answer) => {
