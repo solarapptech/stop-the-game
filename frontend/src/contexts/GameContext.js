@@ -4,40 +4,44 @@ import axios from 'axios';
 const GameContext = createContext({});
 
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
 let API_URL = 'http://localhost:5000/api';
 try {
-  const dbg = Constants.manifest?.debuggerHost ||
-              Constants.manifest2?.debuggerHost ||
-              Constants.expoConfig?.extra?.debuggerHost ||
-              Constants.manifest?.bundleUrl ||
-              Constants.manifest2?.bundleUrl ||
-              Constants.expoConfig?.extra?.bundleUrl;
-
-  if (typeof dbg === 'string' && dbg.length > 0) {
-    let host = null;
-    const ipMatch = dbg.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
-    if (ipMatch) {
-      host = ipMatch[1];
-    } else {
-      try {
-        const url = new URL(dbg.includes('://') ? dbg : `http://${dbg}`);
-        host = url.hostname;
-      } catch (e) {
-        if (dbg.includes(':')) host = dbg.split(':')[0];
-        else host = dbg;
-      }
-    }
-
-    if (host) {
-      if ((host === 'localhost' || host === '127.0.0.1') && Platform.OS === 'android') {
-        API_URL = 'http://10.0.2.2:5000/api';
-      } else {
-        API_URL = `http://${host}:5000/api`;
-      }
-    }
-  } else if (Constants.expoConfig?.extra?.apiUrl) {
+  // Prefer explicit config (production/staging)
+  if (Constants.expoConfig?.extra?.apiUrl) {
     API_URL = Constants.expoConfig.extra.apiUrl;
+  } else {
+    const dbg = Constants.manifest?.debuggerHost ||
+                Constants.manifest2?.debuggerHost ||
+                Constants.expoConfig?.extra?.debuggerHost ||
+                Constants.manifest?.bundleUrl ||
+                Constants.manifest2?.bundleUrl ||
+                Constants.expoConfig?.extra?.bundleUrl;
+
+    if (typeof dbg === 'string' && dbg.length > 0) {
+      let host = null;
+      const ipMatch = dbg.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
+      if (ipMatch) {
+        host = ipMatch[1];
+      } else {
+        try {
+          const url = new URL(dbg.includes('://') ? dbg : `http://${dbg}`);
+          host = url.hostname;
+        } catch (e) {
+          if (dbg.includes(':')) host = dbg.split(':')[0];
+          else host = dbg;
+        }
+      }
+
+      if (host) {
+        if ((host === 'localhost' || host === '127.0.0.1') && Platform.OS === 'android') {
+          API_URL = 'http://10.0.2.2:5000/api';
+        } else {
+          API_URL = `http://${host}:5000/api`;
+        }
+      }
+    }
   }
 } catch (e) {
   // ignore

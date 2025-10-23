@@ -33,7 +33,7 @@ router.post('/create', authMiddleware, [
       rounds,
       players: [{
         user: req.user._id,
-        isReady: false
+        isReady: true  // Owner is always ready
       }]
     });
 
@@ -246,17 +246,20 @@ router.post('/leave/:roomId', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Room not found' });
     }
 
+    const wasOwner = room.owner.toString() === req.user._id.toString();
     room.removePlayer(req.user._id);
 
     // If owner leaves and room is empty, delete room
-    if (room.owner.toString() === req.user._id.toString() && room.players.length === 0) {
+    if (wasOwner && room.players.length === 0) {
       await room.deleteOne();
       return res.json({ message: 'Room deleted' });
     }
 
     // If owner leaves but room has players, transfer ownership
-    if (room.owner.toString() === req.user._id.toString() && room.players.length > 0) {
+    if (wasOwner && room.players.length > 0) {
       room.owner = room.players[0].user;
+      // Set new owner as ready
+      room.setPlayerReady(room.owner, true);
     }
 
     await room.save();

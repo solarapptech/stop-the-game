@@ -6,6 +6,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import { useAuth } from '../contexts/AuthContext';
 import theme from '../theme';
+import axios from 'axios';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -53,15 +54,7 @@ const LoginScreen = ({ navigation }) => {
     setLoading(true);
     try {
       // Send token to backend for verification and user creation/login
-      const response = await fetch('http://localhost:5000/api/auth/google', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ accessToken }),
-      });
-
-      const data = await response.json();
+      const { data } = await axios.post('auth/google', { accessToken });
       if (data.success) {
         navigation.replace('Menu');
       } else {

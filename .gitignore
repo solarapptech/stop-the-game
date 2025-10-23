@@ -20,8 +20,5 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
-backend/.env
-ideas.txt
-ideas.txt
+
 Stop - The Game.txt
-ideas.txt

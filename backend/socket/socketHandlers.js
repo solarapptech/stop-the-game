@@ -65,18 +65,43 @@ module.exports = (io, socket) => {
           .populate('players.user', 'username winPoints');
 
         if (room) {
+          const wasOwner = room.owner.toString() === socket.userId.toString();
+          
           // Remove player from room in DB
           const removed = room.removePlayer(socket.userId);
+          
           if (removed) {
-            await room.save();
-          }
+            // If owner leaves and room still has players, transfer ownership
+            if (wasOwner && room.players.length > 0) {
+              const newOwner = room.players[0].user;
+              room.owner = newOwner._id || newOwner;
+              
+              // Set new owner as ready
+              room.setPlayerReady(room.owner, true);
+              
+              await room.save();
+              
+              // Notify all players about ownership transfer and updated player list
+              io.to(socket.roomId).emit('ownership-transferred', {
+                newOwnerId: room.owner.toString(),
+                players: room.players,
+                username: newOwner.username || 'Player'
+              });
+            } else if (room.players.length === 0) {
+              // Delete room if empty
+              await room.deleteOne();
+            } else {
+              await room.save();
+            }
 
-          // Notify others with updated list
-          socket.to(socket.roomId).emit('player-left', {
-            roomId: socket.roomId,
-            players: room.players,
-            username
-          });
+            // Notify others with updated list
+            socket.to(socket.roomId).emit('player-left', {
+              roomId: socket.roomId,
+              players: room.players,
+              username,
+              newOwnerId: wasOwner && room.players.length > 0 ? room.owner.toString() : null
+            });
+          }
         }
 
         // Leave socket room after notifying
@@ -283,13 +308,38 @@ module.exports = (io, socket) => {
           .populate('players.user', 'username winPoints');
           
         if (room) {
+          const wasOwner = room.owner.toString() === socket.userId.toString();
+          
           room.removePlayer(socket.userId);
-          await room.save();
+          
+          // If owner disconnects and room still has players, transfer ownership
+          if (wasOwner && room.players.length > 0) {
+            const newOwner = room.players[0].user;
+            room.owner = newOwner._id || newOwner;
+            
+            // Set new owner as ready
+            room.setPlayerReady(room.owner, true);
+            
+            await room.save();
+            
+            // Notify all players about ownership transfer and updated player list
+            io.to(socket.roomId).emit('ownership-transferred', {
+              newOwnerId: room.owner.toString(),
+              players: room.players,
+              username: newOwner.username || 'Player'
+            });
+          } else if (room.players.length === 0) {
+            // Delete room if empty
+            await room.deleteOne();
+          } else {
+            await room.save();
+          }
           
           socket.to(socket.roomId).emit('player-left', {
             roomId: socket.roomId,
             players: room.players,
-            username
+            username,
+            newOwnerId: wasOwner && room.players.length > 0 ? room.owner.toString() : null
           });
         }
       }

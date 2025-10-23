@@ -91,9 +91,12 @@ roomSchema.methods.addPlayer = function(userId) {
     throw new Error('Room is full');
   }
   
+  // Owner should always be ready
+  const isOwner = this.owner.toString() === userId.toString();
+  
   this.players.push({
     user: userId,
-    isReady: false
+    isReady: isOwner
   });
   
   return true;

@@ -16,19 +16,29 @@ const RoomScreen = ({ navigation, route }) => {
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [roomOwner, setRoomOwner] = useState(null);
+  const [startGameCooldown, setStartGameCooldown] = useState(false);
 
   // Initialize players from currentRoom when component mounts
   useEffect(() => {
     if (currentRoom && currentRoom.players) {
+      const ownerId = currentRoom.owner._id || currentRoom.owner;
+      setRoomOwner(ownerId.toString());
+      
       const playersData = currentRoom.players.map(p => ({
         id: p.user._id || p.user,
         username: p.user.username || 'Player',
         isReady: p.isReady,
-        isOwner: (p.user._id || p.user).toString() === currentRoom.owner.toString()
+        isOwner: (p.user._id || p.user).toString() === ownerId.toString()
       }));
       setPlayers(playersData);
+      
+      // Check if current user is owner and set ready state
+      if (user && ownerId.toString() === user.id) {
+        setIsReady(true);
+      }
     }
-  }, [currentRoom]);
+  }, [currentRoom, user]);
 
   // Join room via socket on mount and after auth
   useEffect(() => {
@@ -42,20 +52,28 @@ const RoomScreen = ({ navigation, route }) => {
       // Socket event listeners
       socket.on('room-joined', (data) => {
         const room = data.room;
+        const ownerId = room.owner._id || room.owner;
+        setRoomOwner(ownerId.toString());
+        
         const playersData = (room.players || []).map(p => ({
           id: p.user._id || p.user,
           username: p.user.username || 'Player',
           isReady: p.isReady,
-          isOwner: (p.user._id || p.user).toString() === (room.owner._id ? room.owner._id.toString() : room.owner.toString())
+          isOwner: (p.user._id || p.user).toString() === ownerId.toString()
         }));
         setPlayers(playersData);
+        
+        // Check if current user is owner and set ready state
+        if (user && ownerId.toString() === user.id) {
+          setIsReady(true);
+        }
       });
       socket.on('player-joined', (data) => {
         const playersData = data.players.map(p => ({
           id: p.user._id || p.user,
           username: p.user.username || 'Player',
           isReady: p.isReady,
-          isOwner: (p.user._id || p.user).toString() === (currentRoom?.owner?.toString?.() || String(currentRoom?.owner))
+          isOwner: (p.user._id || p.user).toString() === roomOwner
         }));
         setPlayers(playersData);
         setMessages(prev => [...prev, {
@@ -65,11 +83,17 @@ const RoomScreen = ({ navigation, route }) => {
       });
 
       socket.on('player-left', (data) => {
+        // Update owner if ownership was transferred
+        if (data.newOwnerId) {
+          setRoomOwner(data.newOwnerId);
+        }
+        
+        const currentOwnerId = data.newOwnerId || roomOwner;
         const playersData = data.players.map(p => ({
           id: p.user._id || p.user,
           username: p.user.username || 'Player',
           isReady: p.isReady,
-          isOwner: (p.user._id || p.user).toString() === currentRoom.owner.toString()
+          isOwner: (p.user._id || p.user).toString() === currentOwnerId
         }));
         setPlayers(playersData);
         setMessages(prev => [...prev, {
@@ -96,6 +120,39 @@ const RoomScreen = ({ navigation, route }) => {
         }]);
       });
 
+      socket.on('ownership-transferred', (data) => {
+        setRoomOwner(data.newOwnerId);
+        
+        const playersData = data.players.map(p => ({
+          id: p.user._id || p.user,
+          username: p.user.username || 'Player',
+          isReady: p.isReady,
+          isOwner: (p.user._id || p.user).toString() === data.newOwnerId
+        }));
+        setPlayers(playersData);
+        
+        // If current user became the owner
+        if (user && data.newOwnerId === user.id) {
+          setIsReady(true);
+          setStartGameCooldown(true);
+          
+          // Remove cooldown after 2 seconds
+          setTimeout(() => {
+            setStartGameCooldown(false);
+          }, 2000);
+          
+          setMessages(prev => [...prev, {
+            type: 'system',
+            text: 'You are now the room owner!'
+          }]);
+        } else {
+          setMessages(prev => [...prev, {
+            type: 'system',
+            text: `${data.username} is now the room owner`
+          }]);
+        }
+      });
+
       socket.on('room-deleted', (data) => {
         Alert.alert(
           'Room Deleted',
@@ -114,6 +171,7 @@ const RoomScreen = ({ navigation, route }) => {
         socket.off('room-joined');
         socket.off('player-joined');
         socket.off('player-left');
+        socket.off('ownership-transferred');
         socket.off('ready-status-changed');
         socket.off('game-starting');
         socket.off('new-message');
@@ -129,6 +187,10 @@ const RoomScreen = ({ navigation, route }) => {
   };
 
   const handleStartGame = () => {
+    if (players.length < 2) {
+      Alert.alert('Cannot Start', 'At least 2 players must be in the room');
+      return;
+    }
     if (players.filter(p => p.isReady).length < 2) {
       Alert.alert('Cannot Start', 'At least 2 players must be ready');
       return;
@@ -187,7 +249,7 @@ const RoomScreen = ({ navigation, route }) => {
     }
   };
 
-  const isOwner = currentRoom?.owner === user?.id;
+  const isOwner = roomOwner === user?.id;
   const allPlayersReady = players.length >= 2 && players.every(p => p.isReady);
 
   return (
@@ -310,11 +372,11 @@ const RoomScreen = ({ navigation, route }) => {
             mode="contained"
             onPress={handleStartGame}
             style={styles.startButton}
-            disabled={!allPlayersReady || loading}
+            disabled={!allPlayersReady || loading || startGameCooldown}
             loading={loading}
             icon="play"
           >
-            Start Game
+            {startGameCooldown ? 'Wait...' : 'Start Game'}
           </Button>
         ) : (
           <Button
