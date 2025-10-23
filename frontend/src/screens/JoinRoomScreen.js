@@ -145,41 +145,40 @@ const JoinRoomScreen = ({ navigation }) => {
             ) : publicRooms.length === 0 ? (
               <Text style={styles.emptyText}>No public rooms available</Text>
             ) : (
-              <List.Section>
+              <View>
                 {publicRooms.map((room) => (
                   <Card key={room.id} style={styles.roomCard}>
-                    <List.Item
-                      title={room.name}
-                      description={`${room.players.length}/${room.maxPlayers} players`}
-                      left={(props) => (
-                        <List.Icon {...props} icon="gamepad-variant" color={theme.colors.primary} />
-                      )}
-                      right={() => (
-                        <View style={styles.roomRight}>
-                          <View style={styles.roomChips}>
-                            <Chip style={styles.roundChip}>{room.rounds} rounds</Chip>
-                            {room.status === 'waiting' && (
-                              <Chip style={styles.statusChip}>Waiting</Chip>
-                            )}
-                            {room.status === 'playing' && (
-                              <Chip style={[styles.statusChip, styles.playingChip]}>In Game</Chip>
-                            )}
-                          </View>
-                          <Button
-                            mode="outlined"
-                            onPress={() => handleJoinPublicRoom(room)}
-                            disabled={room.status !== 'waiting' || loading}
-                            style={styles.roomJoinButton}
-                          >
-                            Join
-                          </Button>
-                        </View>
-                      )}
-                      style={styles.roomItem}
-                    />
+                    <View style={styles.roomContainer}>
+                      <View style={styles.roomHeader}>
+                        <Text style={styles.roomTitle}>{room.name}</Text>
+                        <Button
+                          mode="outlined"
+                          onPress={() => handleJoinPublicRoom(room)}
+                          disabled={room.status !== 'waiting' || loading}
+                          style={styles.roomJoinButton}
+                        >
+                          Join
+                        </Button>
+                      </View>
+                      <View style={styles.roomMeta}>
+                        <Text style={styles.roomHost}>Host: {room.owner?.username || 'Unknown'}</Text>
+                        <Chip style={styles.playersChip} icon="account-group">
+                          {room.players.length}/{room.maxPlayers} players
+                        </Chip>
+                      </View>
+                      <View style={styles.roomChipsWrap}>
+                        <Chip style={styles.roundChip} icon="timer-outline">{room.rounds} rounds</Chip>
+                        <Chip style={[styles.statusChip, room.status === 'in_progress' ? styles.playingChip : null]}>
+                          {room.status === 'in_progress' ? 'In Game' : 'Waiting'}
+                        </Chip>
+                        {room.hasPassword && (
+                          <Chip style={styles.lockChip} icon="lock">Private</Chip>
+                        )}
+                      </View>
+                    </View>
                   </Card>
                 ))}
-              </List.Section>
+              </View>
             )}
           </Card.Content>
         </Card>
@@ -297,6 +296,50 @@ const styles = StyleSheet.create({
   },
   passwordInput: {
     backgroundColor: '#FFFFFF',
+  },
+  // New responsive room list styles
+  roomContainer: {
+    padding: 12,
+  },
+  roomHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  roomTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    flexWrap: 'wrap',
+    color: '#212121',
+    marginRight: 8,
+  },
+  roomMeta: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  roomHost: {
+    color: '#616161',
+    fontSize: 13,
+    flexShrink: 1,
+  },
+  playersChip: {
+    height: 26,
+    backgroundColor: '#F1F8E9',
+  },
+  roomChipsWrap: {
+    marginTop: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  lockChip: {
+    backgroundColor: '#FFEBEE',
   },
 });
 

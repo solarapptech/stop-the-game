@@ -6,9 +6,9 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splashscreen_logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "image": "./assets/splash.png",
+      "backgroundColor": "#4CAF50",
+      "resizeMode": "contain"
     },
     "scheme": "stopthegame",
     "assetBundlePatterns": [
@@ -45,7 +45,7 @@
       ]
     ],
     "extra": {
-      "apiUrl": "https://stop-the-game-backend.onrender.com/api",
+      "apiUrl": "http://192.168.1.107:5000/api",
       "eas": {
         "projectId": "1a29a193-402e-43c9-8121-e03678326ea1"
       }

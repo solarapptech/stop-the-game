@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, Alert, Clipboard } from 'react-native';
 import { Text, TextInput, Button, Switch, RadioButton, Card, Chip } from 'react-native-paper';
 import { useGame } from '../contexts/GameContext';
-import { useAuth } from '../contexts/AuthContext';
 import theme from '../theme';
 
 const CreateRoomScreen = ({ navigation }) => {
@@ -12,7 +11,6 @@ const CreateRoomScreen = ({ navigation }) => {
   const [rounds, setRounds] = useState('3');
   const [loading, setLoading] = useState(false);
   const { createRoom } = useGame();
-  const { isAuthenticated } = useAuth();
 
   const handleCreateRoom = async () => {
     if (!roomName.trim()) {
@@ -22,12 +20,6 @@ const CreateRoomScreen = ({ navigation }) => {
 
     if (!isPublic && !password.trim()) {
       Alert.alert('Error', 'Private rooms require a password');
-      return;
-    }
-
-    console.log('[CreateRoomScreen] isAuthenticated =', isAuthenticated);
-    if (!isAuthenticated) {
-      Alert.alert('Error', 'You must be logged in to create a room');
       return;
     }
 
@@ -41,12 +33,10 @@ const CreateRoomScreen = ({ navigation }) => {
     setLoading(false);
 
     if (result.success) {
-      // Navigate directly to the room — the Room screen shows the invite code already.
+      // Navigate directly to the room without showing popup
       navigation.replace('Room', { roomId: result.room.id });
     } else {
-      const details = result.status ? ` (status ${result.status})` : '';
-      const body = result.data ? `\n\nResponse: ${JSON.stringify(result.data)}` : '';
-      Alert.alert('Error', `${result.error}${details}${body}`);
+      Alert.alert('Error', result.error);
     }
   };
 

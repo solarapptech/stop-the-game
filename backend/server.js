@@ -34,7 +34,8 @@ const CLIENT_URLS = rawClientUrls.split(',').map(u => u.trim()).filter(Boolean);
 
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_URLS,
+    // origin: CLIENT_URLS,
+    origin: '*',
     credentials: true
   }
 });

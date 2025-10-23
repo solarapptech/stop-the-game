@@ -21,10 +21,8 @@ const GameplayScreen = ({ navigation, route }) => {
     getGameState 
   } = useGame();
   
-  const [phase, setPhase] = useState('loading'); // loading, category-selection, letter-selection, playing, validation, round-end
+  const [phase, setPhase] = useState('category-selection'); // category-selection, letter-selection, playing, validation, round-end
   const [selectedCategories, setSelectedCategories] = useState([]);
-  const [allSelectedCategories, setAllSelectedCategories] = useState([]);
-  const [categoryTimer, setCategoryTimer] = useState(12);
   const [answers, setAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(60);
   const [roundResults, setRoundResults] = useState(null);
@@ -36,7 +34,6 @@ const GameplayScreen = ({ navigation, route }) => {
   const [hasStoppedFirst, setHasStoppedFirst] = useState(false);
   
   const timerRef = useRef(null);
-  const categoryTimerRef = useRef(null);
   const confettiRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -46,38 +43,8 @@ const GameplayScreen = ({ navigation, route }) => {
     
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (categoryTimerRef.current) clearInterval(categoryTimerRef.current);
-      // Clean up listeners to prevent memory leaks
-      if (socket) {
-        socket.off('category-selection-started');
-        socket.off('categories-updated');
-        socket.off('categories-confirmed');
-        socket.off('letter-selected');
-        socket.off('player-stopped');
-        socket.off('round-ended');
-        socket.off('round-results');
-        socket.off('game-finished');
-      }
     };
-  }, [socket, user]);
-
-  useEffect(() => {
-    if (phase === 'category-selection') {
-      setCategoryTimer(12);
-      categoryTimerRef.current = setInterval(() => {
-        setCategoryTimer(prev => {
-          if (prev <= 1) {
-            clearInterval(categoryTimerRef.current);
-            // The server should handle timeout logic
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      if (categoryTimerRef.current) clearInterval(categoryTimerRef.current);
-    }
-  }, [phase]);
+  }, []);
 
   const loadGameState = async () => {
     const result = await getGameState(gameId);
@@ -86,52 +53,36 @@ const GameplayScreen = ({ navigation, route }) => {
       setTotalRounds(result.game.totalRounds);
       setPhase(result.game.phase);
       setPlayerScores(result.game.standings);
-      if (result.game.categories) {
-        setSelectedCategories(result.game.categories);
-      }
-      if (result.game.allSelectedCategories) {
-        setAllSelectedCategories(result.game.allSelectedCategories);
-      }
-      if (result.game.currentPlayer && user) {
-        const myId = user?.id || user?._id;
-        setIsPlayerTurn(result.game.currentPlayer === myId);
-      }
     }
   };
 
   const setupSocketListeners = () => {
     if (socket) {
-      const myId = user?.id || user?._id;
-
       socket.on('category-selection-started', (data) => {
         setPhase('category-selection');
-        setAllSelectedCategories(data.allSelectedCategories || []);
-        // This is no longer turn-based for selection
+        setIsPlayerTurn(data.currentPlayer === user.id);
       });
 
-      socket.on('categories-updated', (data) => {
-        if (data.allSelectedCategories) {
-          setAllSelectedCategories(data.allSelectedCategories);
-        }
-        // Update my personal selection based on server's response
-        const mySelection = data.playerSelections?.[myId] || [];
-        setSelectedCategories(mySelection);
+      socket.on('category-selected', (data) => {
+        setSelectedCategories(data.categories);
       });
 
       socket.on('categories-confirmed', (data) => {
-        getGameState(gameId); // Refresh state
+        // Refresh game state from server to get authoritative categories
+        getGameState(gameId);
         setPhase('letter-selection');
-        setIsPlayerTurn(data.currentPlayer === myId);
+        setIsPlayerTurn(data.currentPlayer === user.id);
       });
 
       socket.on('letter-selected', (data) => {
-        getGameState(gameId); // Refresh state
+        // Refresh game state to get the selected letter and any updates
+        getGameState(gameId);
         setPhase('playing');
         startTimer();
       });
 
       socket.on('player-stopped', (data) => {
-        if (data.playerId !== myId) {
+        if (data.playerId !== user.id) {
           Alert.alert('Hurry!', `${data.username} stopped the round!`);
           setTimeLeft(10); // Give 10 seconds to finish
         }
@@ -180,34 +131,19 @@ const GameplayScreen = ({ navigation, route }) => {
   };
 
   const handleCategorySelect = (category) => {
-    // Prevent selection if already taken by another player
-    if (allSelectedCategories.includes(category) && !selectedCategories.includes(category)) {
-      return;
-    }
-    // Limit to 8 categories
-    if (!selectedCategories.includes(category) && selectedCategories.length >= 8) {
-      Alert.alert('Limit Reached', 'You can select a maximum of 8 categories.');
-      return;
-    }
-    // Optimistically update UI for responsiveness, but server is the source of truth
+    if (!isPlayerTurn) return;
+    
     const newCategories = selectedCategories.includes(category)
       ? selectedCategories.filter(c => c !== category)
       : [...selectedCategories, category];
+    
     setSelectedCategories(newCategories);
-
-    // Let the server handle the logic
-    socket.emit('select-category', { gameId, category });
-  };
-
-  const handleConfirmCategories = () => {
-    if (socket) {
-      socket.emit('confirm-categories', { gameId });
-    }
+    selectCategory(gameId, category);
   };
 
   const handleLetterSelect = () => {
     if (!isPlayerTurn) return;
-    socket.emit('select-letter', { gameId });
+    selectLetter(gameId);
   };
 
   const handleAnswerChange = (category, answer) => {
@@ -246,7 +182,6 @@ const GameplayScreen = ({ navigation, route }) => {
       // Reset for next round
       setAnswers({});
       setSelectedCategories([]);
-      setAllSelectedCategories([]);
       setCurrentRound(result.currentRound);
       setPhase('category-selection');
       setHasStoppedFirst(false);
@@ -257,51 +192,34 @@ const GameplayScreen = ({ navigation, route }) => {
     <Card style={styles.card}>
       <Card.Content>
         <Text style={styles.phaseTitle}>Select Categories</Text>
-        <View style={styles.timerContainer}>
-          <Text style={styles.timerText}>{categoryTimer}s</Text>
-          <ProgressBar 
-            progress={categoryTimer / 12} 
-            color={theme.colors.primary}
-            style={styles.timerBar}
-          />
-        </View>
-        <Text style={styles.instruction}>Choose 6-8 categories for this round</Text>
-        <View style={styles.categoriesGrid}>
-          {AVAILABLE_CATEGORIES.map(category => {
-            const isSelectedByMe = selectedCategories.includes(category);
-            const isTaken = allSelectedCategories.includes(category);
-            const isDisabled = isTaken && !isSelectedByMe;
-
-            return (
-              <Chip
-                key={category}
-                selected={isSelectedByMe}
-                disabled={isDisabled}
-                onPress={() => handleCategorySelect(category)}
-                style={[
-                  styles.categoryChip,
-                  isSelectedByMe && styles.selectedChip,
-                  isDisabled && styles.disabledChip
-                ]}
-                textStyle={[
-                  isSelectedByMe && styles.selectedChipText,
-                  isDisabled && styles.disabledChipText
-                ]}
-                mode="outlined"
-              >
-                {category}
-              </Chip>
-            );
-          })}
-        </View>
-        <Button
-          mode="contained"
-          onPress={handleConfirmCategories}
-          disabled={selectedCategories.length < 6 || selectedCategories.length > 8}
-          style={styles.confirmButton}
-        >
-          Confirm Categories ({selectedCategories.length}/6-8)
-        </Button>
+        {isPlayerTurn ? (
+          <>
+            <Text style={styles.instruction}>Choose 6-8 categories for this round</Text>
+            <View style={styles.categoriesGrid}>
+              {AVAILABLE_CATEGORIES.map(category => (
+                <Chip
+                  key={category}
+                  selected={selectedCategories.includes(category)}
+                  onPress={() => handleCategorySelect(category)}
+                  style={styles.categoryChip}
+                  mode="outlined"
+                >
+                  {category}
+                </Chip>
+              ))}
+            </View>
+            <Button
+              mode="contained"
+              onPress={() => selectCategory(gameId, null)}
+              disabled={selectedCategories.length < 6 || selectedCategories.length > 8}
+              style={styles.confirmButton}
+            >
+              Confirm Categories ({selectedCategories.length}/6-8)
+            </Button>
+          </>
+        ) : (
+          <Text style={styles.waitingText}>Waiting for player to select categories...</Text>
+        )}
       </Card.Content>
     </Card>
   );
@@ -423,18 +341,14 @@ const GameplayScreen = ({ navigation, route }) => {
         </View>
       )}
       {phase === 'round-end' && renderRoundEnd()}
-      {phase === 'loading' && (
-        <View style={styles.validationContainer}>
-          <Text style={styles.validationText}>Loading Game...</Text>
-        </View>
-      )}
     </View>
   );
 };
 
 const AVAILABLE_CATEGORIES = [
-  'Name', 'Last Name', 'City/Country', 'Animal', 'Fruit/Food', 'Color', 
-  'Object', 'Brand', 'Profession', 'Sport'
+  'Name', 'Country', 'City', 'Animal', 'Plant', 'Food',
+  'Brand', 'Movie', 'Song', 'Color', 'Profession', 'Sport',
+  'Celebrity', 'Object', 'Verb', 'Adjective'
 ];
 
 const styles = StyleSheet.create({
@@ -468,21 +382,6 @@ const styles = StyleSheet.create({
   },
   categoryChip: {
     margin: 5,
-    borderColor: theme.colors.primary,
-  },
-  selectedChip: {
-    backgroundColor: theme.colors.primary,
-  },
-  selectedChipText: {
-    color: '#FFFFFF',
-  },
-  disabledChip: {
-    backgroundColor: '#E0E0E0',
-    borderColor: '#BDBDBD',
-  },
-  disabledChipText: {
-    textDecorationLine: 'line-through',
-    color: '#9E9E9E',
   },
   confirmButton: {
     backgroundColor: theme.colors.primary,

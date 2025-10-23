@@ -9,96 +9,105 @@ import theme from '../theme';
 const RoomScreen = ({ navigation, route }) => {
   const { roomId } = route.params;
   const { user } = useAuth();
-  const { socket, setPlayerReady, startGame, sendMessage } = useSocket();
-  const { currentRoom, leaveRoom, getRoom, deleteRoom } = useGame();
+  const { socket, isAuthenticated, setPlayerReady, startGame, sendMessage, joinRoom, deleteRoom, leaveRoom: socketLeaveRoom } = useSocket();
+  const { currentRoom, leaveRoom } = useGame();
   const [players, setPlayers] = useState([]);
-  // Host is always ready, so only non-hosts can toggle ready
   const [isReady, setIsReady] = useState(false);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Initialize players from currentRoom when component mounts
   useEffect(() => {
-    // fetch current room state when screen mounts
-    (async () => {
-      const r = await getRoom(roomId);
-      if (r.success && r.room) {
-        setPlayers(normalizePlayers(r.room.players || []));
-        if (Array.isArray(r.room.messages) && r.room.messages.length > 0) {
-          setMessages(r.room.messages);
-        }
-      }
-    })();
-    let joined = false;
+    if (currentRoom && currentRoom.players) {
+      const playersData = currentRoom.players.map(p => ({
+        id: p.user._id || p.user,
+        username: p.user.username || 'Player',
+        isReady: p.isReady,
+        isOwner: (p.user._id || p.user).toString() === currentRoom.owner.toString()
+      }));
+      setPlayers(playersData);
+    }
+  }, [currentRoom]);
+
+  // Join room via socket on mount and after auth
+  useEffect(() => {
+    if (socket && roomId && isAuthenticated) {
+      joinRoom(roomId);
+    }
+  }, [socket, roomId, isAuthenticated]);
+
+  useEffect(() => {
     if (socket) {
-      // Ask server for current room state by joining the room namespace
-      socket.emit('join-room', roomId);
-
-      // When the server confirms room joined it will send 'room-joined' with full room
+      // Socket event listeners
       socket.on('room-joined', (data) => {
-        if (data.room) {
-          setPlayers(normalizePlayers(data.room.players || []));
-          if (Array.isArray(data.room.messages) && data.room.messages.length > 0) {
-            setMessages(data.room.messages);
-          }
-        }
-        joined = true;
+        const room = data.room;
+        const playersData = (room.players || []).map(p => ({
+          id: p.user._id || p.user,
+          username: p.user.username || 'Player',
+          isReady: p.isReady,
+          isOwner: (p.user._id || p.user).toString() === (room.owner._id ? room.owner._id.toString() : room.owner.toString())
+        }));
+        setPlayers(playersData);
       });
-
-      // Player joined/left
       socket.on('player-joined', (data) => {
-        // backend sends the updated players array
-        if (data.players) setPlayers(normalizePlayers(data.players));
-        if (data.username) {
-          setMessages(prev => [...prev, { type: 'system', text: `${data.username} joined the room` }]);
-        }
+        const playersData = data.players.map(p => ({
+          id: p.user._id || p.user,
+          username: p.user.username || 'Player',
+          isReady: p.isReady,
+          isOwner: (p.user._id || p.user).toString() === (currentRoom?.owner?.toString?.() || String(currentRoom?.owner))
+        }));
+        setPlayers(playersData);
+        setMessages(prev => [...prev, {
+          type: 'system',
+          text: `${data.username || 'A player'} joined the room`
+        }]);
       });
 
       socket.on('player-left', (data) => {
-        if (data.players) setPlayers(normalizePlayers(data.players));
-        if (data.username) {
-          setMessages(prev => [...prev, { type: 'system', text: `${data.username} left the room` }]);
-        }
+        const playersData = data.players.map(p => ({
+          id: p.user._id || p.user,
+          username: p.user.username || 'Player',
+          isReady: p.isReady,
+          isOwner: (p.user._id || p.user).toString() === currentRoom.owner.toString()
+        }));
+        setPlayers(playersData);
+        setMessages(prev => [...prev, {
+          type: 'system',
+          text: `${data.username} left the room`
+        }]);
       });
 
-      socket.on('ready-status-changed', async (data) => {
-        // backend doesn't include full players array here — fetch updated room
-        const r = await getRoom(roomId);
-        if (r.success && r.room) setPlayers(normalizePlayers(r.room.players || []));
+      socket.on('ready-status-changed', (data) => {
+        setPlayers(prev => prev.map(p => 
+          p.id === data.userId ? { ...p, isReady: data.isReady } : p
+        ));
       });
 
       socket.on('game-starting', (data) => {
         navigation.replace('Gameplay', { gameId: data.gameId });
       });
 
-      socket.on('new-message', async (data) => {
-        // backend emits 'new-message' with userId/message
-        // Ignore messages that originated from this client because we already
-        // optimistically appended them locally when sending.
-        const currentUserId = user?.id || user?._id;
-        if (data.userId && currentUserId && data.userId === currentUserId) return;
-
-        const found = players.find(p => p.id === data.userId);
-        if (found) {
-          setMessages(prev => [...prev, { type: 'chat', username: found.username, text: data.message }]);
-        } else {
-          // fallback: refresh players (authoritative) and append the incoming message
-          const r = await getRoom(roomId);
-          if (r.success && r.room) {
-            setPlayers(normalizePlayers(r.room.players || []));
-          }
-          // try to resolve username from refreshed players
-          const refreshedPlayers = (r && r.room) ? normalizePlayers(r.room.players || []) : [];
-          const refreshedFound = refreshedPlayers.find(p => p.id === data.userId);
-          const username = refreshedFound ? refreshedFound.username : 'Player';
-          setMessages(prev => [...prev, { type: 'chat', username, text: data.message }]);
-        }
+      socket.on('new-message', (data) => {
+        setMessages(prev => [...prev, {
+          type: 'chat',
+          username: data.username || user?.username || 'Player',
+          text: data.message
+        }]);
       });
 
-      socket.on('room-updated', (data) => {
-        if (data.room) {
-          setPlayers(normalizePlayers(data.room.players || []));
-        }
+      socket.on('room-deleted', (data) => {
+        Alert.alert(
+          'Room Deleted',
+          data.message || 'Host terminated the session',
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.navigate('Menu')
+            }
+          ],
+          { cancelable: false }
+        );
       });
 
       return () => {
@@ -108,55 +117,10 @@ const RoomScreen = ({ navigation, route }) => {
         socket.off('ready-status-changed');
         socket.off('game-starting');
         socket.off('new-message');
-        socket.off('room-updated');
-        // leave the socket room
-        if (socket && joined) socket.emit('leave-room');
+        socket.off('room-deleted');
       };
     }
-  }, [socket, user]);
-
-  // handle navigation back (hardware or header back)
-  useEffect(() => {
-    const beforeRemove = navigation.addListener('beforeRemove', async (e) => {
-      // prevent default and perform leave/delete
-      e.preventDefault();
-
-      if (isOwner && currentRoom?.id) {
-        await deleteRoom(currentRoom.id);
-      } else {
-        await leaveRoom();
-      }
-
-      // allow navigation to proceed
-      navigation.dispatch(e.data.action);
-    });
-
-    return () => {
-      beforeRemove && beforeRemove();
-    };
-  }, [navigation, isOwner, currentRoom]);
-
-  // helper to normalize player objects coming from different sources
-  const normalizePlayers = (incoming = []) => {
-    return incoming.map((p) => {
-      // possible shapes: { id, username, isReady, isOwner } or { user: { _id, username }, isReady, isOwner }
-      if (!p) return null;
-      if (p.user) {
-        return {
-          id: p.user._id || p.user.id,
-          username: p.user.username || p.user.name,
-          isReady: p.isReady || false,
-          isOwner: p.isOwner || false
-        };
-      }
-      return {
-        id: p.id || p._id || p.userId,
-        username: p.username || p.name || 'Player',
-        isReady: p.isReady || false,
-        isOwner: p.isOwner || false
-      };
-    }).filter(Boolean);
-  };
+  }, [socket, currentRoom, user]);
 
   const handleReady = () => {
     const newReadyState = !isReady;
@@ -165,12 +129,8 @@ const RoomScreen = ({ navigation, route }) => {
   };
 
   const handleStartGame = () => {
-    if (!canStartGame) {
-      if (nonOwnerPlayers.length === 0) {
-        Alert.alert('Cannot Start', 'At least one other player must be in the room');
-      } else {
-        Alert.alert('Cannot Start', 'All other players must be ready to start the game');
-      }
+    if (players.filter(p => p.isReady).length < 2) {
+      Alert.alert('Cannot Start', 'At least 2 players must be ready');
       return;
     }
     startGame(roomId);
@@ -185,13 +145,27 @@ const RoomScreen = ({ navigation, route }) => {
         {
           text: 'Leave',
           onPress: async () => {
-            // if owner, delete room from server
-            if (isOwner && currentRoom?.id) {
-              await deleteRoom(currentRoom.id);
-            } else {
-              await leaveRoom();
-            }
-            navigation.goBack();
+            try { socketLeaveRoom(); } catch (e) {}
+            await leaveRoom();
+            navigation.navigate('Menu');
+          },
+          style: 'destructive'
+        }
+      ]
+    );
+  };
+
+  const handleDeleteRoom = () => {
+    Alert.alert(
+      'Delete Room',
+      'Are you sure you want to delete this room? All players will be kicked out.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          onPress: async () => {
+            deleteRoom(roomId);
+            // Navigation will be handled by the room-deleted socket event
           },
           style: 'destructive'
         }
@@ -201,10 +175,7 @@ const RoomScreen = ({ navigation, route }) => {
 
   const handleSendMessage = () => {
     if (messageInput.trim()) {
-      const text = messageInput.trim();
-      // optimistic add so sender sees message immediately
-      setMessages(prev => [...prev, { type: 'chat', username: user.username, text, local: true }]);
-      sendMessage(roomId, text);
+      sendMessage(roomId, messageInput);
       setMessageInput('');
     }
   };
@@ -216,36 +187,8 @@ const RoomScreen = ({ navigation, route }) => {
     }
   };
 
-  const myId = user?.id || user?._id;
-  // Find me from players list
-  const me = players.find(p => String(p.id) === String(myId));
-
-  // Determine the owner id robustly:
-  // 1) if any player has isOwner true -> use that
-  // 2) else if currentRoom.owner provided -> use that
-  // 3) else fall back to first player in players array (common server behavior)
-  const ownerFromPlayers = players.find(p => p.isOwner);
-  const ownerId = ownerFromPlayers ? ownerFromPlayers.id : (currentRoom && currentRoom.owner ? currentRoom.owner : (players[0] ? players[0].id : null));
-
-  const isOwner = currentRoom && (String(currentRoom.owner) === String(myId));
-
-  // Non-owner players (used to determine if the host can start the game)
-  // Exclude the owner by comparing against derived ownerId
-  const nonOwnerPlayers = players.filter(p => String(p.id) !== String(ownerId));
-
-  // Host can start only if there's at least one other (non-owner) player and all non-owner players are ready
-  const canStartGame = nonOwnerPlayers.length > 0 && nonOwnerPlayers.every(p => p.isReady);
-
-  // Host is always ready, so only non-hosts can toggle ready
-  useEffect(() => {
-    if (isOwner) {
-      setIsReady(true);
-    } else {
-      // Sync isReady with server state for non-hosts
-      setIsReady(me?.isReady || false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOwner, me?.isReady]);
+  const isOwner = currentRoom?.owner === user?.id;
+  const allPlayersReady = players.length >= 2 && players.every(p => p.isReady);
 
   return (
     <View style={styles.container}>
@@ -356,19 +299,18 @@ const RoomScreen = ({ navigation, route }) => {
       <View style={styles.actionContainer}>
         <Button
           mode="outlined"
-          onPress={handleLeaveRoom}
+          onPress={isOwner ? handleDeleteRoom : handleLeaveRoom}
           style={styles.leaveButton}
-          icon="exit-to-app"
+          icon={isOwner ? 'delete' : 'exit-to-app'}
         >
-          Leave Room
+          {isOwner ? 'Delete Room' : 'Leave Room'}
         </Button>
-        {/* Show Start Game for host, or Ready button for non-hosts */}
         {isOwner ? (
           <Button
             mode="contained"
             onPress={handleStartGame}
             style={styles.startButton}
-            disabled={!canStartGame || loading}
+            disabled={!allPlayersReady || loading}
             loading={loading}
             icon="play"
           >

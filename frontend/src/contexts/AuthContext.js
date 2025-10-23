@@ -6,10 +6,73 @@ import { Platform } from 'react-native';
 
 const AuthContext = createContext({});
 
-import API_URL from '../config';
+// Compute API URL:
+// - If running in Expo Go (debuggerHost available) use the host IP with backend port 5000
+// - Otherwise allow overriding via Constants.expoConfig.extra.apiUrl (EAS) or fallback to localhost
+let API_URL = 'http://localhost:5000/api';
+try {
+  // Try several places for the packager/debugger host. This is important when
+  // running Expo on a real device: the bundle is served from your machine IP
+  // (e.g. 192.168.1.106), and that IP should be used to reach the backend.
+  const dbg = Constants.manifest?.debuggerHost ||
+              Constants.manifest2?.debuggerHost ||
+              Constants.expoConfig?.extra?.debuggerHost ||
+              // bundleUrl may exist and include the host (e.g. exp://192.168.1.106:19000)
+              Constants.manifest?.bundleUrl ||
+              Constants.manifest2?.bundleUrl ||
+              Constants.expoConfig?.extra?.bundleUrl;
+
+  if (typeof dbg === 'string' && dbg.length > 0) {
+    // Try to extract an IP or hostname from the packager/debugger value.
+    let host = null;
+    // First, look for an IP address like 192.168.1.106
+    const ipMatch = dbg.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
+    if (ipMatch) {
+      host = ipMatch[1];
+    } else {
+      // Try to parse as a URL (exp://..., http://...)
+      try {
+        const url = new URL(dbg.includes('://') ? dbg : `http://${dbg}`);
+        host = url.hostname;
+      } catch (e) {
+        // Fallback: split on ':' and take first part (e.g. '192.168.1.106:8081')
+        if (dbg.includes(':')) host = dbg.split(':')[0];
+        else host = dbg;
+      }
+    }
+
+    if (host) {
+      // If host resolves to localhost/127.0.0.1 and we're on Android emulator,
+      // map to emulator host; otherwise use the detected host.
+      if ((host === 'localhost' || host === '127.0.0.1') && Platform.OS === 'android') {
+        API_URL = 'http://10.0.2.2:5000/api';
+      } else {
+        API_URL = `http://${host}:5000/api`;
+      }
+    }
+  } else if (Constants.expoConfig?.extra?.apiUrl) {
+    API_URL = Constants.expoConfig.extra.apiUrl;
+  } else if (Platform.OS === 'android') {
+    // No packager host found. Don't assume emulator by default — keep localhost
+    // and instruct developers to set `extra.apiUrl` in app.json for physical devices.
+    // We only fall back to the emulator mapping when explicitly required.
+    API_URL = 'http://localhost:5000/api';
+  }
+} catch (e) {
+  // ignore and keep default
+}
+
+// Configure axios base URL for convenience. Ensure trailing slash so relative paths
+// like 'auth/register' become '<baseURL>auth/register' -> '<host>/api/auth/register'.
+axios.defaults.baseURL = API_URL.endsWith('/') ? API_URL : `${API_URL}/`;
+
+// Set a reasonable timeout so requests fail fast instead of hanging forever
+// (React Native/fetch has no default network timeout). 10s is a good compromise.
+axios.defaults.timeout = 10000;
 
 // Debug: surface the computed API URL at startup
-console.log('[AuthContext] API_URL (from config) =', API_URL, ' axios.baseURL =', axios.defaults.baseURL);
+console.log('[AuthContext] API_URL =', API_URL);
+console.log('[AuthContext] axios.baseURL =', axios.defaults.baseURL, 'timeout =', axios.defaults.timeout);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -41,9 +104,7 @@ export const AuthProvider = ({ children }) => {
     try {
   console.log('[AuthContext] login called for', username);
   // Log the exact endpoint we will call to help diagnose network problems
-  const base = API_URL.endsWith('/') ? API_URL : `${API_URL}/`;
-  const loginEndpoint = `${base}auth/login`;
-  console.log('[AuthContext] API_URL =', API_URL, ' axios.defaults.baseURL =', axios.defaults.baseURL);
+  const loginEndpoint = `${axios.defaults.baseURL || API_URL}auth/login`;
   console.log('[AuthContext] login endpoint =', loginEndpoint);
 
   // use baseURL + relative path to avoid accidental double-prefixing
@@ -82,9 +143,7 @@ export const AuthProvider = ({ children }) => {
     try {
   console.log('[AuthContext] register called for', email, username);
   // Log the exact endpoint we will call to help diagnose network problems
-  const baseReg = API_URL.endsWith('/') ? API_URL : `${API_URL}/`;
-  const registerEndpoint = `${baseReg}auth/register`;
-  console.log('[AuthContext] API_URL =', API_URL, ' axios.defaults.baseURL =', axios.defaults.baseURL);
+  const registerEndpoint = `${axios.defaults.baseURL || API_URL}auth/register`;
   console.log('[AuthContext] register endpoint =', registerEndpoint);
 
   // use relative path so axios.baseURL is respected and easier to swap during runtime

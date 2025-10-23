@@ -1,11 +1,47 @@
 import React, { createContext, useContext, useState } from 'react';
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const GameContext = createContext({});
 
-import API_URL from '../config';
-console.log('[GameContext] using API_URL from config =', API_URL);
+import Constants from 'expo-constants';
+
+let API_URL = 'http://localhost:5000/api';
+try {
+  const dbg = Constants.manifest?.debuggerHost ||
+              Constants.manifest2?.debuggerHost ||
+              Constants.expoConfig?.extra?.debuggerHost ||
+              Constants.manifest?.bundleUrl ||
+              Constants.manifest2?.bundleUrl ||
+              Constants.expoConfig?.extra?.bundleUrl;
+
+  if (typeof dbg === 'string' && dbg.length > 0) {
+    let host = null;
+    const ipMatch = dbg.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
+    if (ipMatch) {
+      host = ipMatch[1];
+    } else {
+      try {
+        const url = new URL(dbg.includes('://') ? dbg : `http://${dbg}`);
+        host = url.hostname;
+      } catch (e) {
+        if (dbg.includes(':')) host = dbg.split(':')[0];
+        else host = dbg;
+      }
+    }
+
+    if (host) {
+      if ((host === 'localhost' || host === '127.0.0.1') && Platform.OS === 'android') {
+        API_URL = 'http://10.0.2.2:5000/api';
+      } else {
+        API_URL = `http://${host}:5000/api`;
+      }
+    }
+  } else if (Constants.expoConfig?.extra?.apiUrl) {
+    API_URL = Constants.expoConfig.extra.apiUrl;
+  }
+} catch (e) {
+  // ignore
+}
 
 export const GameProvider = ({ children }) => {
   const [currentRoom, setCurrentRoom] = useState(null);
@@ -19,73 +55,20 @@ export const GameProvider = ({ children }) => {
 
   const createRoom = async (roomData) => {
     try {
-      // Read token explicitly and include as header to avoid timing issues
-      const token = await AsyncStorage.getItem('authToken');
-      if (token) {
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      }
-
-  const url = 'room/create';
-  console.log('[GameContext] createRoom -> URL (relative):', url, ' base=', API_URL);
-      console.log('[GameContext] createRoom -> token from storage:', token);
-      console.log('[GameContext] createRoom -> Auth header (defaults):', axios.defaults.headers.common['Authorization']);
-
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const response = await axios.post(url, roomData, { headers });
+      const response = await axios.post(`${API_URL}/room/create`, roomData);
       setCurrentRoom(response.data.room);
       return { success: true, room: response.data.room };
     } catch (error) {
-      // Detailed logging for debugging
-      console.error('[GameContext] createRoom error (initial):', error);
-      if (error.response) {
-        console.error('[GameContext] createRoom response status (initial):', error.response.status);
-        console.error('[GameContext] createRoom response data (initial):', error.response.data);
-      } else if (error.request) {
-        console.error('[GameContext] createRoom no response (initial), request:', error.request);
-      } else {
-        console.error('[GameContext] createRoom request setup error (initial):', error.message);
-      }
-
-      // If unauthorized, try to explicitly set Authorization header from AsyncStorage and retry once
-      try {
-        const status = error.response?.status;
-        if (status === 401) {
-          const token = await AsyncStorage.getItem('authToken');
-          if (token) {
-            console.log('[GameContext] createRoom retrying with token from storage');
-            const headers = { Authorization: `Bearer ${token}` };
-            const retryUrl = 'room/create';
-            const retryResp = await axios.post(retryUrl, roomData, { headers });
-            setCurrentRoom(retryResp.data.room);
-            return { success: true, room: retryResp.data.room };
-          }
-        }
-      } catch (retryError) {
-        console.error('[GameContext] createRoom retry error:', retryError);
-        if (retryError.response) {
-          console.error('[GameContext] createRoom retry response status:', retryError.response.status);
-          console.error('[GameContext] createRoom retry response data:', retryError.response.data);
-        }
-      }
-
-      // Build helpful error message
-      let message = 'Failed to create room';
-      if (error.response?.data?.message) message = error.response.data.message;
-      else if (!error.response && error.request) message = 'No response from server. Check backend URL and network.';
-      else if (error.message) message = error.message;
-
       return { 
         success: false, 
-        error: message,
-        status: error.response?.status,
-        data: error.response?.data
+        error: error.response?.data?.message || 'Failed to create room' 
       };
     }
   };
 
   const joinRoom = async (roomId, password = null) => {
     try {
-      const response = await axios.post(`room/join/${roomId}`, { password });
+      const response = await axios.post(`${API_URL}/room/join/${roomId}`, { password });
       setCurrentRoom(response.data.room);
       return { success: true, room: response.data.room };
     } catch (error) {
@@ -99,7 +82,7 @@ export const GameProvider = ({ children }) => {
 
   const joinRoomByCode = async (inviteCode, password = null) => {
     try {
-      const response = await axios.post('room/join-by-code', { 
+      const response = await axios.post(`${API_URL}/room/join-by-code`, { 
         inviteCode, 
         password 
       });
@@ -118,7 +101,7 @@ export const GameProvider = ({ children }) => {
   const leaveRoom = async () => {
     if (currentRoom) {
       try {
-        await axios.post(`room/leave/${currentRoom.id}`);
+        await axios.post(`${API_URL}/room/leave/${currentRoom.id}`);
         setCurrentRoom(null);
         return { success: true };
       } catch (error) {
@@ -132,7 +115,7 @@ export const GameProvider = ({ children }) => {
 
   const getPublicRooms = async () => {
     try {
-      const response = await axios.get('room/public');
+      const response = await axios.get(`${API_URL}/room/public`);
       return { success: true, rooms: response.data.rooms };
     } catch (error) {
       return { 
@@ -144,7 +127,7 @@ export const GameProvider = ({ children }) => {
 
   const startGame = async (roomId) => {
     try {
-      const response = await axios.post(`game/start/${roomId}`);
+      const response = await axios.post(`${API_URL}/game/start/${roomId}`);
       setCurrentGame(response.data.gameId);
       return { success: true, gameId: response.data.gameId };
     } catch (error) {
@@ -157,7 +140,7 @@ export const GameProvider = ({ children }) => {
 
   const selectCategory = async (gameId, category) => {
     try {
-      const response = await axios.post(`game/${gameId}/category`, { category });
+      const response = await axios.post(`${API_URL}/game/${gameId}/category`, { category });
       setSelectedCategories(response.data.categories);
       return { success: true, categories: response.data.categories };
     } catch (error) {
@@ -170,7 +153,7 @@ export const GameProvider = ({ children }) => {
 
   const confirmCategories = async (gameId) => {
     try {
-      const response = await axios.post(`game/${gameId}/confirm-categories`);
+      const response = await axios.post(`${API_URL}/game/${gameId}/confirm-categories`);
       setCategories(response.data.categories);
       return { success: true, categories: response.data.categories };
     } catch (error) {
@@ -183,7 +166,7 @@ export const GameProvider = ({ children }) => {
 
   const selectLetter = async (gameId, letter = null) => {
     try {
-      const response = await axios.post(`game/${gameId}/letter`, { letter });
+      const response = await axios.post(`${API_URL}/game/${gameId}/letter`, { letter });
       setCurrentLetter(response.data.letter);
       return { success: true, letter: response.data.letter };
     } catch (error) {
@@ -196,7 +179,7 @@ export const GameProvider = ({ children }) => {
 
   const submitAnswers = async (gameId, answersData, stoppedFirst = false) => {
     try {
-      const response = await axios.post(`game/${gameId}/submit`, {
+      const response = await axios.post(`${API_URL}/game/${gameId}/submit`, {
         answers: answersData,
         stoppedFirst
       });
@@ -211,7 +194,7 @@ export const GameProvider = ({ children }) => {
 
   const validateAnswers = async (gameId) => {
     try {
-      const response = await axios.post(`game/${gameId}/validate`);
+      const response = await axios.post(`${API_URL}/game/${gameId}/validate`);
       return { 
         success: true, 
         standings: response.data.standings,
@@ -227,7 +210,7 @@ export const GameProvider = ({ children }) => {
 
   const nextRound = async (gameId) => {
     try {
-      const response = await axios.post(`game/${gameId}/next-round`);
+      const response = await axios.post(`${API_URL}/game/${gameId}/next-round`);
       if (response.data.status === 'finished') {
         setCurrentGame(null);
         return { 
@@ -252,26 +235,13 @@ export const GameProvider = ({ children }) => {
 
   const getGameState = async (gameId) => {
     try {
-      const response = await axios.get(`game/${gameId}`);
+      const response = await axios.get(`${API_URL}/game/${gameId}`);
       setGameState(response.data.game);
       return { success: true, game: response.data.game };
     } catch (error) {
       return { 
         success: false, 
         error: error.response?.data?.message || 'Failed to fetch game state' 
-      };
-    }
-  };
-
-  const getRoom = async (roomId) => {
-    try {
-      const response = await axios.get(`room/${roomId}`);
-      setCurrentRoom(response.data.room);
-      return { success: true, room: response.data.room };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.response?.data?.message || 'Failed to fetch room'
       };
     }
   };
@@ -283,20 +253,6 @@ export const GameProvider = ({ children }) => {
     setSelectedCategories([]);
     setCurrentLetter(null);
     setAnswers({});
-  };
-
-  const deleteRoom = async (roomId) => {
-    try {
-      const response = await axios.delete(`room/${roomId}`);
-      // clear currentRoom if it was the deleted one
-      if (currentRoom && currentRoom.id === roomId) setCurrentRoom(null);
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.response?.data?.message || 'Failed to delete room'
-      };
-    }
   };
 
   return (
@@ -323,8 +279,6 @@ export const GameProvider = ({ children }) => {
       validateAnswers,
       nextRound,
       getGameState,
-  getRoom,
-  deleteRoom,
       resetGame
     }}>
       {children}

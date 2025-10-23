@@ -1,36 +1,20 @@
-# Node modules
+# Dependencies
 node_modules/
-frontend/node_modules/
-backend/node_modules/
 
-# Environment files
-.env
-frontend/.env
-backend/.env
-
-# Expo files
-frontend/.expo/
-frontend/.expo-shared/
+# Expo local state
+.expo/
+.expo-shared/
 
 # Logs
-*.log
-frontend/*.log
-backend/*.log
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Build output
-frontend/dist/
-backend/dist/
-frontend/build/
-backend/build/
-
-# Misc
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
-yarn.lock
 
+# OS
+.DS_Store
+Thumbs.db
+backend/.env
+ideas.txt
+ideas.txt
+Stop - The Game.txt
+ideas.txt
