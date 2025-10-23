@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert, Clipboard } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, Button, Card, List, Avatar, Chip, IconButton, TextInput } from 'react-native-paper';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
@@ -18,6 +18,8 @@ const RoomScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(false);
   const [roomOwner, setRoomOwner] = useState(null);
   const [startGameCooldown, setStartGameCooldown] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
+  const inputRef = useRef(null);
 
   // Initialize players from currentRoom when component mounts
   useEffect(() => {
@@ -242,9 +244,16 @@ const RoomScreen = ({ navigation, route }) => {
   };
 
   const handleSendMessage = () => {
+    const wasFocused = inputFocused;
     if (messageInput.trim()) {
       sendMessage(roomId, messageInput);
       setMessageInput('');
+      // Preserve keyboard state: if input was focused, keep focus; otherwise do nothing
+      if (wasFocused) {
+        setTimeout(() => {
+          inputRef.current?.focus?.();
+        }, 0);
+      }
     }
   };
 
@@ -255,12 +264,17 @@ const RoomScreen = ({ navigation, route }) => {
     }
   };
 
+  
+
   const isOwner = roomOwner === user?.id;
+  const isOriginalOwner = currentRoom?.initialOwner && user?.id === (currentRoom.initialOwner._id || currentRoom.initialOwner).toString();
+  const showInviteCode = (isOriginalOwner) || (!currentRoom?.initialOwner && isOwner);
   const allPlayersReady = players.length >= 2 && players.every(p => p.isReady);
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* Room Info */}
         <Card style={styles.card}>
           <Card.Content>
@@ -274,26 +288,39 @@ const RoomScreen = ({ navigation, route }) => {
                   </Chip>
                 </View>
               </View>
-              <IconButton
-                icon="content-copy"
-                onPress={copyInviteCode}
-                style={styles.copyButton}
-              />
-            </View>
-            <View style={styles.inviteContainer}>
-              <Text style={styles.inviteLabel}>Invite Code:</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Text style={styles.inviteCode}>{currentRoom?.inviteCode || 'XXXXXX'}</Text>
-                {isOwner && (
+              {showInviteCode ? (
+                <IconButton
+                  icon="content-copy"
+                  onPress={copyInviteCode}
+                  style={styles.copyButton}
+                />
+              ) : (
+                isOwner ? (
                   <IconButton
                     icon="delete"
                     onPress={handleDeleteRoom}
                     iconColor="#F44336"
-                    style={{ marginLeft: 8 }}
+                    style={styles.copyButton}
                   />
-                )}
-              </View>
+                ) : null
+              )}
             </View>
+            {showInviteCode && (
+              <View style={styles.inviteContainer}>
+                <Text style={styles.inviteLabel}>Invite Code:</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={styles.inviteCode}>{currentRoom?.inviteCode || 'XXXXXX'}</Text>
+                  {isOwner && (
+                    <IconButton
+                      icon="delete"
+                      onPress={handleDeleteRoom}
+                      iconColor="#F44336"
+                      style={{ marginLeft: 8 }}
+                    />
+                  )}
+                </View>
+              </View>
+            )}
           </Card.Content>
         </Card>
 
@@ -337,7 +364,7 @@ const RoomScreen = ({ navigation, route }) => {
           <Card.Content>
             <Text style={styles.sectionTitle}>Chat</Text>
             <View style={styles.chatContainer}>
-              <ScrollView style={styles.messagesContainer}>
+              <ScrollView style={styles.messagesContainer} keyboardShouldPersistTaps="handled">
                 {messages.map((msg, index) => (
                   <View key={index} style={styles.message}>
                     {msg.type === 'system' ? (
@@ -353,12 +380,18 @@ const RoomScreen = ({ navigation, route }) => {
               </ScrollView>
               <View style={styles.chatInput}>
                 <TextInput
+                  ref={inputRef}
                   value={messageInput}
                   onChangeText={setMessageInput}
+                  onFocus={() => setInputFocused(true)}
+                  onBlur={() => setInputFocused(false)}
                   placeholder="Type a message..."
                   style={styles.messageInput}
                   mode="outlined"
                   dense
+                  blurOnSubmit={false}
+                  returnKeyType="send"
+                  onSubmitEditing={handleSendMessage}
                   right={
                     <TextInput.Icon
                       icon="send"
@@ -405,7 +438,8 @@ const RoomScreen = ({ navigation, route }) => {
           </Button>
         )}
       </View>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 };
 

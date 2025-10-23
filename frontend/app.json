@@ -24,6 +24,7 @@
         "backgroundColor": "#4CAF50"
       },
       "package": "com.stopthegame.app",
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE"

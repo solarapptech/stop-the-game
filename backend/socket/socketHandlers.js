@@ -118,7 +118,7 @@ module.exports = (io, socket) => {
     }
   });
 
-  // Player ready
+  // Player ready (atomic update to avoid version conflicts)
   socket.on('player-ready', async (data) => {
     try {
       const { roomId, isReady } = data;
@@ -127,18 +127,23 @@ module.exports = (io, socket) => {
         return socket.emit('error', { message: 'Not authenticated' });
       }
 
-      const room = await Room.findById(roomId);
-      if (!room) {
-        return socket.emit('error', { message: 'Room not found' });
+      const result = await Room.updateOne(
+        { _id: roomId, 'players.user': socket.userId },
+        { $set: { 'players.$.isReady': isReady } }
+      );
+
+      if (!result.matchedCount) {
+        return socket.emit('error', { message: 'Room not found or not in room' });
       }
 
-      room.setPlayerReady(socket.userId, isReady);
-      await room.save();
+      // Fetch minimal data to compute allReady
+      const updated = await Room.findById(roomId).select('players status');
+      const allReady = updated && updated.players.length >= 2 && updated.players.every(p => p.isReady);
 
       io.to(roomId).emit('ready-status-changed', {
         userId: socket.userId,
         isReady,
-        allReady: room.allPlayersReady()
+        allReady
       });
     } catch (error) {
       console.error('Player ready socket error:', error);

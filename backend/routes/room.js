@@ -28,6 +28,7 @@ router.post('/create', authMiddleware, [
     const room = new Room({
       name,
       owner: req.user._id,
+      initialOwner: req.user._id,
       password: hashedPassword,
       isPublic,
       rounds,
@@ -49,6 +50,7 @@ router.post('/create', authMiddleware, [
         id: room._id,
         name: room.name,
         owner: room.owner,
+        initialOwner: room.initialOwner,
         isPublic: room.isPublic,
         rounds: room.rounds,
         inviteCode: room.inviteCode,
@@ -141,6 +143,7 @@ router.post('/join/:roomId', authMiddleware, [
           id: room._id,
           name: room.name,
           owner: room.owner,
+          initialOwner: room.initialOwner,
           rounds: room.rounds,
           players: room.players,
           status: room.status
@@ -200,6 +203,7 @@ router.post('/join-by-code', authMiddleware, [
           id: room._id,
           name: room.name,
           owner: room.owner,
+          initialOwner: room.initialOwner,
           rounds: room.rounds,
           players: room.players,
           status: room.status
@@ -302,6 +306,7 @@ router.get('/:roomId', authMiddleware, async (req, res) => {
         id: room._id,
         name: room.name,
         owner: room.owner,
+        initialOwner: room.initialOwner,
         isPublic: room.isPublic,
         rounds: room.rounds,
         inviteCode: room.inviteCode,
@@ -319,7 +324,7 @@ router.get('/:roomId', authMiddleware, async (req, res) => {
   }
 });
 
-// Set ready status
+// Set ready status (atomic)
 router.post('/:roomId/ready', authMiddleware, [
   body('isReady').isBoolean()
 ], async (req, res) => {
@@ -327,21 +332,21 @@ router.post('/:roomId/ready', authMiddleware, [
     const { roomId } = req.params;
     const { isReady } = req.body;
 
-    const room = await Room.findById(roomId);
-    if (!room) {
-      return res.status(404).json({ message: 'Room not found' });
+    const result = await Room.updateOne(
+      { _id: roomId, 'players.user': req.user._id },
+      { $set: { 'players.$.isReady': isReady } }
+    );
+
+    if (!result.matchedCount) {
+      return res.status(404).json({ message: 'Room not found or not in this room' });
     }
 
-    if (!room.hasPlayer(req.user._id)) {
-      return res.status(403).json({ message: 'Not in this room' });
-    }
-
-    room.setPlayerReady(req.user._id, isReady);
-    await room.save();
+    const updated = await Room.findById(roomId).select('players status');
+    const allReady = updated && updated.players.length >= 2 && updated.players.every(p => p.isReady);
 
     res.json({ 
       message: 'Ready status updated',
-      allReady: room.allPlayersReady()
+      allReady
     });
   } catch (error) {
     console.error('Set ready error:', error);

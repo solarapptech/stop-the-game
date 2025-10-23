@@ -12,6 +12,11 @@ const roomSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  initialOwner: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
   password: {
     type: String,
     default: null
