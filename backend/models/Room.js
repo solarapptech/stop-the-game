@@ -82,7 +82,10 @@ roomSchema.methods.generateInviteCode = function() {
 
 // Add player to room
 roomSchema.methods.addPlayer = function(userId) {
-  const existingPlayer = this.players.find(p => p.user.toString() === userId.toString());
+  const existingPlayer = this.players.find(p => {
+    const pid = (p.user && p.user._id) ? p.user._id.toString() : p.user.toString();
+    return pid === userId.toString();
+  });
   if (existingPlayer) {
     return false;
   }
@@ -104,7 +107,10 @@ roomSchema.methods.addPlayer = function(userId) {
 
 // Remove player from room
 roomSchema.methods.removePlayer = function(userId) {
-  const index = this.players.findIndex(p => p.user.toString() === userId.toString());
+  const index = this.players.findIndex(p => {
+    const pid = (p.user && p.user._id) ? p.user._id.toString() : p.user.toString();
+    return pid === userId.toString();
+  });
   if (index !== -1) {
     this.players.splice(index, 1);
     return true;
@@ -114,12 +120,18 @@ roomSchema.methods.removePlayer = function(userId) {
 
 // Check if user is in room
 roomSchema.methods.hasPlayer = function(userId) {
-  return this.players.some(p => p.user.toString() === userId.toString());
+  return this.players.some(p => {
+    const pid = (p.user && p.user._id) ? p.user._id.toString() : p.user.toString();
+    return pid === userId.toString();
+  });
 };
 
 // Set player ready status
 roomSchema.methods.setPlayerReady = function(userId, isReady) {
-  const player = this.players.find(p => p.user.toString() === userId.toString());
+  const player = this.players.find(p => {
+    const pid = (p.user && p.user._id) ? p.user._id.toString() : p.user.toString();
+    return pid === userId.toString();
+  });
   if (player) {
     player.isReady = isReady;
     return true;

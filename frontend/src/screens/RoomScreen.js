@@ -178,7 +178,7 @@ const RoomScreen = ({ navigation, route }) => {
         socket.off('room-deleted');
       };
     }
-  }, [socket, currentRoom, user]);
+  }, [socket, currentRoom, user, roomOwner]);
 
   const handleReady = () => {
     const newReadyState = !isReady;
@@ -276,7 +276,17 @@ const RoomScreen = ({ navigation, route }) => {
             </View>
             <View style={styles.inviteContainer}>
               <Text style={styles.inviteLabel}>Invite Code:</Text>
-              <Text style={styles.inviteCode}>{currentRoom?.inviteCode || 'XXXXXX'}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={styles.inviteCode}>{currentRoom?.inviteCode || 'XXXXXX'}</Text>
+                {isOwner && (
+                  <IconButton
+                    icon="delete"
+                    onPress={handleDeleteRoom}
+                    iconColor="#F44336"
+                    style={{ marginLeft: 8 }}
+                  />
+                )}
+              </View>
             </View>
           </Card.Content>
         </Card>
@@ -361,11 +371,11 @@ const RoomScreen = ({ navigation, route }) => {
       <View style={styles.actionContainer}>
         <Button
           mode="outlined"
-          onPress={isOwner ? handleDeleteRoom : handleLeaveRoom}
+          onPress={handleLeaveRoom}
           style={styles.leaveButton}
-          icon={isOwner ? 'delete' : 'exit-to-app'}
+          icon={'exit-to-app'}
         >
-          {isOwner ? 'Delete Room' : 'Leave Room'}
+          Leave Room
         </Button>
         {isOwner ? (
           <Button
