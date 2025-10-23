@@ -9,7 +9,7 @@ import theme from '../theme';
 const RoomScreen = ({ navigation, route }) => {
   const { roomId } = route.params;
   const { user } = useAuth();
-  const { socket, isAuthenticated, setPlayerReady, startGame, sendMessage, joinRoom, deleteRoom, leaveRoom: socketLeaveRoom } = useSocket();
+  const { socket, connected, isAuthenticated, setPlayerReady, startGame, sendMessage, joinRoom, deleteRoom, leaveRoom: socketLeaveRoom } = useSocket();
   const { currentRoom, leaveRoom } = useGame();
   const [players, setPlayers] = useState([]);
   const [isReady, setIsReady] = useState(false);
@@ -207,9 +207,15 @@ const RoomScreen = ({ navigation, route }) => {
         {
           text: 'Leave',
           onPress: async () => {
-            try { socketLeaveRoom(); } catch (e) {}
-            await leaveRoom();
-            navigation.navigate('Menu');
+            try {
+              if (socket && connected && isAuthenticated) {
+                socketLeaveRoom();
+              } else {
+                await leaveRoom();
+              }
+            } finally {
+              navigation.navigate('Menu');
+            }
           },
           style: 'destructive'
         }

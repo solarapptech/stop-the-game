@@ -53,61 +53,66 @@ module.exports = (io, socket) => {
     }
   });
 
-  // Leave room
+  // Leave room (atomic updates to avoid version conflicts)
   socket.on('leave-room', async () => {
     try {
-      if (socket.roomId && socket.userId) {
-        const User = require('../models/User');
-        const user = await User.findById(socket.userId);
-        const username = user?.username || 'Player';
+      if (!(socket.roomId && socket.userId)) return;
 
-        const room = await Room.findById(socket.roomId)
-          .populate('players.user', 'username winPoints');
+      const User = require('../models/User');
+      const user = await User.findById(socket.userId);
+      const username = user?.username || 'Player';
 
-        if (room) {
-          const wasOwner = room.owner.toString() === socket.userId.toString();
-          
-          // Remove player from room in DB
-          const removed = room.removePlayer(socket.userId);
-          
-          if (removed) {
-            // If owner leaves and room still has players, transfer ownership
-            if (wasOwner && room.players.length > 0) {
-              const newOwner = room.players[0].user;
-              room.owner = newOwner._id || newOwner;
-              
-              // Set new owner as ready
-              room.setPlayerReady(room.owner, true);
-              
-              await room.save();
-              
-              // Notify all players about ownership transfer and updated player list
-              io.to(socket.roomId).emit('ownership-transferred', {
-                newOwnerId: room.owner.toString(),
-                players: room.players,
-                username: newOwner.username || 'Player'
-              });
-            } else if (room.players.length === 0) {
-              // Delete room if empty
-              await room.deleteOne();
-            } else {
-              await room.save();
-            }
+      // Load room to determine ownership before removal
+      const roomBefore = await Room.findById(socket.roomId).select('owner players')
+        .populate('players.user', 'username winPoints');
+      if (!roomBefore) return;
 
-            // Notify others with updated list
-            socket.to(socket.roomId).emit('player-left', {
-              roomId: socket.roomId,
-              players: room.players,
-              username,
-              newOwnerId: wasOwner && room.players.length > 0 ? room.owner.toString() : null
-            });
-          }
-        }
+      const wasOwner = roomBefore.owner.toString() === socket.userId.toString();
 
-        // Leave socket room after notifying
-        socket.leave(socket.roomId);
-        socket.roomId = null;
+      // Remove player using atomic $pull
+      let room = await Room.findOneAndUpdate(
+        { _id: socket.roomId },
+        { $pull: { players: { user: socket.userId } } },
+        { new: true }
+      ).populate('players.user', 'username winPoints');
+
+      if (!room) return;
+
+      if (room.players.length === 0) {
+        // Room empty => delete it
+        await Room.deleteOne({ _id: room._id });
+      } else if (wasOwner) {
+        // Transfer ownership to next player and set them ready
+        const next = room.players[0];
+        const newOwnerId = (next.user._id || next.user).toString();
+        await Room.updateOne(
+          { _id: room._id },
+          { 
+            $set: { owner: newOwnerId, 'players.$[elem].isReady': true }
+          },
+          { arrayFilters: [ { 'elem.user': next.user._id || next.user } ] }
+        );
+        // Reload populated
+        room = await Room.findById(room._id).populate('players.user', 'username winPoints');
+
+        io.to(socket.roomId).emit('ownership-transferred', {
+          newOwnerId,
+          players: room.players,
+          username: next.user.username || 'Player'
+        });
       }
+
+      // Notify others about the player leaving with updated list
+      socket.to(socket.roomId).emit('player-left', {
+        roomId: socket.roomId,
+        players: room.players,
+        username,
+        newOwnerId: wasOwner && room.players.length > 0 ? (room.players[0].user._id || room.players[0].user).toString() : null
+      });
+
+      // Leave socket room
+      socket.leave(socket.roomId);
+      socket.roomId = null;
     } catch (error) {
       console.error('Leave room socket error:', error);
     }
@@ -296,53 +301,57 @@ module.exports = (io, socket) => {
     }
   });
 
-  // Disconnect
+  // Disconnect (atomic updates)
   socket.on('disconnect', async () => {
     try {
-      if (socket.roomId && socket.userId) {
-        const User = require('../models/User');
-        const user = await User.findById(socket.userId);
-        const username = user?.username || 'Player';
-        
-        const room = await Room.findById(socket.roomId)
-          .populate('players.user', 'username winPoints');
-          
-        if (room) {
-          const wasOwner = room.owner.toString() === socket.userId.toString();
-          
-          room.removePlayer(socket.userId);
-          
-          // If owner disconnects and room still has players, transfer ownership
-          if (wasOwner && room.players.length > 0) {
-            const newOwner = room.players[0].user;
-            room.owner = newOwner._id || newOwner;
-            
-            // Set new owner as ready
-            room.setPlayerReady(room.owner, true);
-            
-            await room.save();
-            
-            // Notify all players about ownership transfer and updated player list
-            io.to(socket.roomId).emit('ownership-transferred', {
-              newOwnerId: room.owner.toString(),
-              players: room.players,
-              username: newOwner.username || 'Player'
-            });
-          } else if (room.players.length === 0) {
-            // Delete room if empty
-            await room.deleteOne();
-          } else {
-            await room.save();
-          }
-          
-          socket.to(socket.roomId).emit('player-left', {
-            roomId: socket.roomId,
-            players: room.players,
-            username,
-            newOwnerId: wasOwner && room.players.length > 0 ? room.owner.toString() : null
-          });
-        }
+      if (!(socket.roomId && socket.userId)) return;
+
+      const User = require('../models/User');
+      const user = await User.findById(socket.userId);
+      const username = user?.username || 'Player';
+
+      const roomBefore = await Room.findById(socket.roomId).select('owner players')
+        .populate('players.user', 'username winPoints');
+      if (!roomBefore) return;
+
+      const wasOwner = roomBefore.owner.toString() === socket.userId.toString();
+
+      let room = await Room.findOneAndUpdate(
+        { _id: socket.roomId },
+        { $pull: { players: { user: socket.userId } } },
+        { new: true }
+      ).populate('players.user', 'username winPoints');
+
+      if (!room) return;
+
+      if (room.players.length === 0) {
+        await Room.deleteOne({ _id: room._id });
+        return;
       }
+
+      if (wasOwner) {
+        const next = room.players[0];
+        const newOwnerId = (next.user._id || next.user).toString();
+        await Room.updateOne(
+          { _id: room._id },
+          { $set: { owner: newOwnerId, 'players.$[elem].isReady': true } },
+          { arrayFilters: [ { 'elem.user': next.user._id || next.user } ] }
+        );
+        room = await Room.findById(room._id).populate('players.user', 'username winPoints');
+
+        io.to(socket.roomId).emit('ownership-transferred', {
+          newOwnerId,
+          players: room.players,
+          username: next.user.username || 'Player'
+        });
+      }
+
+      socket.to(socket.roomId).emit('player-left', {
+        roomId: socket.roomId,
+        players: room.players,
+        username,
+        newOwnerId: wasOwner && room.players.length > 0 ? (room.players[0].user._id || room.players[0].user).toString() : null
+      });
     } catch (error) {
       console.error('Disconnect socket error:', error);
     }

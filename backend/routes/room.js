@@ -241,28 +241,41 @@ router.post('/leave/:roomId', authMiddleware, async (req, res) => {
   try {
     const { roomId } = req.params;
 
-    const room = await Room.findById(roomId);
-    if (!room) {
+    // Load minimal fields to check ownership before removal
+    const before = await Room.findById(roomId).select('owner players');
+    if (!before) {
       return res.status(404).json({ message: 'Room not found' });
     }
 
-    const wasOwner = room.owner.toString() === req.user._id.toString();
-    room.removePlayer(req.user._id);
+    const wasOwner = before.owner.toString() === req.user._id.toString();
 
-    // If owner leaves and room is empty, delete room
-    if (wasOwner && room.players.length === 0) {
-      await room.deleteOne();
+    // Atomic removal
+    let updated = await Room.findOneAndUpdate(
+      { _id: roomId },
+      { $pull: { players: { user: req.user._id } } },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Room not found' });
+    }
+
+    if (updated.players.length === 0) {
+      await Room.deleteOne({ _id: updated._id });
       return res.json({ message: 'Room deleted' });
     }
 
-    // If owner leaves but room has players, transfer ownership
-    if (wasOwner && room.players.length > 0) {
-      room.owner = room.players[0].user;
-      // Set new owner as ready
-      room.setPlayerReady(room.owner, true);
+    if (wasOwner) {
+      // Transfer ownership to next player and set ready
+      const next = updated.players[0];
+      const newOwnerId = (next.user._id || next.user).toString();
+      await Room.updateOne(
+        { _id: updated._id },
+        { $set: { owner: newOwnerId, 'players.$[elem].isReady': true } },
+        { arrayFilters: [ { 'elem.user': next.user._id || next.user } ] }
+      );
     }
 
-    await room.save();
     res.json({ message: 'Left room successfully' });
   } catch (error) {
     console.error('Leave room error:', error);
