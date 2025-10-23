@@ -1,6 +1,13 @@
 # Dependencies
 node_modules/
 
+.env
+.env.example
+.env.local
+.env.example.local
+.env.test
+.env.example.test
+
 # Expo local state
 .expo/
 .expo-shared/
