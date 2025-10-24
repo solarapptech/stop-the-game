@@ -98,7 +98,8 @@ module.exports = (io, socket) => {
         io.to(socket.roomId).emit('ownership-transferred', {
           newOwnerId,
           players: room.players,
-          username: next.user.username || 'Player'
+          username: next.user.username || 'Player',
+          inviteCode: room.inviteCode
         });
       }
 
@@ -347,7 +348,8 @@ module.exports = (io, socket) => {
         io.to(socket.roomId).emit('ownership-transferred', {
           newOwnerId,
           players: room.players,
-          username: next.user.username || 'Player'
+          username: next.user.username || 'Player',
+          inviteCode: room.inviteCode
         });
       }
 

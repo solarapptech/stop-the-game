@@ -20,12 +20,16 @@ const RoomScreen = ({ navigation, route }) => {
   const [startGameCooldown, setStartGameCooldown] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
   const inputRef = useRef(null);
+  const messagesRef = useRef(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [inviteCode, setInviteCode] = useState(null);
 
   // Initialize players from currentRoom when component mounts
   useEffect(() => {
     if (currentRoom && currentRoom.players) {
       const ownerId = currentRoom.owner._id || currentRoom.owner;
       setRoomOwner(ownerId.toString());
+      if (currentRoom.inviteCode) setInviteCode(currentRoom.inviteCode);
       
       const playersData = currentRoom.players.map(p => ({
         id: p.user._id || p.user,
@@ -56,6 +60,7 @@ const RoomScreen = ({ navigation, route }) => {
         const room = data.room;
         const ownerId = room.owner._id || room.owner;
         setRoomOwner(ownerId.toString());
+        if (room.inviteCode) setInviteCode(room.inviteCode);
         
         const playersData = (room.players || []).map(p => ({
           id: p.user._id || p.user,
@@ -124,6 +129,7 @@ const RoomScreen = ({ navigation, route }) => {
 
       socket.on('ownership-transferred', (data) => {
         setRoomOwner(data.newOwnerId);
+        if (data.inviteCode) setInviteCode(data.inviteCode);
         
         const playersData = data.players.map(p => ({
           id: p.user._id || p.user,
@@ -258,18 +264,29 @@ const RoomScreen = ({ navigation, route }) => {
   };
 
   const copyInviteCode = () => {
-    if (currentRoom?.inviteCode) {
-      Clipboard.setString(currentRoom.inviteCode);
+    if (inviteCode) {
+      Clipboard.setString(inviteCode);
       Alert.alert('Copied', 'Invite code copied to clipboard');
     }
   };
 
-  
-
   const isOwner = roomOwner === user?.id;
-  const isOriginalOwner = currentRoom?.initialOwner && user?.id === (currentRoom.initialOwner._id || currentRoom.initialOwner).toString();
-  const showInviteCode = (isOriginalOwner) || (!currentRoom?.initialOwner && isOwner);
+  const showInviteCode = isOwner;
   const allPlayersReady = players.length >= 2 && players.every(p => p.isReady);
+
+  const handleMessagesScroll = (e) => {
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const paddingToBottom = 16; // threshold
+    const atBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+    setIsAtBottom(atBottom);
+  };
+
+  const handleMessagesContentSizeChange = () => {
+    if (isAtBottom) {
+      // Auto-scroll only if user was already at the bottom
+      messagesRef.current?.scrollToEnd({ animated: true });
+    }
+  };
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -309,7 +326,7 @@ const RoomScreen = ({ navigation, route }) => {
               <View style={styles.inviteContainer}>
                 <Text style={styles.inviteLabel}>Invite Code:</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={styles.inviteCode}>{currentRoom?.inviteCode || 'XXXXXX'}</Text>
+                  <Text style={styles.inviteCode}>{inviteCode || 'XXXXXX'}</Text>
                   {isOwner && (
                     <IconButton
                       icon="delete"
@@ -364,7 +381,15 @@ const RoomScreen = ({ navigation, route }) => {
           <Card.Content>
             <Text style={styles.sectionTitle}>Chat</Text>
             <View style={styles.chatContainer}>
-              <ScrollView style={styles.messagesContainer} keyboardShouldPersistTaps="handled">
+              <ScrollView
+                ref={messagesRef}
+                style={styles.messagesContainer}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                onScroll={handleMessagesScroll}
+                scrollEventThrottle={16}
+                onContentSizeChange={handleMessagesContentSizeChange}
+              >
                 {messages.map((msg, index) => (
                   <View key={index} style={styles.message}>
                     {msg.type === 'system' ? (
