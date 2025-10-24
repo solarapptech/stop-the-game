@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, TextInput, Alert, Animated } from 'react-native';
+import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text, Button, Card, IconButton, Chip, ProgressBar } from 'react-native-paper';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useSocket } from '../contexts/SocketContext';
@@ -34,10 +34,22 @@ const GameplayScreen = ({ navigation, route }) => {
   const [totalRounds, setTotalRounds] = useState(3);
   const [isPlayerTurn, setIsPlayerTurn] = useState(false);
   const [hasStoppedFirst, setHasStoppedFirst] = useState(false);
+  const [confirmedCount, setConfirmedCount] = useState(0);
+  const [totalPlayers, setTotalPlayers] = useState(0);
+  const [hasConfirmed, setHasConfirmed] = useState(false);
+  const [letterInput, setLetterInput] = useState('');
+  const [letterDeadline, setLetterDeadline] = useState(null);
+  const [letterTimeLeft, setLetterTimeLeft] = useState(20);
+  const [letterSelectorName, setLetterSelectorName] = useState('');
+  const [letterSelectorId, setLetterSelectorId] = useState(null);
+  const [showReveal, setShowReveal] = useState(false);
+  const [revealTimeLeft, setRevealTimeLeft] = useState(3);
   
   const timerRef = useRef(null);
   const selectTimerRef = useRef(null);
   const announcedReadyRef = useRef(false);
+  const letterTimerRef = useRef(null);
+  const revealTimerRef = useRef(null);
   const confettiRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -49,6 +61,8 @@ const GameplayScreen = ({ navigation, route }) => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (selectTimerRef.current) clearInterval(selectTimerRef.current);
+      if (letterTimerRef.current) clearInterval(letterTimerRef.current);
+      if (revealTimerRef.current) clearInterval(revealTimerRef.current);
     };
   }, []);
 
@@ -103,11 +117,18 @@ const GameplayScreen = ({ navigation, route }) => {
       socket.on('category-selection-started', (data) => {
         setPhase('category-selection');
         if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
+        if (typeof data.confirmed === 'number') setConfirmedCount(data.confirmed);
+        if (typeof data.total === 'number') setTotalPlayers(data.total);
         if (data.deadline) startSelectionTimer(new Date(data.deadline));
       });
 
       socket.on('category-selected', (data) => {
         if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
+      });
+
+      socket.on('confirm-update', (data) => {
+        if (typeof data.confirmed === 'number') setConfirmedCount(data.confirmed);
+        if (typeof data.total === 'number') setTotalPlayers(data.total);
       });
 
       socket.on('categories-confirmed', (data) => {
@@ -116,12 +137,36 @@ const GameplayScreen = ({ navigation, route }) => {
         if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
         setPhase('letter-selection');
         setIsPlayerTurn(data.currentPlayer === user.id);
+        // Reset counters for next phase
+        setConfirmedCount(0);
+        setTotalPlayers(0);
+        setHasConfirmed(false);
+        setLetterInput('');
+      });
+
+      socket.on('letter-selection-started', (data) => {
+        setPhase('letter-selection');
+        if (data.selectorId) {
+          setLetterSelectorId(data.selectorId);
+          setIsPlayerTurn(data.selectorId === user.id);
+        }
+        if (data.selectorName) setLetterSelectorName(data.selectorName);
+        if (data.deadline) startLetterTimer(new Date(data.deadline));
+        setLetterInput('');
+      });
+
+      socket.on('letter-accepted', (data) => {
+        // Show 3-second reveal overlay for all players
+        if (data.revealDeadline) startRevealTimer(new Date(data.revealDeadline));
+        setShowReveal(true);
       });
 
       socket.on('letter-selected', (data) => {
         if (data.letter) setCurrentLetter(data.letter);
         setPhase('playing');
         startTimer();
+        setShowReveal(false);
+        if (revealTimerRef.current) clearInterval(revealTimerRef.current);
       });
 
       socket.on('player-stopped', (data) => {
@@ -177,7 +222,16 @@ const GameplayScreen = ({ navigation, route }) => {
     if (selectTimeLeft <= 0) return;
     if (selectedCategories.includes(category)) return;
     if (selectedCategories.length >= 8) return;
+    if (hasConfirmed) return;
     selectCategory(gameId, category);
+  };
+
+  const handleConfirmCategories = () => {
+    if (!selectionDeadline) return;
+    if (selectedCategories.length < 6) return;
+    if (hasConfirmed) return;
+    setHasConfirmed(true);
+    confirmCategories(gameId);
   };
 
   const handleLetterSelect = () => {
@@ -222,7 +276,7 @@ const GameplayScreen = ({ navigation, route }) => {
       setAnswers({});
       setSelectedCategories([]);
       setCurrentRound(result.currentRound);
-      setPhase('category-selection');
+      setPhase('letter-selection');
       setHasStoppedFirst(false);
       announcedReadyRef.current = false;
     }
@@ -237,12 +291,15 @@ const GameplayScreen = ({ navigation, route }) => {
         ) : (
           <Text style={styles.instruction}>Waiting for all players to enter this screen. Timer will start at 60s for everyone.</Text>
         )}
+        {(totalPlayers > 0) && (
+          <Text style={styles.instruction}>{confirmedCount}/{totalPlayers} Players ready</Text>
+        )}
         <View style={styles.categoriesGrid}>
           {AVAILABLE_CATEGORIES.map(category => (
             <Chip
               key={category}
               selected={selectedCategories.includes(category)}
-              disabled={!selectionDeadline || selectedCategories.includes(category) || selectedCategories.length >= 8 || selectTimeLeft <= 0}
+              disabled={!selectionDeadline || hasConfirmed || selectedCategories.includes(category) || selectedCategories.length >= 8 || selectTimeLeft <= 0}
               onPress={() => handleCategorySelect(category)}
               style={styles.categoryChip}
               mode="outlined"
@@ -253,11 +310,11 @@ const GameplayScreen = ({ navigation, route }) => {
         </View>
         <Button
           mode="contained"
-          onPress={() => confirmCategories(gameId)}
-          disabled={!selectionDeadline || selectedCategories.length < 6}
+          onPress={handleConfirmCategories}
+          disabled={!selectionDeadline || hasConfirmed || selectedCategories.length < 6}
           style={styles.confirmButton}
         >
-          Confirm ({selectedCategories.length}/6-8)
+          {hasConfirmed ? 'Ready' : `Confirm (${selectedCategories.length}/6-8)`}
         </Button>
         {selectionDeadline && selectTimeLeft <= 0 && (
           <Text style={styles.waitingText}>Time is up. Finalizing categories...</Text>
@@ -271,19 +328,51 @@ const GameplayScreen = ({ navigation, route }) => {
       <Card.Content>
         <Text style={styles.phaseTitle}>Letter Selection</Text>
         {isPlayerTurn ? (
-          <>
-            <Text style={styles.instruction}>Select a random letter for this round</Text>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <Text style={styles.instruction}>You have {letterTimeLeft}s to choose a letter</Text>
+            <TextInput
+              value={letterInput}
+              onChangeText={(t) => setLetterInput((t || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0,1))}
+              placeholder="Enter a letter (A-Z)"
+              style={styles.letterInput}
+              autoCapitalize="characters"
+              maxLength={1}
+              autoFocus
+            />
             <Button
               mode="contained"
-              onPress={handleLetterSelect}
+              onPress={() => selectLetter(gameId, letterInput)}
+              style={styles.acceptButton}
+              disabled={!letterInput || letterTimeLeft <= 0}
+            >
+              Accept Letter
+            </Button>
+            <Button
+              mode="outlined"
+              onPress={() => selectLetter(gameId)}
               style={styles.letterButton}
               icon="dice-3"
             >
-              Select Random Letter
+              Pick Random
             </Button>
-          </>
+            <View style={styles.quickLettersContainer}>
+              {ALPHABET.map((L) => (
+                <Button
+                  key={L}
+                  mode="text"
+                  compact
+                  onPress={() => setLetterInput(L)}
+                  style={styles.quickLetter}
+                  labelStyle={styles.quickLetterLabel}
+                  disabled={letterTimeLeft <= 0}
+                >
+                  {L}
+                </Button>
+              ))}
+            </View>
+          </KeyboardAvoidingView>
         ) : (
-          <Text style={styles.waitingText}>Waiting for player to select letter...</Text>
+          <Text style={styles.waitingText}>Waiting for {letterSelectorName || 'player'} to select a letter... {letterDeadline ? `${letterTimeLeft}s` : ''}</Text>
         )}
       </Card.Content>
     </Card>
@@ -365,6 +454,13 @@ const GameplayScreen = ({ navigation, route }) => {
 
   return (
     <View style={styles.container}>
+      {showReveal && (
+        <View style={styles.revealOverlay} pointerEvents="none">
+          <Animated.View style={[styles.revealBox]}>
+            <Text style={styles.revealText}>Starting in {revealTimeLeft}...</Text>
+          </Animated.View>
+        </View>
+      )}
       {showConfetti && (
         <ConfettiCannon
           ref={confettiRef}
@@ -399,6 +495,8 @@ const AVAILABLE_CATEGORIES = [
   'Profession',
   'Sports'
 ];
+
+const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 const styles = StyleSheet.create({
   container: {
@@ -445,8 +543,57 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.accent,
     marginTop: 20,
   },
+  letterInput: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 24,
+    backgroundColor: '#FFFFFF',
+    textAlign: 'center'
+  },
+  acceptButton: {
+    marginTop: 12,
+    backgroundColor: theme.colors.primary,
+  },
+  quickLettersContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginTop: 12,
+  },
+  quickLetter: {
+    width: '25%',
+    marginVertical: 2,
+  },
+  quickLetterLabel: {
+    fontSize: 16,
+  },
   gameplayContainer: {
     flex: 1,
+  },
+  revealOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  revealBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 24,
+    paddingHorizontal: 32,
+    elevation: 6,
+  },
+  revealText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
   },
   header: {
     backgroundColor: '#FFFFFF',

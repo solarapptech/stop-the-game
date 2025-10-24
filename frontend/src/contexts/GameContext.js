@@ -244,6 +244,9 @@ export const GameProvider = ({ children }) => {
       if (Array.isArray(response.data.game?.categories)) {
         setCategories(response.data.game.categories);
       }
+      if (typeof response.data.game?.currentLetter === 'string') {
+        setCurrentLetter(response.data.game.currentLetter);
+      }
       return { success: true, game: response.data.game };
     } catch (error) {
       return { 
@@ -286,6 +289,7 @@ export const GameProvider = ({ children }) => {
       validateAnswers,
       nextRound,
       getGameState,
+      setCurrentLetter,
       resetGame
     }}>
       {children}

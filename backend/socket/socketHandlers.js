@@ -2,6 +2,8 @@ const Room = require('../models/Room');
 const Game = require('../models/Game');
 const jwt = require('jsonwebtoken');
 const categoryTimers = new Map();
+const letterTimers = new Map();
+const letterRevealTimers = new Map();
 
 module.exports = (io, socket) => {
   // Helper to finalize categories for a game (dedupe, fill to min 6, cap at 8)
@@ -34,6 +36,61 @@ module.exports = (io, socket) => {
         categories: game.categories,
         currentPlayer: (game.letterSelector || '').toString()
       });
+
+      // Immediately start letter selection phase with 20s deadline
+      const selectorId = (game.letterSelector || '').toString();
+      const selectorPlayer = game.players.find(p => (p.user._id || p.user).toString() === selectorId);
+      const selectorName = selectorPlayer?.user?.username || 'Player';
+      const letterDeadline = new Date(Date.now() + 20000);
+      game.letterDeadline = letterDeadline;
+      await game.save();
+
+      io.to(`game-${gameId}`).emit('letter-selection-started', {
+        gameId,
+        selectorId,
+        selectorName,
+        deadline: letterDeadline
+      });
+
+      // Schedule auto-pick after 20s if not chosen
+      const existingL = letterTimers.get(game._id.toString());
+      if (existingL) clearTimeout(existingL);
+      const selTimer = setTimeout(async () => {
+        letterTimers.delete(game._id.toString());
+        try {
+          const g = await Game.findById(game._id);
+          if (g && g.status === 'selecting_letter' && !g.currentLetter) {
+            // Auto-pick a random letter and proceed with reveal
+            const autoLetter = g.selectRandomLetter();
+            g.letterDeadline = null;
+            await g.save();
+
+            const revealDeadline = new Date(Date.now() + 3000);
+            io.to(`game-${gameId}`).emit('letter-accepted', {
+              letter: g.currentLetter,
+              revealDeadline
+            });
+
+            const existingR = letterRevealTimers.get(game._id.toString());
+            if (existingR) clearTimeout(existingR);
+            const revTimer = setTimeout(async () => {
+              letterRevealTimers.delete(game._id.toString());
+              const gg = await Game.findById(game._id);
+              if (!gg) return;
+              gg.status = 'playing';
+              gg.roundStartTime = new Date();
+              await gg.save();
+              io.to(`game-${gameId}`).emit('letter-selected', {
+                letter: gg.currentLetter
+              });
+            }, 3000);
+            letterRevealTimers.set(game._id.toString(), revTimer);
+          }
+        } catch (e) {
+          console.error('Auto-pick letter error:', e);
+        }
+      }, 20000);
+      letterTimers.set(game._id.toString(), selTimer);
     } catch (error) {
       console.error('Finalize categories error:', error);
     }
@@ -253,12 +310,26 @@ module.exports = (io, socket) => {
 
       // Send current category selection state if applicable
       try {
-        const game = await Game.findById(gameId).select('status categories categoryDeadline letterSelector');
-        if (game && game.status === 'selecting_categories' && game.categoryDeadline) {
+        const game = await Game.findById(gameId).populate('players.user', 'username');
+        if (!game) return;
+        if (game.status === 'selecting_categories' && game.categoryDeadline) {
           socket.emit('category-selection-started', {
             gameId,
             categories: game.categories || [],
-            deadline: game.categoryDeadline
+            deadline: game.categoryDeadline,
+            confirmed: (game.confirmedPlayers || []).length,
+            total: (game.players || []).length
+          });
+        }
+        if (game.status === 'selecting_letter' && game.letterDeadline) {
+          const selectorId = (game.letterSelector || '').toString();
+          const selectorPlayer = (game.players || []).find(p => (p.user._id || p.user).toString() === selectorId);
+          const selectorName = selectorPlayer?.user?.username || 'Player';
+          socket.emit('letter-selection-started', {
+            gameId,
+            selectorId,
+            selectorName,
+            deadline: game.letterDeadline
           });
         }
       } catch (e) {}
@@ -294,7 +365,9 @@ module.exports = (io, socket) => {
         io.to(`game-${gameId}`).emit('category-selection-started', {
           gameId,
           categories: game.categories || [],
-          deadline
+          deadline,
+          confirmed: (game.confirmedPlayers || []).length,
+          total: (game.players || []).length
         });
 
         // Schedule finalize after 60s
@@ -319,6 +392,12 @@ module.exports = (io, socket) => {
 
       if (!socket.userId) return;
       if (!allowed.includes(category)) return;
+
+      // Prevent confirmed players from selecting more
+      const gCheck = await Game.findById(gameId).select('status confirmedPlayers');
+      if (!gCheck) return;
+      if (gCheck.status !== 'selecting_categories') return;
+      if ((gCheck.confirmedPlayers || []).some(id => id.toString() === socket.userId.toString())) return;
 
       // Atomic add to avoid duplicates under race
       await Game.updateOne(
@@ -376,7 +455,7 @@ module.exports = (io, socket) => {
     }
   });
 
-  // Letter selected (persist and broadcast)
+  // Letter selected: only selector can choose; accept then reveal with 3s countdown
   socket.on('letter-selected', async (data) => {
     try {
       const { gameId, letter } = data;
@@ -385,20 +464,48 @@ module.exports = (io, socket) => {
       if (game.status !== 'selecting_letter') return;
       if (game.letterSelector.toString() !== socket.userId.toString()) return;
 
-      if (letter && /^[A-Za-z]$/.test(letter) && !game.usedLetters.includes(letter.toUpperCase())) {
-        game.currentLetter = letter.toUpperCase();
-        game.usedLetters.push(letter.toUpperCase());
-      } else {
-        game.selectRandomLetter();
+      // Clear letter selection timer if running
+      const lt = letterTimers.get(game._id.toString());
+      if (lt) {
+        clearTimeout(lt);
+        letterTimers.delete(game._id.toString());
       }
 
-      game.status = 'playing';
-      game.roundStartTime = new Date();
+      let chosen = null;
+      if (letter && /^[A-Za-z]$/.test(letter)) {
+        const up = letter.toUpperCase();
+        if (!game.usedLetters.includes(up)) {
+          game.currentLetter = up;
+          game.usedLetters.push(up);
+          chosen = up;
+        }
+      }
+      if (!chosen) {
+        chosen = game.selectRandomLetter();
+      }
+      game.letterDeadline = null;
       await game.save();
 
-      io.to(`game-${gameId}`).emit('letter-selected', {
-        letter: game.currentLetter
+      const revealDeadline = new Date(Date.now() + 3000);
+      io.to(`game-${gameId}`).emit('letter-accepted', {
+        letter: game.currentLetter,
+        revealDeadline
       });
+
+      const existingR = letterRevealTimers.get(game._id.toString());
+      if (existingR) clearTimeout(existingR);
+      const revTimer = setTimeout(async () => {
+        letterRevealTimers.delete(game._id.toString());
+        const gg = await Game.findById(game._id);
+        if (!gg) return;
+        gg.status = 'playing';
+        gg.roundStartTime = new Date();
+        await gg.save();
+        io.to(`game-${gameId}`).emit('letter-selected', {
+          letter: gg.currentLetter
+        });
+      }, 3000);
+      letterRevealTimers.set(game._id.toString(), revTimer);
     } catch (error) {
       console.error('Letter selected socket error:', error);
     }

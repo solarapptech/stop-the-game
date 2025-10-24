@@ -65,6 +65,10 @@ const gameSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  letterDeadline: {
+    type: Date,
+    default: null
+  },
   roundStartTime: {
     type: Date,
     default: null
