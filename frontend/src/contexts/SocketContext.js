@@ -154,6 +154,12 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
+  const categoryPhaseReady = (gameId) => {
+    if (socket && connected && isAuthenticated) {
+      socket.emit('category-phase-ready', gameId);
+    }
+  };
+
   const deleteRoom = (roomId) => {
     if (socket && connected && isAuthenticated) {
       socket.emit('delete-room', roomId);
@@ -175,6 +181,7 @@ export const SocketProvider = ({ children }) => {
       selectLetter,
       stopRound,
       confirmCategories,
+      categoryPhaseReady,
       deleteRoom
     }}>
       {children}

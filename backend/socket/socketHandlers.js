@@ -187,7 +187,7 @@ module.exports = (io, socket) => {
     }
   });
 
-  // Start game (create Game, start category selection phase with 12s deadline)
+  // Start game (create Game, wait for clients to be ready for category selection)
   socket.on('start-game', async (roomId) => {
     try {
       if (!socket.userId) {
@@ -218,10 +218,11 @@ module.exports = (io, socket) => {
         })),
         letterSelector: (room.players[0].user._id || room.players[0].user)
       });
-      // Start category selection countdown
-      const deadline = new Date(Date.now() + 12000);
-      game.categoryDeadline = deadline;
+      // Initialize selecting_categories phase, but do NOT start deadline yet
+      game.categoryDeadline = null;
       game.status = 'selecting_categories';
+      game.confirmedPlayers = [];
+      game.categoryReadyPlayers = [];
       await game.save();
 
       // Update room status
@@ -236,19 +237,7 @@ module.exports = (io, socket) => {
         countdown: 0
       });
 
-      // Also announce category phase start (for those still in the room)
-      io.to(roomId).emit('category-selection-started', {
-        gameId: game._id,
-        deadline,
-        categories: game.categories
-      });
-
-      // Schedule finalize
-      const timer = setTimeout(async () => {
-        categoryTimers.delete(game._id.toString());
-        await finalizeCategories(game._id.toString());
-      }, 12000);
-      categoryTimers.set(game._id.toString(), timer);
+      // Do not start selection timer yet; wait for all players to be ready
     } catch (error) {
       console.error('Start game socket error:', error);
       socket.emit('error', { message: 'Failed to start game' });
@@ -265,7 +254,7 @@ module.exports = (io, socket) => {
       // Send current category selection state if applicable
       try {
         const game = await Game.findById(gameId).select('status categories categoryDeadline letterSelector');
-        if (game && game.status === 'selecting_categories') {
+        if (game && game.status === 'selecting_categories' && game.categoryDeadline) {
           socket.emit('category-selection-started', {
             gameId,
             categories: game.categories || [],
@@ -276,6 +265,49 @@ module.exports = (io, socket) => {
     } catch (error) {
       console.error('Join game socket error:', error);
       socket.emit('error', { message: 'Failed to join game' });
+    }
+  });
+
+  // Players signal they are inside the Select Categories screen
+  socket.on('category-phase-ready', async (gameId) => {
+    try {
+      if (!socket.userId) return;
+      const game = await Game.findById(gameId).populate('players.user', 'username');
+      if (!game) return;
+      if (game.status !== 'selecting_categories') return;
+
+      // Add to ready list if not present
+      const already = (game.categoryReadyPlayers || []).some(id => id.toString() === socket.userId.toString());
+      if (!already) {
+        game.categoryReadyPlayers.push(socket.userId);
+        await game.save();
+      }
+
+      // If all players are ready and no deadline yet, start 60s timer
+      const allReady = game.categoryReadyPlayers.length >= game.players.length;
+      const noDeadline = !game.categoryDeadline;
+      if (allReady && noDeadline) {
+        const deadline = new Date(Date.now() + 60000);
+        game.categoryDeadline = deadline;
+        await game.save();
+
+        io.to(`game-${gameId}`).emit('category-selection-started', {
+          gameId,
+          categories: game.categories || [],
+          deadline
+        });
+
+        // Schedule finalize after 60s
+        const existing = categoryTimers.get(game._id.toString());
+        if (existing) clearTimeout(existing);
+        const timer = setTimeout(async () => {
+          categoryTimers.delete(game._id.toString());
+          await finalizeCategories(game._id.toString());
+        }, 60000);
+        categoryTimers.set(game._id.toString(), timer);
+      }
+    } catch (error) {
+      console.error('Category phase ready socket error:', error);
     }
   });
 

@@ -10,7 +10,7 @@ import theme from '../theme';
 const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
   const { user } = useAuth();
-  const { socket, joinGame, selectCategory, selectLetter, stopRound, confirmCategories } = useSocket();
+  const { socket, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady } = useSocket();
   const { 
     gameState, 
     categories, 
@@ -25,7 +25,8 @@ const GameplayScreen = ({ navigation, route }) => {
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [answers, setAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(60);
-  const [selectTimeLeft, setSelectTimeLeft] = useState(12);
+  const [selectTimeLeft, setSelectTimeLeft] = useState(60);
+  const [selectionDeadline, setSelectionDeadline] = useState(null);
   const [roundResults, setRoundResults] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [playerScores, setPlayerScores] = useState({});
@@ -36,6 +37,7 @@ const GameplayScreen = ({ navigation, route }) => {
   
   const timerRef = useRef(null);
   const selectTimerRef = useRef(null);
+  const announcedReadyRef = useRef(false);
   const confettiRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -49,6 +51,14 @@ const GameplayScreen = ({ navigation, route }) => {
       if (selectTimerRef.current) clearInterval(selectTimerRef.current);
     };
   }, []);
+
+  // When entering category-selection phase, signal readiness exactly once
+  useEffect(() => {
+    if (phase === 'category-selection' && categoryPhaseReady && !announcedReadyRef.current) {
+      categoryPhaseReady(gameId);
+      announcedReadyRef.current = true;
+    }
+  }, [phase, categoryPhaseReady, gameId]);
 
   const loadGameState = async () => {
     const result = await getGameState(gameId);
@@ -85,6 +95,7 @@ const GameplayScreen = ({ navigation, route }) => {
     };
     tick();
     selectTimerRef.current = setInterval(tick, 500);
+    setSelectionDeadline(deadline);
   };
 
   const setupSocketListeners = () => {
@@ -101,6 +112,7 @@ const GameplayScreen = ({ navigation, route }) => {
 
       socket.on('categories-confirmed', (data) => {
         if (selectTimerRef.current) clearInterval(selectTimerRef.current);
+        setSelectionDeadline(null);
         if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
         setPhase('letter-selection');
         setIsPlayerTurn(data.currentPlayer === user.id);
@@ -212,6 +224,7 @@ const GameplayScreen = ({ navigation, route }) => {
       setCurrentRound(result.currentRound);
       setPhase('category-selection');
       setHasStoppedFirst(false);
+      announcedReadyRef.current = false;
     }
   };
 
@@ -219,13 +232,17 @@ const GameplayScreen = ({ navigation, route }) => {
     <Card style={styles.card}>
       <Card.Content>
         <Text style={styles.phaseTitle}>Select Categories</Text>
-        <Text style={styles.instruction}>Pick 6-8 categories. Time left: {selectTimeLeft}s</Text>
+        {selectionDeadline ? (
+          <Text style={styles.instruction}>Pick 6-8 categories. Time left: {selectTimeLeft}s</Text>
+        ) : (
+          <Text style={styles.instruction}>Waiting for all players to enter this screen. Timer will start at 60s for everyone.</Text>
+        )}
         <View style={styles.categoriesGrid}>
           {AVAILABLE_CATEGORIES.map(category => (
             <Chip
               key={category}
               selected={selectedCategories.includes(category)}
-              disabled={selectedCategories.includes(category) || selectedCategories.length >= 8 || selectTimeLeft <= 0}
+              disabled={!selectionDeadline || selectedCategories.includes(category) || selectedCategories.length >= 8 || selectTimeLeft <= 0}
               onPress={() => handleCategorySelect(category)}
               style={styles.categoryChip}
               mode="outlined"
@@ -237,12 +254,12 @@ const GameplayScreen = ({ navigation, route }) => {
         <Button
           mode="contained"
           onPress={() => confirmCategories(gameId)}
-          disabled={selectedCategories.length < 6}
+          disabled={!selectionDeadline || selectedCategories.length < 6}
           style={styles.confirmButton}
         >
           Confirm ({selectedCategories.length}/6-8)
         </Button>
-        {selectTimeLeft <= 0 && (
+        {selectionDeadline && selectTimeLeft <= 0 && (
           <Text style={styles.waitingText}>Time is up. Finalizing categories...</Text>
         )}
       </Card.Content>

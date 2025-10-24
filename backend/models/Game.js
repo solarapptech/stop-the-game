@@ -45,6 +45,10 @@ const gameSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
+  categoryReadyPlayers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   currentLetter: {
     type: String,
     default: null
