@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Alert, Clipboard } from 'react-native';
 import { Text, TextInput, Button, Switch, RadioButton, Card, Chip } from 'react-native-paper';
 import { useGame } from '../contexts/GameContext';
@@ -10,7 +10,21 @@ const CreateRoomScreen = ({ navigation }) => {
   const [isPublic, setIsPublic] = useState(true);
   const [rounds, setRounds] = useState('3');
   const [loading, setLoading] = useState(false);
-  const { createRoom } = useGame();
+  const { createRoom, getPublicRooms } = useGame();
+
+  // Auto-generate room name on mount
+  useEffect(() => {
+    const generateRoomName = async () => {
+      const result = await getPublicRooms();
+      if (result.success) {
+        const roomCount = result.rooms?.length || 0;
+        setRoomName(`Room ${roomCount + 1}`);
+      } else {
+        setRoomName('Room 1');
+      }
+    };
+    generateRoomName();
+  }, []);
 
   const handleCreateRoom = async () => {
     if (!roomName.trim()) {

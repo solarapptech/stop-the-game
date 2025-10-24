@@ -1,8 +1,43 @@
 const Room = require('../models/Room');
 const Game = require('../models/Game');
 const jwt = require('jsonwebtoken');
+const categoryTimers = new Map();
 
 module.exports = (io, socket) => {
+  // Helper to finalize categories for a game (dedupe, fill to min 6, cap at 8)
+  const finalizeCategories = async (gameId) => {
+    try {
+      const game = await Game.findById(gameId).populate('players.user', 'username');
+      if (!game || game.status !== 'selecting_categories') return;
+
+      const allowed = ['Name', 'Last Name', 'City/Country', 'Animal', 'Fruit/Food', 'Color', 'Object', 'Brand', 'Profession', 'Sports'];
+      // Deduplicate
+      game.categories = Array.from(new Set(game.categories));
+
+      // Fill to min 6
+      const remaining = allowed.filter(c => !game.categories.includes(c));
+      while (game.categories.length < 6 && remaining.length > 0) {
+        const idx = Math.floor(Math.random() * remaining.length);
+        game.categories.push(remaining.splice(idx, 1)[0]);
+      }
+
+      // Cap at 8
+      if (game.categories.length > 8) {
+        game.categories = game.categories.slice(0, 8);
+      }
+
+      game.status = 'selecting_letter';
+      game.categoryDeadline = null;
+      await game.save();
+
+      io.to(`game-${gameId}`).emit('categories-confirmed', {
+        categories: game.categories,
+        currentPlayer: (game.letterSelector || '').toString()
+      });
+    } catch (error) {
+      console.error('Finalize categories error:', error);
+    }
+  };
   // Authenticate socket connection
   socket.on('authenticate', async (token) => {
     try {
@@ -152,26 +187,68 @@ module.exports = (io, socket) => {
     }
   });
 
-  // Start game
+  // Start game (create Game, start category selection phase with 12s deadline)
   socket.on('start-game', async (roomId) => {
     try {
       if (!socket.userId) {
         return socket.emit('error', { message: 'Not authenticated' });
       }
 
-      const room = await Room.findById(roomId);
+      const room = await Room.findById(roomId).populate('players.user');
       if (!room) {
         return socket.emit('error', { message: 'Room not found' });
       }
 
-      if (room.owner.toString() !== socket.userId) {
+      if (room.owner.toString() !== socket.userId.toString()) {
         return socket.emit('error', { message: 'Only owner can start game' });
       }
 
+      if (!(room.players && room.players.length >= 2)) {
+        return socket.emit('error', { message: 'Need at least 2 players to start' });
+      }
+
+      // Create game
+      const game = new Game({
+        room: room._id,
+        rounds: room.rounds,
+        players: room.players.map(p => ({
+          user: p.user._id || p.user,
+          score: 0,
+          answers: []
+        })),
+        letterSelector: (room.players[0].user._id || room.players[0].user)
+      });
+      // Start category selection countdown
+      const deadline = new Date(Date.now() + 12000);
+      game.categoryDeadline = deadline;
+      game.status = 'selecting_categories';
+      await game.save();
+
+      // Update room status
+      room.status = 'in_progress';
+      room.currentGame = game._id;
+      await room.save();
+
+      // Notify clients
       io.to(roomId).emit('game-starting', {
         roomId,
-        countdown: 3
+        gameId: game._id,
+        countdown: 0
       });
+
+      // Also announce category phase start (for those still in the room)
+      io.to(roomId).emit('category-selection-started', {
+        gameId: game._id,
+        deadline,
+        categories: game.categories
+      });
+
+      // Schedule finalize
+      const timer = setTimeout(async () => {
+        categoryTimers.delete(game._id.toString());
+        await finalizeCategories(game._id.toString());
+      }, 12000);
+      categoryTimers.set(game._id.toString(), timer);
     } catch (error) {
       console.error('Start game socket error:', error);
       socket.emit('error', { message: 'Failed to start game' });
@@ -184,34 +261,111 @@ module.exports = (io, socket) => {
       socket.join(`game-${gameId}`);
       socket.gameId = gameId;
       socket.emit('game-joined', { gameId });
+
+      // Send current category selection state if applicable
+      try {
+        const game = await Game.findById(gameId).select('status categories categoryDeadline letterSelector');
+        if (game && game.status === 'selecting_categories') {
+          socket.emit('category-selection-started', {
+            gameId,
+            categories: game.categories || [],
+            deadline: game.categoryDeadline
+          });
+        }
+      } catch (e) {}
     } catch (error) {
       console.error('Join game socket error:', error);
       socket.emit('error', { message: 'Failed to join game' });
     }
   });
 
-  // Category selected
+  // Category selected (unique across game, max 8)
   socket.on('category-selected', async (data) => {
     try {
       const { gameId, category } = data;
-      
-      io.to(`game-${gameId}`).emit('category-update', {
-        category,
-        userId: socket.userId
+      const allowed = ['Name', 'Last Name', 'City/Country', 'Animal', 'Fruit/Food', 'Color', 'Object', 'Brand', 'Profession', 'Sports'];
+
+      if (!socket.userId) return;
+      if (!allowed.includes(category)) return;
+
+      // Atomic add to avoid duplicates under race
+      await Game.updateOne(
+        {
+          _id: gameId,
+          status: 'selecting_categories',
+          categories: { $ne: category },
+          $expr: { $lt: [ { $size: "$categories" }, 8 ] }
+        },
+        { $addToSet: { categories: category } }
+      );
+
+      const updated = await Game.findById(gameId).select('categories');
+      if (!updated) return;
+
+      io.to(`game-${gameId}`).emit('category-selected', {
+        categories: updated.categories
       });
     } catch (error) {
       console.error('Category selected socket error:', error);
     }
   });
 
-  // Letter selected
+  // Confirm categories (track per-player confirmations, finalize early if all confirm and min reached)
+  socket.on('confirm-categories', async (gameId) => {
+    try {
+      if (!socket.userId) return;
+      const game = await Game.findById(gameId).populate('players.user', 'username');
+      if (!game) return;
+      if (game.status !== 'selecting_categories') return;
+
+      const already = game.confirmedPlayers.some(id => id.toString() === socket.userId.toString());
+      if (!already) {
+        game.confirmedPlayers.push(socket.userId);
+        await game.save();
+      }
+
+      const allConfirmed = game.confirmedPlayers.length >= game.players.length;
+      const minReached = game.categories.length >= 6;
+      if (allConfirmed && minReached) {
+        const t = categoryTimers.get(game._id.toString());
+        if (t) {
+          clearTimeout(t);
+          categoryTimers.delete(game._id.toString());
+        }
+        await finalizeCategories(game._id.toString());
+      } else {
+        io.to(`game-${gameId}`).emit('confirm-update', {
+          confirmed: game.confirmedPlayers.length,
+          total: game.players.length
+        });
+      }
+    } catch (error) {
+      console.error('Confirm categories socket error:', error);
+    }
+  });
+
+  // Letter selected (persist and broadcast)
   socket.on('letter-selected', async (data) => {
     try {
       const { gameId, letter } = data;
-      
-      io.to(`game-${gameId}`).emit('letter-chosen', {
-        letter,
-        roundStarted: true
+      const game = await Game.findById(gameId);
+      if (!game) return;
+      if (game.status !== 'selecting_letter') return;
+      if (game.letterSelector.toString() !== socket.userId.toString()) return;
+
+      if (letter && /^[A-Za-z]$/.test(letter) && !game.usedLetters.includes(letter.toUpperCase())) {
+        game.currentLetter = letter.toUpperCase();
+        game.usedLetters.push(letter.toUpperCase());
+      } else {
+        game.selectRandomLetter();
+      }
+
+      game.status = 'playing';
+      game.roundStartTime = new Date();
+      await game.save();
+
+      io.to(`game-${gameId}`).emit('letter-selected', {
+        letter: game.currentLetter
       });
     } catch (error) {
       console.error('Letter selected socket error:', error);
@@ -222,9 +376,15 @@ module.exports = (io, socket) => {
   socket.on('player-stopped', async (data) => {
     try {
       const { gameId } = data;
-      
-      io.to(`game-${gameId}`).emit('round-stopped', {
-        stoppedBy: socket.userId,
+      const User = require('../models/User');
+      let username = 'Player';
+      try {
+        const u = await User.findById(socket.userId).select('username');
+        if (u && u.username) username = u.username;
+      } catch (e) {}
+      io.to(`game-${gameId}`).emit('player-stopped', {
+        playerId: socket.userId,
+        username,
         timestamp: new Date()
       });
     } catch (error) {

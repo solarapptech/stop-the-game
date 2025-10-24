@@ -10,7 +10,7 @@ import theme from '../theme';
 const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
   const { user } = useAuth();
-  const { socket, selectCategory, selectLetter, stopRound } = useSocket();
+  const { socket, joinGame, selectCategory, selectLetter, stopRound, confirmCategories } = useSocket();
   const { 
     gameState, 
     categories, 
@@ -25,6 +25,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [answers, setAnswers] = useState({});
   const [timeLeft, setTimeLeft] = useState(60);
+  const [selectTimeLeft, setSelectTimeLeft] = useState(12);
   const [roundResults, setRoundResults] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [playerScores, setPlayerScores] = useState({});
@@ -34,49 +35,79 @@ const GameplayScreen = ({ navigation, route }) => {
   const [hasStoppedFirst, setHasStoppedFirst] = useState(false);
   
   const timerRef = useRef(null);
+  const selectTimerRef = useRef(null);
   const confettiRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadGameState();
     setupSocketListeners();
+    if (joinGame && gameId) joinGame(gameId);
     
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (selectTimerRef.current) clearInterval(selectTimerRef.current);
     };
   }, []);
 
   const loadGameState = async () => {
     const result = await getGameState(gameId);
     if (result.success) {
-      setCurrentRound(result.game.currentRound);
-      setTotalRounds(result.game.totalRounds);
-      setPhase(result.game.phase);
-      setPlayerScores(result.game.standings);
+      const g = result.game;
+      setCurrentRound(g.currentRound);
+      setTotalRounds(g.rounds);
+      setPlayerScores(g.standings);
+      if (Array.isArray(g.categories)) setSelectedCategories(g.categories);
+      if (g.currentLetter) setCurrentLetter(g.currentLetter);
+      const mapStatus = (s) => {
+        switch (s) {
+          case 'selecting_categories': return 'category-selection';
+          case 'selecting_letter': return 'letter-selection';
+          case 'playing': return 'playing';
+          case 'validating': return 'validation';
+          case 'round_ended': return 'round-end';
+          default: return 'category-selection';
+        }
+      };
+      setPhase(mapStatus(g.status));
     }
+  };
+
+  const startSelectionTimer = (deadline) => {
+    if (selectTimerRef.current) clearInterval(selectTimerRef.current);
+    const tick = () => {
+      const ms = deadline instanceof Date ? (deadline.getTime() - Date.now()) : 0;
+      const secs = Math.max(0, Math.ceil(ms / 1000));
+      setSelectTimeLeft(secs);
+      if (secs === 0) {
+        clearInterval(selectTimerRef.current);
+      }
+    };
+    tick();
+    selectTimerRef.current = setInterval(tick, 500);
   };
 
   const setupSocketListeners = () => {
     if (socket) {
       socket.on('category-selection-started', (data) => {
         setPhase('category-selection');
-        setIsPlayerTurn(data.currentPlayer === user.id);
+        if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
+        if (data.deadline) startSelectionTimer(new Date(data.deadline));
       });
 
       socket.on('category-selected', (data) => {
-        setSelectedCategories(data.categories);
+        if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
       });
 
       socket.on('categories-confirmed', (data) => {
-        // Refresh game state from server to get authoritative categories
-        getGameState(gameId);
+        if (selectTimerRef.current) clearInterval(selectTimerRef.current);
+        if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
         setPhase('letter-selection');
         setIsPlayerTurn(data.currentPlayer === user.id);
       });
 
       socket.on('letter-selected', (data) => {
-        // Refresh game state to get the selected letter and any updates
-        getGameState(gameId);
+        if (data.letter) setCurrentLetter(data.letter);
         setPhase('playing');
         startTimer();
       });
@@ -131,13 +162,9 @@ const GameplayScreen = ({ navigation, route }) => {
   };
 
   const handleCategorySelect = (category) => {
-    if (!isPlayerTurn) return;
-    
-    const newCategories = selectedCategories.includes(category)
-      ? selectedCategories.filter(c => c !== category)
-      : [...selectedCategories, category];
-    
-    setSelectedCategories(newCategories);
+    if (selectTimeLeft <= 0) return;
+    if (selectedCategories.includes(category)) return;
+    if (selectedCategories.length >= 8) return;
     selectCategory(gameId, category);
   };
 
@@ -192,33 +219,31 @@ const GameplayScreen = ({ navigation, route }) => {
     <Card style={styles.card}>
       <Card.Content>
         <Text style={styles.phaseTitle}>Select Categories</Text>
-        {isPlayerTurn ? (
-          <>
-            <Text style={styles.instruction}>Choose 6-8 categories for this round</Text>
-            <View style={styles.categoriesGrid}>
-              {AVAILABLE_CATEGORIES.map(category => (
-                <Chip
-                  key={category}
-                  selected={selectedCategories.includes(category)}
-                  onPress={() => handleCategorySelect(category)}
-                  style={styles.categoryChip}
-                  mode="outlined"
-                >
-                  {category}
-                </Chip>
-              ))}
-            </View>
-            <Button
-              mode="contained"
-              onPress={() => selectCategory(gameId, null)}
-              disabled={selectedCategories.length < 6 || selectedCategories.length > 8}
-              style={styles.confirmButton}
+        <Text style={styles.instruction}>Pick 6-8 categories. Time left: {selectTimeLeft}s</Text>
+        <View style={styles.categoriesGrid}>
+          {AVAILABLE_CATEGORIES.map(category => (
+            <Chip
+              key={category}
+              selected={selectedCategories.includes(category)}
+              disabled={selectedCategories.includes(category) || selectedCategories.length >= 8 || selectTimeLeft <= 0}
+              onPress={() => handleCategorySelect(category)}
+              style={styles.categoryChip}
+              mode="outlined"
             >
-              Confirm Categories ({selectedCategories.length}/6-8)
-            </Button>
-          </>
-        ) : (
-          <Text style={styles.waitingText}>Waiting for player to select categories...</Text>
+              {category}
+            </Chip>
+          ))}
+        </View>
+        <Button
+          mode="contained"
+          onPress={() => confirmCategories(gameId)}
+          disabled={selectedCategories.length < 6}
+          style={styles.confirmButton}
+        >
+          Confirm ({selectedCategories.length}/6-8)
+        </Button>
+        {selectTimeLeft <= 0 && (
+          <Text style={styles.waitingText}>Time is up. Finalizing categories...</Text>
         )}
       </Card.Content>
     </Card>
@@ -346,9 +371,16 @@ const GameplayScreen = ({ navigation, route }) => {
 };
 
 const AVAILABLE_CATEGORIES = [
-  'Name', 'Country', 'City', 'Animal', 'Plant', 'Food',
-  'Brand', 'Movie', 'Song', 'Color', 'Profession', 'Sport',
-  'Celebrity', 'Object', 'Verb', 'Adjective'
+  'Name',
+  'Last Name',
+  'City/Country',
+  'Animal',
+  'Fruit/Food',
+  'Color',
+  'Object',
+  'Brand',
+  'Profession',
+  'Sports'
 ];
 
 const styles = StyleSheet.create({

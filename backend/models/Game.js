@@ -41,6 +41,10 @@ const gameSchema = new mongoose.Schema({
       submittedAt: Date
     }]
   }],
+  confirmedPlayers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   currentLetter: {
     type: String,
     default: null
@@ -51,6 +55,10 @@ const gameSchema = new mongoose.Schema({
   letterSelector: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
+    default: null
+  },
+  categoryDeadline: {
+    type: Date,
     default: null
   },
   roundStartTime: {

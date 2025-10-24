@@ -40,6 +40,9 @@ const io = new Server(server, {
   }
 });
 
+// Expose io to routes via app instance
+app.set('io', io);
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes

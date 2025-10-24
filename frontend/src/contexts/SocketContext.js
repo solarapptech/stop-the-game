@@ -148,6 +148,12 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
+  const confirmCategories = (gameId) => {
+    if (socket && connected && isAuthenticated) {
+      socket.emit('confirm-categories', gameId);
+    }
+  };
+
   const deleteRoom = (roomId) => {
     if (socket && connected && isAuthenticated) {
       socket.emit('delete-room', roomId);
@@ -168,6 +174,7 @@ export const SocketProvider = ({ children }) => {
       selectCategory,
       selectLetter,
       stopRound,
+      confirmCategories,
       deleteRoom
     }}>
       {children}

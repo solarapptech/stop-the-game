@@ -241,6 +241,9 @@ export const GameProvider = ({ children }) => {
     try {
       const response = await axios.get(`${API_URL}/game/${gameId}`);
       setGameState(response.data.game);
+      if (Array.isArray(response.data.game?.categories)) {
+        setCategories(response.data.game.categories);
+      }
       return { success: true, game: response.data.game };
     } catch (error) {
       return { 

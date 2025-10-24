@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { Text, Button, Card, List, Avatar, Chip, IconButton, TextInput } from 'react-native-paper';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
@@ -23,6 +23,7 @@ const RoomScreen = ({ navigation, route }) => {
   const messagesRef = useRef(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [inviteCode, setInviteCode] = useState(null);
+  const [isChatActive, setIsChatActive] = useState(false);
 
   // Initialize players from currentRoom when component mounts
   useEffect(() => {
@@ -291,7 +292,13 @@ const RoomScreen = ({ navigation, route }) => {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        scrollEnabled={!isChatActive}
+        onTouchStartCapture={() => setIsChatActive(false)}
+      >
         {/* Room Info */}
         <Card style={styles.card}>
           <Card.Content>
@@ -379,53 +386,61 @@ const RoomScreen = ({ navigation, route }) => {
         {/* Chat */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.sectionTitle}>Chat</Text>
-            <View style={styles.chatContainer}>
-              <ScrollView
-                ref={messagesRef}
-                style={styles.messagesContainer}
-                keyboardShouldPersistTaps="handled"
-                nestedScrollEnabled
-                onScroll={handleMessagesScroll}
-                scrollEventThrottle={16}
-                onContentSizeChange={handleMessagesContentSizeChange}
-              >
-                {messages.map((msg, index) => (
-                  <View key={index} style={styles.message}>
-                    {msg.type === 'system' ? (
-                      <Text style={styles.systemMessage}>{msg.text}</Text>
-                    ) : (
-                      <Text style={styles.chatMessage}>
-                        <Text style={styles.chatUsername}>{msg.username}: </Text>
-                        {msg.text}
-                      </Text>
-                    )}
-                  </View>
-                ))}
-              </ScrollView>
-              <View style={styles.chatInput}>
-                <TextInput
-                  ref={inputRef}
-                  value={messageInput}
-                  onChangeText={setMessageInput}
-                  onFocus={() => setInputFocused(true)}
-                  onBlur={() => setInputFocused(false)}
-                  placeholder="Type a message..."
-                  style={styles.messageInput}
-                  mode="outlined"
-                  dense
-                  blurOnSubmit={false}
-                  returnKeyType="send"
-                  onSubmitEditing={handleSendMessage}
-                  right={
-                    <TextInput.Icon
-                      icon="send"
-                      onPress={handleSendMessage}
-                      disabled={!messageInput.trim()}
-                    />
-                  }
-                />
-              </View>
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <Text style={styles.sectionTitle}>Chat</Text>
+            </TouchableWithoutFeedback>
+            <View 
+              style={[styles.chatContainer, isChatActive && styles.chatContainerActive]}
+              onTouchStart={() => setIsChatActive(true)}
+            >
+                <ScrollView
+                  ref={messagesRef}
+                  style={styles.messagesContainer}
+                  contentContainerStyle={styles.messagesContentContainer}
+                  keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled
+                  onScroll={handleMessagesScroll}
+                  scrollEventThrottle={16}
+                  onContentSizeChange={handleMessagesContentSizeChange}
+                  onScrollBeginDrag={() => setIsChatActive(true)}
+                  showsVerticalScrollIndicator
+                >
+                  {messages.map((msg, index) => (
+                    <View key={index} style={styles.message}>
+                      {msg.type === 'system' ? (
+                        <Text style={styles.systemMessage}>{msg.text}</Text>
+                      ) : (
+                        <Text style={styles.chatMessage}>
+                          <Text style={styles.chatUsername}>{msg.username}: </Text>
+                          {msg.text}
+                        </Text>
+                      )}
+                    </View>
+                  ))}
+                </ScrollView>
+                <View style={styles.chatInput}>
+                  <TextInput
+                    ref={inputRef}
+                    value={messageInput}
+                    onChangeText={setMessageInput}
+                    onFocus={() => setInputFocused(true)}
+                    onBlur={() => setInputFocused(false)}
+                    placeholder="Type a message..."
+                    style={styles.messageInput}
+                    mode="outlined"
+                    dense
+                    blurOnSubmit={false}
+                    returnKeyType="send"
+                    onSubmitEditing={handleSendMessage}
+                    right={
+                      <TextInput.Icon
+                        icon="send"
+                        onPress={handleSendMessage}
+                        disabled={!messageInput.trim()}
+                      />
+                    }
+                  />
+                </View>
             </View>
           </Card.Content>
         </Card>
@@ -536,14 +551,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chatContainer: {
-    height: 200,
+    height: 260,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    borderRadius: 10,
+  },
+  chatContainerActive: {
+    borderWidth: 2,
+    borderColor: '#FFF9C4',
   },
   messagesContainer: {
     flex: 1,
     backgroundColor: '#FAFAFA',
     borderRadius: 10,
-    padding: 10,
     marginBottom: 10,
+  },
+  messagesContentContainer: {
+    padding: 10,
+    paddingBottom: 20,
   },
   message: {
     marginBottom: 5,
