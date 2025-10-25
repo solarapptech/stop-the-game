@@ -10,7 +10,7 @@ import theme from '../theme';
 const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
   const { user } = useAuth();
-  const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound } = useSocket();
+  const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound, playAgainReady } = useSocket();
   const userId = (user && (user.id || user._id)) || null;
   const { 
     gameState, 
@@ -51,6 +51,12 @@ const GameplayScreen = ({ navigation, route }) => {
   const [readyCount, setReadyCount] = useState(0);
   const [readyTotal, setReadyTotal] = useState(0);
   const [nextCountdown, setNextCountdown] = useState(null);
+  const [isFinished, setIsFinished] = useState(false);
+  const [finalConfirmed, setFinalConfirmed] = useState(false);
+  const [rematchReady, setRematchReady] = useState(0);
+  const [rematchTotal, setRematchTotal] = useState(0);
+  const [hasVotedRematch, setHasVotedRematch] = useState(false);
+  const [rematchAborted, setRematchAborted] = useState(false);
   
   const timerRef = useRef(null);
   const selectTimerRef = useRef(null);
@@ -62,6 +68,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const answersRef = useRef(answers);
   const stopShownRef = useRef(false);
   const phaseRef = useRef(phase);
+  const userIdRef = useRef(userId);
 
   useEffect(() => {
     loadGameState();
@@ -78,6 +85,10 @@ const GameplayScreen = ({ navigation, route }) => {
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  useEffect(() => {
+    userIdRef.current = userId;
+  }, [userId]);
 
   // Ensure we join the game room once socket is connected and authenticated
   useEffect(() => {
@@ -109,7 +120,7 @@ const GameplayScreen = ({ navigation, route }) => {
       setSelectionDeadline(null);
       if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
       setPhase('letter-selection');
-      setIsPlayerTurn(data.currentPlayer === userId);
+      setIsPlayerTurn(data.currentPlayer === userIdRef.current);
       setConfirmedCount(0);
       setTotalPlayers(0);
       setHasConfirmed(false);
@@ -120,7 +131,7 @@ const GameplayScreen = ({ navigation, route }) => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (data.selectorId) {
         setLetterSelectorId(data.selectorId);
-        setIsPlayerTurn(data.selectorId === userId);
+        setIsPlayerTurn(data.selectorId === userIdRef.current);
       }
       if (data.selectorName) setLetterSelectorName(data.selectorName);
       if (data.deadline) startLetterTimer(new Date(data.deadline));
@@ -152,7 +163,7 @@ const GameplayScreen = ({ navigation, route }) => {
       stopShownRef.current = false;
     };
     const onPlayerStopped = async (data) => {
-      if (phaseRef.current === 'playing' && data.playerId !== userId && !stopShownRef.current) {
+      if (phaseRef.current === 'playing' && data.playerId !== userIdRef.current && !stopShownRef.current) {
         if (timerRef.current) clearInterval(timerRef.current);
         stopShownRef.current = true;
         setIsFrozen(true);
@@ -193,6 +204,26 @@ const GameplayScreen = ({ navigation, route }) => {
     const onNextRoundCountdown = (data) => {
       if (typeof data.seconds === 'number') setNextCountdown(data.seconds);
     };
+    const onGameFinished = (data) => {
+      setShowConfetti(true);
+      setIsFinished(true);
+      // derive totals if provided
+      if (Array.isArray(data?.standings)) setPlayerScores(data.standings);
+      if (Array.isArray(playerScores) && playerScores.length > 0) {
+        setRematchTotal(playerScores.length);
+      }
+    };
+    const onRematchUpdate = (data) => {
+      if (typeof data.ready === 'number') setRematchReady(data.ready);
+      if (typeof data.total === 'number') setRematchTotal(data.total);
+    };
+    const onRematchAborted = (data) => {
+      setRematchAborted(true);
+    };
+    const onGameStarting = (data) => {
+      // New game begins
+      navigation.replace('Gameplay', { gameId: data.gameId });
+    };
 
     socket.on('category-selection-started', onCategorySelectionStarted);
     socket.on('category-selected', onCategorySelected);
@@ -206,6 +237,10 @@ const GameplayScreen = ({ navigation, route }) => {
     socket.on('round-results', onRoundResults);
     socket.on('ready-update', onReadyUpdate);
     socket.on('next-round-countdown', onNextRoundCountdown);
+    socket.on('game-finished', onGameFinished);
+    socket.on('rematch-update', onRematchUpdate);
+    socket.on('rematch-aborted', onRematchAborted);
+    socket.on('game-starting', onGameStarting);
 
     return () => {
       socket.off('category-selection-started', onCategorySelectionStarted);
@@ -220,6 +255,10 @@ const GameplayScreen = ({ navigation, route }) => {
       socket.off('round-results', onRoundResults);
       socket.off('ready-update', onReadyUpdate);
       socket.off('next-round-countdown', onNextRoundCountdown);
+      socket.off('game-finished', onGameFinished);
+      socket.off('rematch-update', onRematchUpdate);
+      socket.off('rematch-aborted', onRematchAborted);
+      socket.off('game-starting', onGameStarting);
     };
   }, [socket, userId, gameId]);
 
@@ -743,9 +782,83 @@ const GameplayScreen = ({ navigation, route }) => {
             </Button>
           </>
         )}
+        {currentRound >= totalRounds && !isFinished && (
+          <>
+            <Button
+              mode="contained"
+              onPress={() => setFinalConfirmed(true) || setIsFinished(true)}
+              style={styles.nextButton}
+            >
+              Confirm Final Results
+            </Button>
+          </>
+        )}
       </Card.Content>
     </Card>
   );
+
+  const renderFinalResults = () => {
+    const scores = Array.isArray(playerScores) ? playerScores : [];
+    const max = scores.reduce((m, s) => Math.max(m, s.score || 0), 0);
+    const winners = scores.filter(s => (s.score || 0) === max);
+    const isDraw = winners.length > 1;
+    const winnerNames = winners.map((s) => {
+      const pid = (s.user && s.user._id) ? s.user._id : s.user;
+      const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+      return pidStr === userId ? 'You' : `Player ${pidStr.substring(0,5)}`;
+    });
+    return (
+      <Card style={styles.card}>
+        <Card.Content>
+          <Text style={styles.phaseTitle}>Final Results</Text>
+          <View style={styles.scoresContainer}>
+            {scores.map((s, idx) => {
+              const pid = (s.user && s.user._id) ? s.user._id : s.user;
+              const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+              const name = pidStr === userId ? 'You' : `Player ${pidStr.substring(0, 5)}`;
+              return (
+                <View key={pidStr || String(idx)} style={styles.scoreItem}>
+                  <Text style={styles.playerName}>{name}</Text>
+                  <Text style={styles.playerScore}>{s.score} pts</Text>
+                </View>
+              );
+            })}
+          </View>
+          {finalConfirmed ? (
+            <>
+              <Text style={styles.instruction}>
+                {isDraw ? `It's a draw between ${winnerNames.join(', ')}` : `Winner: ${winnerNames[0]}`}
+              </Text>
+              <Text style={styles.instruction}>{`(${rematchReady}/${rematchTotal}) players selected Play Again`}</Text>
+              <Button
+                mode="contained"
+                onPress={() => { if (!hasVotedRematch && !rematchAborted) { setHasVotedRematch(true); playAgainReady(gameId); } }}
+                style={styles.nextButton}
+                disabled={hasVotedRematch || rematchAborted}
+              >
+                {rematchAborted ? 'A user left' : hasVotedRematch ? 'Waiting for others...' : 'Play Again'}
+              </Button>
+              <Button
+                mode="outlined"
+                onPress={() => navigation.replace('Menu')}
+                style={styles.nextButton}
+              >
+                Exit to Lobby
+              </Button>
+            </>
+          ) : (
+            <Button
+              mode="contained"
+              onPress={() => setFinalConfirmed(true)}
+              style={styles.nextButton}
+            >
+              Confirm Final Results
+            </Button>
+          )}
+        </Card.Content>
+      </Card>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -781,6 +894,7 @@ const GameplayScreen = ({ navigation, route }) => {
         </View>
       )}
       {phase === 'round-end' && renderRoundEnd()}
+      {isFinished && renderFinalResults()}
     </View>
   );
 };

@@ -154,6 +154,12 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
+  const playAgainReady = (gameId) => {
+    if (socket && connected && isAuthenticated) {
+      socket.emit('play-again-ready', { gameId });
+    }
+  };
+
   const confirmCategories = (gameId) => {
     if (socket && connected && isAuthenticated) {
       socket.emit('confirm-categories', gameId);
@@ -189,7 +195,8 @@ export const SocketProvider = ({ children }) => {
       confirmCategories,
       categoryPhaseReady,
       deleteRoom,
-      readyNextRound
+      readyNextRound,
+      playAgainReady
     }}>
       {children}
     </SocketContext.Provider>

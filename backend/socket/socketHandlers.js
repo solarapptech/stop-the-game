@@ -7,6 +7,7 @@ const letterRevealTimers = new Map();
 const roundTimers = new Map();
 const nextRoundTimers = new Map();
 const nextRoundReady = new Map();
+const rematchReady = new Map();
 
 module.exports = (io, socket) => {
   // Helper to finalize categories for a game (dedupe, fill to min 6, cap at 8)
@@ -717,9 +718,27 @@ module.exports = (io, socket) => {
         }, 12000);
         letterTimers.set(game._id.toString(), selTimer);
       } else {
-        io.to(`game-${gameId}`).emit('game-finished', {
-          winner: (game.winner || null)
-        });
+        // Update room status and user stats when game finishes
+        try {
+          const standings = game.getStandings();
+          const Room = require('../models/Room');
+          const room = await Room.findById(game.room);
+          if (room) {
+            room.status = 'waiting';
+            room.currentGame = null;
+            await room.save();
+          }
+          // Emit final standings and winner to all players in the current game
+          io.to(`game-${gameId}`).emit('game-finished', {
+            winner: (game.winner || null),
+            standings
+          });
+        } catch (e) {
+          console.error('Finalize game finish error:', e);
+          io.to(`game-${gameId}`).emit('game-finished', {
+            winner: (game.winner || null)
+          });
+        }
       }
     } catch (err) {
       console.error('Advance to next round error:', err);
@@ -839,8 +858,73 @@ module.exports = (io, socket) => {
         username,
         newOwnerId: wasOwner && room.players.length > 0 ? (room.players[0].user._id || room.players[0].user).toString() : null
       });
+      // Abort any ongoing rematch readiness for this room
+      try {
+        if (socket.roomId) {
+          rematchReady.delete(socket.roomId.toString());
+          io.to(socket.roomId).emit('rematch-aborted', { reason: 'player-left' });
+        }
+      } catch (e) {}
     } catch (error) {
       console.error('Disconnect socket error:', error);
+    }
+  });
+
+  // Rematch readiness: all players must opt-in to start a new game in same room
+  socket.on('play-again-ready', async (data) => {
+    try {
+      const { gameId } = data || {};
+      if (!socket.userId || !gameId) return;
+      const game = await Game.findById(gameId).select('room players status');
+      if (!game) return;
+      const roomId = game.room.toString();
+      let set = rematchReady.get(roomId);
+      if (!set) {
+        set = new Set();
+        rematchReady.set(roomId, set);
+      }
+      set.add(socket.userId.toString());
+
+      const total = (game.players || []).length;
+      // Inform current game room about rematch readiness
+      io.to(`game-${gameId}`).emit('rematch-update', { ready: set.size, total });
+
+      if (set.size >= total) {
+        rematchReady.delete(roomId);
+        // Recreate game using existing room and original player order
+        const Room = require('../models/Room');
+        const room = await Room.findById(roomId).populate('players.user');
+        if (!room) return;
+
+        const newGame = new Game({
+          room: room._id,
+          rounds: room.rounds,
+          players: room.players.map(p => ({
+            user: p.user._id || p.user,
+            score: 0,
+            answers: []
+          })),
+          letterSelector: (room.players[0].user._id || room.players[0].user)
+        });
+        newGame.categoryDeadline = null;
+        newGame.status = 'selecting_categories';
+        newGame.confirmedPlayers = [];
+        newGame.categoryReadyPlayers = [];
+        await newGame.save();
+
+        room.status = 'in_progress';
+        room.currentGame = newGame._id;
+        await room.save();
+
+        // Notify room to transition to gameplay
+        io.to(roomId).emit('game-starting', {
+          roomId,
+          gameId: newGame._id,
+          countdown: 0
+        });
+      }
+    } catch (error) {
+      console.error('Play again ready socket error:', error);
     }
   });
 };
