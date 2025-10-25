@@ -39,11 +39,13 @@ const GameplayScreen = ({ navigation, route }) => {
   const [hasConfirmed, setHasConfirmed] = useState(false);
   const [letterInput, setLetterInput] = useState('');
   const [letterDeadline, setLetterDeadline] = useState(null);
-  const [letterTimeLeft, setLetterTimeLeft] = useState(20);
+  const [letterTimeLeft, setLetterTimeLeft] = useState(12);
   const [letterSelectorName, setLetterSelectorName] = useState('');
   const [letterSelectorId, setLetterSelectorId] = useState(null);
   const [showReveal, setShowReveal] = useState(false);
   const [revealTimeLeft, setRevealTimeLeft] = useState(3);
+  const [isFrozen, setIsFrozen] = useState(false);
+  const [showStopOverlay, setShowStopOverlay] = useState(false);
   
   const timerRef = useRef(null);
   const selectTimerRef = useRef(null);
@@ -52,6 +54,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const revealTimerRef = useRef(null);
   const confettiRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const answersRef = useRef(answers);
 
   useEffect(() => {
     loadGameState();
@@ -65,6 +68,10 @@ const GameplayScreen = ({ navigation, route }) => {
       if (revealTimerRef.current) clearInterval(revealTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
 
   // When entering category-selection phase, signal readiness exactly once
   useEffect(() => {
@@ -110,6 +117,36 @@ const GameplayScreen = ({ navigation, route }) => {
     tick();
     selectTimerRef.current = setInterval(tick, 500);
     setSelectionDeadline(deadline);
+  };
+
+  const startLetterTimer = (deadline) => {
+    if (letterTimerRef.current) clearInterval(letterTimerRef.current);
+    const tick = () => {
+      const ms = deadline instanceof Date ? (deadline.getTime() - Date.now()) : 0;
+      const secs = Math.max(0, Math.ceil(ms / 1000));
+      setLetterTimeLeft(secs);
+      if (secs === 0) {
+        clearInterval(letterTimerRef.current);
+        setLetterDeadline(null);
+      }
+    };
+    tick();
+    letterTimerRef.current = setInterval(tick, 500);
+    setLetterDeadline(deadline);
+  };
+
+  const startRevealTimer = (deadline) => {
+    if (revealTimerRef.current) clearInterval(revealTimerRef.current);
+    const tick = () => {
+      const ms = deadline instanceof Date ? (deadline.getTime() - Date.now()) : 0;
+      const secs = Math.max(0, Math.ceil(ms / 1000));
+      setRevealTimeLeft(secs);
+      if (secs === 0) {
+        clearInterval(revealTimerRef.current);
+      }
+    };
+    tick();
+    revealTimerRef.current = setInterval(tick, 250);
   };
 
   const setupSocketListeners = () => {
@@ -169,10 +206,16 @@ const GameplayScreen = ({ navigation, route }) => {
         if (revealTimerRef.current) clearInterval(revealTimerRef.current);
       });
 
-      socket.on('player-stopped', (data) => {
+      socket.on('player-stopped', async (data) => {
         if (data.playerId !== user.id) {
-          Alert.alert('Hurry!', `${data.username} stopped the round!`);
-          setTimeLeft(10); // Give 10 seconds to finish
+          setIsFrozen(true);
+          setTimeLeft(0);
+          setShowStopOverlay(true);
+          try {
+            await submitAnswers(gameId, answersRef.current, false);
+          } catch (e) {}
+          setTimeout(() => setShowStopOverlay(false), 1500);
+          setTimeout(() => { handleValidation(); }, 300);
         }
       });
 
@@ -246,11 +289,26 @@ const GameplayScreen = ({ navigation, route }) => {
     }));
   };
 
+  const isAnswerValid = (value) => {
+    const v = (value || '').trim();
+    if (!currentLetter) return false;
+    if (v.length < 2) return false;
+    return v.charAt(0).toUpperCase() === (currentLetter || '').toUpperCase();
+  };
+  const canFinish = Array.isArray(selectedCategories) && selectedCategories.length > 0 && selectedCategories.every(c => isAnswerValid(answers[c] || ''));
+
   const handleStop = async () => {
+    const canFinishNow = Array.isArray(selectedCategories) && selectedCategories.length > 0 && selectedCategories.every(c => isAnswerValid(answers[c] || ''));
+    if (!canFinishNow) return;
     if (timerRef.current) clearInterval(timerRef.current);
     setHasStoppedFirst(true);
+    setIsFrozen(true);
+    setTimeLeft(0);
+    setShowStopOverlay(true);
     stopRound(gameId);
     await submitAnswers(gameId, answers, true);
+    setTimeout(() => setShowStopOverlay(false), 1500);
+    await handleValidation();
   };
 
   const handleTimeUp = async () => {
@@ -269,16 +327,16 @@ const GameplayScreen = ({ navigation, route }) => {
   const handleNextRound = async () => {
     const result = await nextRound(gameId);
     if (result.finished) {
-      // Game finished
       setShowConfetti(true);
     } else {
-      // Reset for next round
       setAnswers({});
       setSelectedCategories([]);
       setCurrentRound(result.currentRound);
       setPhase('letter-selection');
       setHasStoppedFirst(false);
       announcedReadyRef.current = false;
+      setIsFrozen(false);
+      setShowStopOverlay(false);
     }
   };
 
@@ -396,7 +454,7 @@ const GameplayScreen = ({ navigation, route }) => {
       </View>
 
       <ScrollView style={styles.answersContainer}>
-        {categories.map(category => (
+        {selectedCategories.map(category => (
           <Card key={category} style={styles.answerCard}>
             <Card.Content>
               <Text style={styles.categoryLabel}>{category}</Text>
@@ -406,8 +464,11 @@ const GameplayScreen = ({ navigation, route }) => {
                 placeholder={`Enter ${category} starting with ${currentLetter}`}
                 style={styles.answerInput}
                 autoCapitalize="words"
-                editable={timeLeft > 0}
+                editable={timeLeft > 0 && !isFrozen}
               />
+              {!isAnswerValid(answers[category] || '') && (answers[category] || '').length > 0 && (
+                <Text style={styles.errorText}>Wrong answer</Text>
+              )}
             </Card.Content>
           </Card>
         ))}
@@ -416,8 +477,8 @@ const GameplayScreen = ({ navigation, route }) => {
       <Button
         mode="contained"
         onPress={handleStop}
-        style={styles.stopButton}
-        disabled={timeLeft === 0 || hasStoppedFirst}
+        style={[styles.stopButton, { backgroundColor: canFinish ? '#4CAF50' : '#9E9E9E' }]}
+        disabled={timeLeft === 0 || hasStoppedFirst || !canFinish || isFrozen}
         icon="hand-right"
       >
         STOP!
@@ -454,6 +515,13 @@ const GameplayScreen = ({ navigation, route }) => {
 
   return (
     <View style={styles.container}>
+      {showStopOverlay && (
+        <View style={styles.revealOverlay} pointerEvents="none">
+          <Animated.View style={[styles.revealBox]}>
+            <Text style={styles.stopText}>Stop!</Text>
+          </Animated.View>
+        </View>
+      )}
       {showReveal && (
         <View style={styles.revealOverlay} pointerEvents="none">
           <Animated.View style={[styles.revealBox]}>
@@ -520,6 +588,17 @@ const styles = StyleSheet.create({
     color: '#757575',
     marginBottom: 20,
     textAlign: 'center',
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#757575',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  stopText: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#F44336',
   },
   categoriesGrid: {
     flexDirection: 'row',
@@ -650,6 +729,10 @@ const styles = StyleSheet.create({
     padding: 10,
     fontSize: 16,
     backgroundColor: '#FFFFFF',
+  },
+  errorText: {
+    color: '#F44336',
+    marginTop: 6,
   },
   stopButton: {
     margin: 20,

@@ -183,8 +183,13 @@ export const GameProvider = ({ children }) => {
 
   const submitAnswers = async (gameId, answersData, stoppedFirst = false) => {
     try {
+      // Transform answersData: accept either array of {category, answer} or object map { [category]: answer }
+      const payloadAnswers = Array.isArray(answersData)
+        ? answersData
+        : Object.entries(answersData || {}).map(([category, answer]) => ({ category, answer }));
+
       const response = await axios.post(`${API_URL}/game/${gameId}/submit`, {
-        answers: answersData,
+        answers: payloadAnswers,
         stoppedFirst
       });
       return { success: true, status: response.data.status };

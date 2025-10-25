@@ -37,11 +37,11 @@ module.exports = (io, socket) => {
         currentPlayer: (game.letterSelector || '').toString()
       });
 
-      // Immediately start letter selection phase with 20s deadline
+      // Immediately start letter selection phase with 12s deadline
       const selectorId = (game.letterSelector || '').toString();
       const selectorPlayer = game.players.find(p => (p.user._id || p.user).toString() === selectorId);
       const selectorName = selectorPlayer?.user?.username || 'Player';
-      const letterDeadline = new Date(Date.now() + 20000);
+      const letterDeadline = new Date(Date.now() + 12000);
       game.letterDeadline = letterDeadline;
       await game.save();
 
@@ -52,7 +52,7 @@ module.exports = (io, socket) => {
         deadline: letterDeadline
       });
 
-      // Schedule auto-pick after 20s if not chosen
+      // Schedule auto-pick after 12s if not chosen
       const existingL = letterTimers.get(game._id.toString());
       if (existingL) clearTimeout(existingL);
       const selTimer = setTimeout(async () => {
@@ -89,7 +89,7 @@ module.exports = (io, socket) => {
         } catch (e) {
           console.error('Auto-pick letter error:', e);
         }
-      }, 20000);
+      }, 12000);
       letterTimers.set(game._id.toString(), selTimer);
     } catch (error) {
       console.error('Finalize categories error:', error);

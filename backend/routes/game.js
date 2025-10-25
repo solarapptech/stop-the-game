@@ -264,6 +264,10 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
       }))
     });
   } catch (error) {
+    console.error('Validate error:', error);
+    res.status(500).json({ message: 'Error validating answers' });
+  }
+});
 
 // Next round
 router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
@@ -282,11 +286,11 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
     const hasNextRound = game.nextRound();
 
     if (hasNextRound) {
-      // Start 20s letter selection window for the new selector
+      // Start 12s letter selection window for the new selector
       const selectorId = (game.letterSelector || '').toString();
       const selectorPlayer = (game.players || []).find(p => (p.user._id || p.user).toString() === selectorId);
       const selectorName = selectorPlayer?.user?.username || 'Player';
-      const deadline = new Date(Date.now() + 20000);
+      const deadline = new Date(Date.now() + 12000);
       game.letterDeadline = deadline;
       await game.save();
 
@@ -305,7 +309,7 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
         // ignore emit errors
       }
 
-      // Schedule auto-pick after 20s if no letter chosen
+      // Schedule auto-pick after 12s if no letter chosen
       setTimeout(async () => {
         try {
           const g = await Game.findById(gameId);
@@ -340,7 +344,7 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
         } catch (e) {
           // ignore timer errors
         }
-      }, 20000);
+      }, 12000);
 
       res.json({
         message: 'Next round started',
