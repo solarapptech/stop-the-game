@@ -59,6 +59,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const confettiRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const answersRef = useRef(answers);
+  const stopShownRef = useRef(false);
 
   useEffect(() => {
     loadGameState();
@@ -121,6 +122,8 @@ const GameplayScreen = ({ navigation, route }) => {
       setReadyCount(0);
       setReadyTotal(0);
       setNextCountdown(null);
+      // reset Stop! popup for the new round
+      stopShownRef.current = false;
     };
     const onLetterAccepted = (data) => {
       if (data.revealDeadline) startRevealTimer(new Date(data.revealDeadline));
@@ -132,9 +135,12 @@ const GameplayScreen = ({ navigation, route }) => {
       startTimer();
       setShowReveal(false);
       if (revealTimerRef.current) clearInterval(revealTimerRef.current);
+      // entering playing phase: allow Stop! popup once
+      stopShownRef.current = false;
     };
     const onPlayerStopped = async (data) => {
-      if (data.playerId !== user.id) {
+      if (data.playerId !== user.id && !stopShownRef.current && phase === 'playing') {
+        stopShownRef.current = true;
         setIsFrozen(true);
         setTimeLeft(0);
         setShowStopOverlay(true);
@@ -452,6 +458,8 @@ const GameplayScreen = ({ navigation, route }) => {
     const canFinishNow = Array.isArray(selectedCategories) && selectedCategories.length > 0 && selectedCategories.every(c => isAnswerValid(answers[c] || ''));
     if (!canFinishNow) return;
     if (timerRef.current) clearInterval(timerRef.current);
+    if (stopShownRef.current) return; // already processed
+    stopShownRef.current = true;
     setHasStoppedFirst(true);
     setIsFrozen(true);
     setTimeLeft(0);
@@ -463,6 +471,8 @@ const GameplayScreen = ({ navigation, route }) => {
   };
 
   const handleTimeUp = async () => {
+    if (stopShownRef.current) return;
+    stopShownRef.current = true;
     setIsFrozen(true);
     setTimeLeft(0);
     setShowStopOverlay(true);

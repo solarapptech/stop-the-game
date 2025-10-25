@@ -535,35 +535,38 @@ module.exports = (io, socket) => {
   socket.on('player-stopped', async (data) => {
     try {
       const { gameId } = data;
+      const idStr = gameId.toString();
       const User = require('../models/User');
       let username = 'Player';
       try {
         const u = await User.findById(socket.userId).select('username');
         if (u && u.username) username = u.username;
       } catch (e) {}
+
+      // Ensure we only process STOP once per round when game is in 'playing'
+      const g = await Game.findById(gameId);
+      if (!g || g.status !== 'playing') return;
+
+      // Cancel any round auto-end timer
+      try {
+        const t = roundTimers.get(idStr);
+        if (t) {
+          clearTimeout(t);
+          roundTimers.delete(idStr);
+        }
+      } catch (e) {}
+
+      // Transition to validating first to avoid duplicate STOPs racing
+      g.status = 'validating';
+      await g.save();
+
+      // Notify clients
       io.to(`game-${gameId}`).emit('player-stopped', {
         playerId: socket.userId,
         username,
         timestamp: new Date()
       });
-      // Cancel round timer and move to validating
-      try {
-        const t = roundTimers.get(gameId.toString());
-        if (t) {
-          clearTimeout(t);
-          roundTimers.delete(gameId.toString());
-        }
-      } catch (e) {}
-      try {
-        const g = await Game.findById(gameId);
-        if (g && g.status === 'playing') {
-          g.status = 'validating';
-          await g.save();
-        }
-        io.to(`game-${gameId}`).emit('round-ended', { reason: 'stopped' });
-      } catch (e) {
-        console.error('Set validating on stop error:', e);
-      }
+      io.to(`game-${gameId}`).emit('round-ended', { reason: 'stopped' });
     } catch (error) {
       console.error('Player stopped socket error:', error);
     }
