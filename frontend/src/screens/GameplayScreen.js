@@ -10,7 +10,7 @@ import theme from '../theme';
 const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
   const { user } = useAuth();
-  const { socket, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady } = useSocket();
+  const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady } = useSocket();
   const { 
     gameState, 
     categories, 
@@ -18,7 +18,8 @@ const GameplayScreen = ({ navigation, route }) => {
     submitAnswers, 
     validateAnswers,
     nextRound,
-    getGameState 
+    getGameState,
+    setCurrentLetter
   } = useGame();
   
   const [phase, setPhase] = useState('category-selection'); // category-selection, letter-selection, playing, validation, round-end
@@ -29,7 +30,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const [selectionDeadline, setSelectionDeadline] = useState(null);
   const [roundResults, setRoundResults] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [playerScores, setPlayerScores] = useState({});
+  const [playerScores, setPlayerScores] = useState([]);
   const [currentRound, setCurrentRound] = useState(1);
   const [totalRounds, setTotalRounds] = useState(3);
   const [isPlayerTurn, setIsPlayerTurn] = useState(false);
@@ -58,7 +59,6 @@ const GameplayScreen = ({ navigation, route }) => {
 
   useEffect(() => {
     loadGameState();
-    setupSocketListeners();
     if (joinGame && gameId) joinGame(gameId);
     
     return () => {
@@ -68,6 +68,111 @@ const GameplayScreen = ({ navigation, route }) => {
       if (revealTimerRef.current) clearInterval(revealTimerRef.current);
     };
   }, []);
+
+  // Ensure we join the game room once socket is connected and authenticated
+  useEffect(() => {
+    if (joinGame && gameId && socket && connected && isAuthenticated) {
+      joinGame(gameId);
+    }
+  }, [socket, connected, isAuthenticated, joinGame, gameId]);
+
+  // Attach socket listeners when socket becomes ready; clean up on change/unmount
+  useEffect(() => {
+    if (!socket) return;
+
+    const onCategorySelectionStarted = (data) => {
+      setPhase('category-selection');
+      if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
+      if (typeof data.confirmed === 'number') setConfirmedCount(data.confirmed);
+      if (typeof data.total === 'number') setTotalPlayers(data.total);
+      if (data.deadline) startSelectionTimer(new Date(data.deadline));
+    };
+    const onCategorySelected = (data) => {
+      if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
+    };
+    const onConfirmUpdate = (data) => {
+      if (typeof data.confirmed === 'number') setConfirmedCount(data.confirmed);
+      if (typeof data.total === 'number') setTotalPlayers(data.total);
+    };
+    const onCategoriesConfirmed = (data) => {
+      if (selectTimerRef.current) clearInterval(selectTimerRef.current);
+      setSelectionDeadline(null);
+      if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
+      setPhase('letter-selection');
+      setIsPlayerTurn(data.currentPlayer === user.id);
+      setConfirmedCount(0);
+      setTotalPlayers(0);
+      setHasConfirmed(false);
+      setLetterInput('');
+    };
+    const onLetterSelectionStarted = (data) => {
+      setPhase('letter-selection');
+      if (data.selectorId) {
+        setLetterSelectorId(data.selectorId);
+        setIsPlayerTurn(data.selectorId === user.id);
+      }
+      if (data.selectorName) setLetterSelectorName(data.selectorName);
+      if (data.deadline) startLetterTimer(new Date(data.deadline));
+      setLetterInput('');
+    };
+    const onLetterAccepted = (data) => {
+      if (data.revealDeadline) startRevealTimer(new Date(data.revealDeadline));
+      setShowReveal(true);
+    };
+    const onLetterSelected = (data) => {
+      if (data.letter) setCurrentLetter(data.letter);
+      setPhase('playing');
+      startTimer();
+      setShowReveal(false);
+      if (revealTimerRef.current) clearInterval(revealTimerRef.current);
+    };
+    const onPlayerStopped = async (data) => {
+      if (data.playerId !== user.id) {
+        setIsFrozen(true);
+        setTimeLeft(0);
+        setShowStopOverlay(true);
+        try {
+          await submitAnswers(gameId, answersRef.current, false);
+        } catch (e) {}
+        setTimeout(() => setShowStopOverlay(false), 1500);
+        setTimeout(() => { handleValidation(); }, 300);
+      }
+    };
+    const onRoundEnded = async (data) => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setPhase('validation');
+      await handleValidation();
+    };
+    const onRoundResults = (data) => {
+      setRoundResults(data.results);
+      setPlayerScores(data.standings);
+      setPhase('round-end');
+    };
+
+    socket.on('category-selection-started', onCategorySelectionStarted);
+    socket.on('category-selected', onCategorySelected);
+    socket.on('confirm-update', onConfirmUpdate);
+    socket.on('categories-confirmed', onCategoriesConfirmed);
+    socket.on('letter-selection-started', onLetterSelectionStarted);
+    socket.on('letter-accepted', onLetterAccepted);
+    socket.on('letter-selected', onLetterSelected);
+    socket.on('player-stopped', onPlayerStopped);
+    socket.on('round-ended', onRoundEnded);
+    socket.on('round-results', onRoundResults);
+
+    return () => {
+      socket.off('category-selection-started', onCategorySelectionStarted);
+      socket.off('category-selected', onCategorySelected);
+      socket.off('confirm-update', onConfirmUpdate);
+      socket.off('categories-confirmed', onCategoriesConfirmed);
+      socket.off('letter-selection-started', onLetterSelectionStarted);
+      socket.off('letter-accepted', onLetterAccepted);
+      socket.off('letter-selected', onLetterSelected);
+      socket.off('player-stopped', onPlayerStopped);
+      socket.off('round-ended', onRoundEnded);
+      socket.off('round-results', onRoundResults);
+    };
+  }, [socket, user?.id, gameId]);
 
   useEffect(() => {
     answersRef.current = answers;
@@ -148,6 +253,22 @@ const GameplayScreen = ({ navigation, route }) => {
     tick();
     revealTimerRef.current = setInterval(tick, 250);
   };
+
+  // Fallback: if reveal hits 0 but 'letter-selected' wasn't received, fetch state and start
+  useEffect(() => {
+    const fallback = async () => {
+      if (showReveal && revealTimeLeft === 0 && phase !== 'playing') {
+        const result = await getGameState(gameId);
+        if (result?.success && result.game?.currentLetter) {
+          setCurrentLetter(result.game.currentLetter);
+          setPhase('playing');
+          startTimer();
+          setShowReveal(false);
+        }
+      }
+    };
+    fallback();
+  }, [showReveal, revealTimeLeft, phase, gameId]);
 
   const setupSocketListeners = () => {
     if (socket) {
@@ -296,6 +417,15 @@ const GameplayScreen = ({ navigation, route }) => {
     return v.charAt(0).toUpperCase() === (currentLetter || '').toUpperCase();
   };
   const canFinish = Array.isArray(selectedCategories) && selectedCategories.length > 0 && selectedCategories.every(c => isAnswerValid(answers[c] || ''));
+
+  const getAnswerError = (value) => {
+    const v = (value || '').trim();
+    if (v.length === 0) return '';
+    if (currentLetter && v.charAt(0).toUpperCase() !== (currentLetter || '').toUpperCase()) {
+      return `It doesn't start with letter '${currentLetter}'`;
+    }
+    return '';
+  };
 
   const handleStop = async () => {
     const canFinishNow = Array.isArray(selectedCategories) && selectedCategories.length > 0 && selectedCategories.every(c => isAnswerValid(answers[c] || ''));
@@ -466,9 +596,7 @@ const GameplayScreen = ({ navigation, route }) => {
                 autoCapitalize="words"
                 editable={timeLeft > 0 && !isFrozen}
               />
-              {!isAnswerValid(answers[category] || '') && (answers[category] || '').length > 0 && (
-                <Text style={styles.errorText}>Wrong answer</Text>
-              )}
+              {(() => { const err = getAnswerError(answers[category] || ''); return err ? (<Text style={styles.errorText}>{err}</Text>) : null; })()}
             </Card.Content>
           </Card>
         ))}
@@ -479,7 +607,7 @@ const GameplayScreen = ({ navigation, route }) => {
         onPress={handleStop}
         style={[styles.stopButton, { backgroundColor: canFinish ? '#4CAF50' : '#9E9E9E' }]}
         disabled={timeLeft === 0 || hasStoppedFirst || !canFinish || isFrozen}
-        icon="hand-right"
+        icon="hand"
       >
         STOP!
       </Button>
@@ -491,14 +619,17 @@ const GameplayScreen = ({ navigation, route }) => {
       <Card.Content>
         <Text style={styles.phaseTitle}>Round {currentRound} Results</Text>
         <View style={styles.scoresContainer}>
-          {Object.entries(playerScores).map(([playerId, score]) => (
-            <View key={playerId} style={styles.scoreItem}>
-              <Text style={styles.playerName}>
-                {playerId === user.id ? 'You' : `Player ${playerId.substring(0, 5)}`}
-              </Text>
-              <Text style={styles.playerScore}>{score} pts</Text>
-            </View>
-          ))}
+          {Array.isArray(playerScores) && playerScores.map((s, idx) => {
+            const pid = (s.user && s.user._id) ? s.user._id : s.user;
+            const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+            const name = pidStr === user.id ? 'You' : `Player ${pidStr.substring(0, 5)}`;
+            return (
+              <View key={pidStr || String(idx)} style={styles.scoreItem}>
+                <Text style={styles.playerName}>{name}</Text>
+                <Text style={styles.playerScore}>{s.score} pts</Text>
+              </View>
+            );
+          })}
         </View>
         {currentRound < totalRounds && (
           <Button
