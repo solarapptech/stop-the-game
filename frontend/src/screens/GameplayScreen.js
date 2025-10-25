@@ -61,6 +61,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const answersRef = useRef(answers);
   const stopShownRef = useRef(false);
+  const phaseRef = useRef(phase);
 
   useEffect(() => {
     loadGameState();
@@ -73,6 +74,10 @@ const GameplayScreen = ({ navigation, route }) => {
       if (revealTimerRef.current) clearInterval(revealTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   // Ensure we join the game room once socket is connected and authenticated
   useEffect(() => {
@@ -112,6 +117,7 @@ const GameplayScreen = ({ navigation, route }) => {
     };
     const onLetterSelectionStarted = (data) => {
       setPhase('letter-selection');
+      if (timerRef.current) clearInterval(timerRef.current);
       if (data.selectorId) {
         setLetterSelectorId(data.selectorId);
         setIsPlayerTurn(data.selectorId === userId);
@@ -138,6 +144,7 @@ const GameplayScreen = ({ navigation, route }) => {
     const onLetterSelected = (data) => {
       if (data.letter) setCurrentLetter(data.letter);
       setPhase('playing');
+      setIsFrozen(false);
       startTimer();
       setShowReveal(false);
       if (revealTimerRef.current) clearInterval(revealTimerRef.current);
@@ -145,7 +152,8 @@ const GameplayScreen = ({ navigation, route }) => {
       stopShownRef.current = false;
     };
     const onPlayerStopped = async (data) => {
-      if (data.playerId !== userId && !stopShownRef.current) {
+      if (phaseRef.current === 'playing' && data.playerId !== userId && !stopShownRef.current) {
+        if (timerRef.current) clearInterval(timerRef.current);
         stopShownRef.current = true;
         setIsFrozen(true);
         setTimeLeft(0);
@@ -158,7 +166,7 @@ const GameplayScreen = ({ navigation, route }) => {
     };
     const onRoundEnded = async (data) => {
       if (timerRef.current) clearInterval(timerRef.current);
-      if (data && data.reason === 'stopped' && !stopShownRef.current) {
+      if (phaseRef.current === 'playing' && data && data.reason === 'stopped' && !stopShownRef.current) {
         stopShownRef.current = true;
         setIsFrozen(true);
         setTimeLeft(0);
@@ -419,6 +427,7 @@ const GameplayScreen = ({ navigation, route }) => {
   };
 
   const startTimer = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
     setTimeLeft(60);
     timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
@@ -509,11 +518,39 @@ const GameplayScreen = ({ navigation, route }) => {
   const handleValidation = async () => {
     const result = await validateAnswers(gameId);
     if (result.success) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setTimeLeft(0);
       setRoundResults(result.roundResults);
       setPlayerScores(result.standings);
       setPhase('round-end');
     }
   };
+
+  useEffect(() => {
+    const trySync = async () => {
+      if (phase === 'letter-selection' && letterTimeLeft === 0) {
+        const result = await getGameState(gameId);
+        if (result?.success) {
+          const g = result.game;
+          if (g?.currentLetter) {
+            setCurrentLetter(g.currentLetter);
+          }
+          if (g?.status === 'playing') {
+            setShowReveal(false);
+            setPhase('playing');
+            setIsFrozen(false);
+            startTimer();
+          } else if (g?.status === 'validating' || g?.status === 'round_ended') {
+            if (timerRef.current) clearInterval(timerRef.current);
+            setTimeLeft(0);
+            setShowReveal(false);
+            setPhase(g.status === 'round_ended' ? 'round-end' : 'validation');
+          }
+        }
+      }
+    };
+    trySync();
+  }, [letterTimeLeft, phase, gameId]);
 
   const handleNextRound = async () => {
     const result = await nextRound(gameId);

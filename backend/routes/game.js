@@ -227,7 +227,7 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
   try {
     const { gameId } = req.params;
 
-    const game = await Game.findById(gameId).populate('players.user');
+    const game = await Game.findById(gameId).populate('players.user', 'username');
     if (!game) {
       return res.status(404).json({ message: 'Game not found' });
     }

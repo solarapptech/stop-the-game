@@ -181,8 +181,21 @@ userSchema.methods.toJSON = function() {
   // Decrypt email for response
   if (user.email) {
     const encryptionKey = process.env.ENCRYPTION_KEY || 'default-encryption-key-32-chars!!';
-    const bytes = CryptoJS.AES.decrypt(user.email, encryptionKey);
-    user.email = bytes.toString(CryptoJS.enc.Utf8);
+    const looksEncrypted = typeof user.email === 'string' && user.email.startsWith('U2FsdGVkX1');
+    try {
+      const bytes = CryptoJS.AES.decrypt(user.email, encryptionKey);
+      const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+      if (decrypted && decrypted.length > 0) {
+        user.email = decrypted;
+      } else if (looksEncrypted) {
+        // ciphertext present but could not decrypt to valid UTF-8
+        user.email = null;
+      }
+      // if not encrypted, leave as-is (plaintext)
+    } catch (e) {
+      // On any error, avoid throwing during JSON serialization
+      user.email = looksEncrypted ? null : user.email;
+    }
   }
   // Remove internal hash from public JSON
   delete user.emailHash;
