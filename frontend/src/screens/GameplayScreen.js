@@ -11,6 +11,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
   const { user } = useAuth();
   const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound } = useSocket();
+  const userId = (user && (user.id || user._id)) || null;
   const { 
     gameState, 
     categories, 
@@ -103,7 +104,7 @@ const GameplayScreen = ({ navigation, route }) => {
       setSelectionDeadline(null);
       if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
       setPhase('letter-selection');
-      setIsPlayerTurn(data.currentPlayer === user.id);
+      setIsPlayerTurn(data.currentPlayer === userId);
       setConfirmedCount(0);
       setTotalPlayers(0);
       setHasConfirmed(false);
@@ -113,11 +114,16 @@ const GameplayScreen = ({ navigation, route }) => {
       setPhase('letter-selection');
       if (data.selectorId) {
         setLetterSelectorId(data.selectorId);
-        setIsPlayerTurn(data.selectorId === user.id);
+        setIsPlayerTurn(data.selectorId === userId);
       }
       if (data.selectorName) setLetterSelectorName(data.selectorName);
       if (data.deadline) startLetterTimer(new Date(data.deadline));
       setLetterInput('');
+      if (typeof data.currentRound === 'number') setCurrentRound(data.currentRound);
+      setAnswers({});
+      setIsFrozen(false);
+      setHasStoppedFirst(false);
+      setShowStopOverlay(false);
       // reset next round readiness UI
       setReadyCount(0);
       setReadyTotal(0);
@@ -139,7 +145,7 @@ const GameplayScreen = ({ navigation, route }) => {
       stopShownRef.current = false;
     };
     const onPlayerStopped = async (data) => {
-      if (data.playerId !== user.id && !stopShownRef.current && phase === 'playing') {
+      if (data.playerId !== userId && !stopShownRef.current) {
         stopShownRef.current = true;
         setIsFrozen(true);
         setTimeLeft(0);
@@ -148,16 +154,24 @@ const GameplayScreen = ({ navigation, route }) => {
           await submitAnswers(gameId, answersRef.current, false);
         } catch (e) {}
         setTimeout(() => setShowStopOverlay(false), 1500);
-        // Wait for server to end round and broadcast results
       }
     };
     const onRoundEnded = async (data) => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (data && data.reason === 'stopped' && !stopShownRef.current) {
+        stopShownRef.current = true;
+        setIsFrozen(true);
+        setTimeLeft(0);
+        setShowStopOverlay(true);
+        setTimeout(() => setShowStopOverlay(false), 1500);
+      }
       setPhase('validation');
       // Trigger validation; server will broadcast results. Duplicate calls are safely rejected server-side.
       await handleValidation();
     };
     const onRoundResults = (data) => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setTimeLeft(0);
       setRoundResults(data.results);
       setPlayerScores(data.standings);
       setPhase('round-end');
@@ -199,7 +213,7 @@ const GameplayScreen = ({ navigation, route }) => {
       socket.off('ready-update', onReadyUpdate);
       socket.off('next-round-countdown', onNextRoundCountdown);
     };
-  }, [socket, user?.id, gameId]);
+  }, [socket, userId, gameId]);
 
   useEffect(() => {
     answersRef.current = answers;
@@ -321,7 +335,7 @@ const GameplayScreen = ({ navigation, route }) => {
         setSelectionDeadline(null);
         if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
         setPhase('letter-selection');
-        setIsPlayerTurn(data.currentPlayer === user.id);
+        setIsPlayerTurn(data.currentPlayer === userId);
         // Reset counters for next phase
         setConfirmedCount(0);
         setTotalPlayers(0);
@@ -333,10 +347,11 @@ const GameplayScreen = ({ navigation, route }) => {
         setPhase('letter-selection');
         if (data.selectorId) {
           setLetterSelectorId(data.selectorId);
-          setIsPlayerTurn(data.selectorId === user.id);
+          setIsPlayerTurn(data.selectorId === userId);
         }
         if (data.selectorName) setLetterSelectorName(data.selectorName);
         if (data.deadline) startLetterTimer(new Date(data.deadline));
+        if (typeof data.currentRound === 'number') setCurrentRound(data.currentRound);
         setLetterInput('');
       });
 
@@ -355,7 +370,7 @@ const GameplayScreen = ({ navigation, route }) => {
       });
 
       socket.on('player-stopped', async (data) => {
-        if (data.playerId !== user.id) {
+        if (data.playerId !== userId) {
           setIsFrozen(true);
           setTimeLeft(0);
           setShowStopOverlay(true);
@@ -363,17 +378,25 @@ const GameplayScreen = ({ navigation, route }) => {
             await submitAnswers(gameId, answersRef.current, false);
           } catch (e) {}
           setTimeout(() => setShowStopOverlay(false), 1500);
-          setTimeout(() => { handleValidation(); }, 300);
         }
       });
 
       socket.on('round-ended', async (data) => {
         if (timerRef.current) clearInterval(timerRef.current);
+        if (data && data.reason === 'stopped' && !stopShownRef.current) {
+          stopShownRef.current = true;
+          setIsFrozen(true);
+          setTimeLeft(0);
+          setShowStopOverlay(true);
+          setTimeout(() => setShowStopOverlay(false), 1500);
+        }
         setPhase('validation');
         await handleValidation();
       });
 
       socket.on('round-results', (data) => {
+        if (timerRef.current) clearInterval(timerRef.current);
+        setTimeLeft(0);
         setRoundResults(data.results);
         setPlayerScores(data.standings);
         setPhase('round-end');

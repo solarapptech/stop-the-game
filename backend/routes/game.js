@@ -320,7 +320,8 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
             gameId,
             selectorId,
             selectorName,
-            deadline
+            deadline,
+            currentRound: game.currentRound
           });
         }
       } catch (e) {

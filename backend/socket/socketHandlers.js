@@ -52,7 +52,8 @@ module.exports = (io, socket) => {
         gameId,
         selectorId,
         selectorName,
-        deadline: letterDeadline
+        deadline: letterDeadline,
+        currentRound: game.currentRound
       });
 
       // Schedule auto-pick after 12s if not chosen
@@ -332,7 +333,8 @@ module.exports = (io, socket) => {
             gameId,
             selectorId,
             selectorName,
-            deadline: game.letterDeadline
+            deadline: game.letterDeadline,
+            currentRound: game.currentRound
           });
         }
       } catch (e) {}
@@ -656,7 +658,8 @@ module.exports = (io, socket) => {
           gameId,
           selectorId,
           selectorName,
-          deadline: letterDeadline
+          deadline: letterDeadline,
+          currentRound: game.currentRound
         });
 
         const existingL = letterTimers.get(game._id.toString());
