@@ -255,13 +255,31 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
     game.status = 'round_ended';
     await game.save();
 
+    const standings = game.getStandings();
+    const roundResults = game.players.map(p => ({
+      user: p.user,
+      answers: p.answers.find(a => a.round === game.currentRound)
+    }));
+
+    // Broadcast results to all players in the room via sockets
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`game-${gameId}`).emit('round-results', {
+          standings,
+          results: roundResults,
+          currentRound: game.currentRound,
+          timestamp: new Date()
+        });
+      }
+    } catch (e) {
+      // ignore socket errors
+    }
+
     res.json({
       message: 'Validation complete',
-      standings: game.getStandings(),
-      roundResults: game.players.map(p => ({
-        user: p.user,
-        answers: p.answers.find(a => a.round === game.currentRound)
-      }))
+      standings,
+      roundResults
     });
   } catch (error) {
     console.error('Validate error:', error);

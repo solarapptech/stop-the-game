@@ -4,6 +4,9 @@ const jwt = require('jsonwebtoken');
 const categoryTimers = new Map();
 const letterTimers = new Map();
 const letterRevealTimers = new Map();
+const roundTimers = new Map();
+const nextRoundTimers = new Map();
+const nextRoundReady = new Map();
 
 module.exports = (io, socket) => {
   // Helper to finalize categories for a game (dedupe, fill to min 6, cap at 8)
@@ -504,6 +507,23 @@ module.exports = (io, socket) => {
         io.to(`game-${gameId}`).emit('letter-selected', {
           letter: gg.currentLetter
         });
+        // start 60s round auto-end timer
+        const existingRound = roundTimers.get(game._id.toString());
+        if (existingRound) clearTimeout(existingRound);
+        const rt = setTimeout(async () => {
+          roundTimers.delete(game._id.toString());
+          try {
+            const g3 = await Game.findById(game._id);
+            if (g3 && g3.status === 'playing') {
+              g3.status = 'validating';
+              await g3.save();
+              io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout' });
+            }
+          } catch (e) {
+            console.error('Round auto-end error:', e);
+          }
+        }, 60000);
+        roundTimers.set(game._id.toString(), rt);
       }, 3000);
       letterRevealTimers.set(game._id.toString(), revTimer);
     } catch (error) {
@@ -526,6 +546,24 @@ module.exports = (io, socket) => {
         username,
         timestamp: new Date()
       });
+      // Cancel round timer and move to validating
+      try {
+        const t = roundTimers.get(gameId.toString());
+        if (t) {
+          clearTimeout(t);
+          roundTimers.delete(gameId.toString());
+        }
+      } catch (e) {}
+      try {
+        const g = await Game.findById(gameId);
+        if (g && g.status === 'playing') {
+          g.status = 'validating';
+          await g.save();
+        }
+        io.to(`game-${gameId}`).emit('round-ended', { reason: 'stopped' });
+      } catch (e) {
+        console.error('Set validating on stop error:', e);
+      }
     } catch (error) {
       console.error('Player stopped socket error:', error);
     }
@@ -544,6 +582,143 @@ module.exports = (io, socket) => {
       console.error('Round results socket error:', error);
     }
   });
+
+  // Next round readiness
+  socket.on('next-round-ready', async (data) => {
+    try {
+      const { gameId } = data;
+      if (!socket.userId) return;
+      const id = gameId.toString();
+      let set = nextRoundReady.get(id);
+      if (!set) {
+        set = new Set();
+        nextRoundReady.set(id, set);
+      }
+      set.add(socket.userId.toString());
+
+      const game = await Game.findById(gameId).select('players status');
+      if (!game) return;
+      const total = (game.players || []).length;
+      io.to(`game-${gameId}`).emit('ready-update', { ready: set.size, total });
+
+      // Start 7s countdown if not already
+      if (!nextRoundTimers.get(id)) {
+        let seconds = 7;
+        io.to(`game-${gameId}`).emit('next-round-countdown', { seconds });
+        const timer = setInterval(async () => {
+          seconds -= 1;
+          if (seconds > 0) {
+            io.to(`game-${gameId}`).emit('next-round-countdown', { seconds });
+          }
+          const everyoneReady = set.size >= total;
+          if (seconds <= 0 || everyoneReady) {
+            clearInterval(timer);
+            nextRoundTimers.delete(id);
+            nextRoundReady.delete(id);
+            await advanceToNextRound(gameId);
+          }
+        }, 1000);
+        nextRoundTimers.set(id, timer);
+      } else {
+        // If everyone ready, fast-forward
+        if (set.size >= total) {
+          const t = nextRoundTimers.get(id);
+          if (t) {
+            clearInterval(t);
+            nextRoundTimers.delete(id);
+          }
+          nextRoundReady.delete(id);
+          await advanceToNextRound(gameId);
+        }
+      }
+    } catch (error) {
+      console.error('Next round ready socket error:', error);
+    }
+  });
+
+  async function advanceToNextRound(gameId) {
+    try {
+      const game = await Game.findById(gameId).populate('players.user', 'username');
+      if (!game) return;
+      const hasNext = game.nextRound();
+      if (hasNext) {
+        const selectorId = (game.letterSelector || '').toString();
+        const selectorPlayer = (game.players || []).find(p => (p.user._id || p.user).toString() === selectorId);
+        const selectorName = selectorPlayer?.user?.username || 'Player';
+        const letterDeadline = new Date(Date.now() + 12000);
+        game.letterDeadline = letterDeadline;
+        await game.save();
+
+        io.to(`game-${gameId}`).emit('letter-selection-started', {
+          gameId,
+          selectorId,
+          selectorName,
+          deadline: letterDeadline
+        });
+
+        const existingL = letterTimers.get(game._id.toString());
+        if (existingL) clearTimeout(existingL);
+        const selTimer = setTimeout(async () => {
+          letterTimers.delete(game._id.toString());
+          try {
+            const g = await Game.findById(game._id);
+            if (g && g.status === 'selecting_letter' && !g.currentLetter) {
+              const autoLetter = g.selectRandomLetter();
+              g.letterDeadline = null;
+              await g.save();
+
+              const revealDeadline = new Date(Date.now() + 3000);
+              io.to(`game-${gameId}`).emit('letter-accepted', {
+                letter: g.currentLetter,
+                revealDeadline
+              });
+
+              const existingR = letterRevealTimers.get(game._id.toString());
+              if (existingR) clearTimeout(existingR);
+              const revTimer = setTimeout(async () => {
+                letterRevealTimers.delete(game._id.toString());
+                const gg = await Game.findById(game._id);
+                if (!gg) return;
+                gg.status = 'playing';
+                gg.roundStartTime = new Date();
+                await gg.save();
+                io.to(`game-${gameId}`).emit('letter-selected', {
+                  letter: gg.currentLetter
+                });
+                // start 60s round auto-end timer
+                const existingRound = roundTimers.get(game._id.toString());
+                if (existingRound) clearTimeout(existingRound);
+                const rt = setTimeout(async () => {
+                  roundTimers.delete(game._id.toString());
+                  try {
+                    const g3 = await Game.findById(game._id);
+                    if (g3 && g3.status === 'playing') {
+                      g3.status = 'validating';
+                      await g3.save();
+                      io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout' });
+                    }
+                  } catch (e) {
+                    console.error('Round auto-end error:', e);
+                  }
+                }, 60000);
+                roundTimers.set(game._id.toString(), rt);
+              }, 3000);
+              letterRevealTimers.set(game._id.toString(), revTimer);
+            }
+          } catch (e) {
+            console.error('Auto-pick letter error:', e);
+          }
+        }, 12000);
+        letterTimers.set(game._id.toString(), selTimer);
+      } else {
+        io.to(`game-${gameId}`).emit('game-finished', {
+          winner: (game.winner || null)
+        });
+      }
+    } catch (err) {
+      console.error('Advance to next round error:', err);
+    }
+  }
 
   // Delete room
   socket.on('delete-room', async (roomId) => {

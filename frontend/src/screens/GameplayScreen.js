@@ -10,7 +10,7 @@ import theme from '../theme';
 const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
   const { user } = useAuth();
-  const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady } = useSocket();
+  const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound } = useSocket();
   const { 
     gameState, 
     categories, 
@@ -47,6 +47,9 @@ const GameplayScreen = ({ navigation, route }) => {
   const [revealTimeLeft, setRevealTimeLeft] = useState(3);
   const [isFrozen, setIsFrozen] = useState(false);
   const [showStopOverlay, setShowStopOverlay] = useState(false);
+  const [readyCount, setReadyCount] = useState(0);
+  const [readyTotal, setReadyTotal] = useState(0);
+  const [nextCountdown, setNextCountdown] = useState(null);
   
   const timerRef = useRef(null);
   const selectTimerRef = useRef(null);
@@ -114,6 +117,10 @@ const GameplayScreen = ({ navigation, route }) => {
       if (data.selectorName) setLetterSelectorName(data.selectorName);
       if (data.deadline) startLetterTimer(new Date(data.deadline));
       setLetterInput('');
+      // reset next round readiness UI
+      setReadyCount(0);
+      setReadyTotal(0);
+      setNextCountdown(null);
     };
     const onLetterAccepted = (data) => {
       if (data.revealDeadline) startRevealTimer(new Date(data.revealDeadline));
@@ -135,18 +142,28 @@ const GameplayScreen = ({ navigation, route }) => {
           await submitAnswers(gameId, answersRef.current, false);
         } catch (e) {}
         setTimeout(() => setShowStopOverlay(false), 1500);
-        setTimeout(() => { handleValidation(); }, 300);
+        // Wait for server to end round and broadcast results
       }
     };
     const onRoundEnded = async (data) => {
       if (timerRef.current) clearInterval(timerRef.current);
       setPhase('validation');
+      // Trigger validation; server will broadcast results. Duplicate calls are safely rejected server-side.
       await handleValidation();
     };
     const onRoundResults = (data) => {
       setRoundResults(data.results);
       setPlayerScores(data.standings);
       setPhase('round-end');
+      // Initialize total from standings length if available
+      if (Array.isArray(data.standings)) setReadyTotal(data.standings.length);
+    };
+    const onReadyUpdate = (data) => {
+      if (typeof data.ready === 'number') setReadyCount(data.ready);
+      if (typeof data.total === 'number') setReadyTotal(data.total);
+    };
+    const onNextRoundCountdown = (data) => {
+      if (typeof data.seconds === 'number') setNextCountdown(data.seconds);
     };
 
     socket.on('category-selection-started', onCategorySelectionStarted);
@@ -159,6 +176,8 @@ const GameplayScreen = ({ navigation, route }) => {
     socket.on('player-stopped', onPlayerStopped);
     socket.on('round-ended', onRoundEnded);
     socket.on('round-results', onRoundResults);
+    socket.on('ready-update', onReadyUpdate);
+    socket.on('next-round-countdown', onNextRoundCountdown);
 
     return () => {
       socket.off('category-selection-started', onCategorySelectionStarted);
@@ -171,6 +190,8 @@ const GameplayScreen = ({ navigation, route }) => {
       socket.off('player-stopped', onPlayerStopped);
       socket.off('round-ended', onRoundEnded);
       socket.off('round-results', onRoundResults);
+      socket.off('ready-update', onReadyUpdate);
+      socket.off('next-round-countdown', onNextRoundCountdown);
     };
   }, [socket, user?.id, gameId]);
 
@@ -442,7 +463,14 @@ const GameplayScreen = ({ navigation, route }) => {
   };
 
   const handleTimeUp = async () => {
-    await submitAnswers(gameId, answers, false);
+    setIsFrozen(true);
+    setTimeLeft(0);
+    setShowStopOverlay(true);
+    try {
+      await submitAnswers(gameId, answers, false);
+    } catch (e) {}
+    setTimeout(() => setShowStopOverlay(false), 1500);
+    // Wait for server 'round-ended' then validation will run
   };
 
   const handleValidation = async () => {
@@ -607,7 +635,6 @@ const GameplayScreen = ({ navigation, route }) => {
         onPress={handleStop}
         style={[styles.stopButton, { backgroundColor: canFinish ? '#4CAF50' : '#9E9E9E' }]}
         disabled={timeLeft === 0 || hasStoppedFirst || !canFinish || isFrozen}
-        icon="hand"
       >
         STOP!
       </Button>
@@ -632,13 +659,19 @@ const GameplayScreen = ({ navigation, route }) => {
           })}
         </View>
         {currentRound < totalRounds && (
-          <Button
-            mode="contained"
-            onPress={handleNextRound}
-            style={styles.nextButton}
-          >
-            Next Round
-          </Button>
+          <>
+            <Text style={styles.instruction}>{`(${readyCount}/${readyTotal}) players ready...`}</Text>
+            {typeof nextCountdown === 'number' && nextCountdown >= 0 && (
+              <Text style={styles.instruction}>Next round in {nextCountdown}s</Text>
+            )}
+            <Button
+              mode="contained"
+              onPress={() => readyNextRound(gameId)}
+              style={styles.nextButton}
+            >
+              Continue
+            </Button>
+          </>
         )}
       </Card.Content>
     </Card>
