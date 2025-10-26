@@ -126,27 +126,46 @@ const GameplayScreen = ({ navigation, route }) => {
       setHasConfirmed(false);
       setLetterInput('');
     };
-    const onLetterSelectionStarted = (data) => {
+    const onLetterSelectionStarted = async (data) => {
       setPhase('letter-selection');
       if (timerRef.current) clearInterval(timerRef.current);
       if (data.selectorId) {
-        setLetterSelectorId(data.selectorId);
-        setIsPlayerTurn(data.selectorId === userIdRef.current);
+        const selId = String(data.selectorId);
+        setLetterSelectorId(selId);
+        setIsPlayerTurn(selId === String(userIdRef.current || ''));
       }
       if (data.selectorName) setLetterSelectorName(data.selectorName);
-      if (data.deadline) startLetterTimer(new Date(data.deadline));
-      setLetterInput('');
       if (typeof data.currentRound === 'number') setCurrentRound(data.currentRound);
       setAnswers({});
       setIsFrozen(false);
       setHasStoppedFirst(false);
       setShowStopOverlay(false);
-      // reset next round readiness UI
       setReadyCount(0);
       setReadyTotal(0);
       setNextCountdown(null);
-      // reset Stop! popup for the new round
       stopShownRef.current = false;
+      if (!data.selectorId && data.selectorName && user?.username && data.selectorName === user.username) {
+        setIsPlayerTurn(true);
+        setLetterSelectorId(String(userIdRef.current || ''));
+      }
+      try {
+        const result = await getGameState(gameId);
+        if (result?.success) {
+          const g = result.game;
+          const ls = g?.letterSelector;
+          const lsId = ls && (ls._id || ls);
+          if (lsId) {
+            const sid = String(lsId);
+            setLetterSelectorId(sid);
+            setIsPlayerTurn(sid === String(userIdRef.current || ''));
+            if (!data.selectorName && Array.isArray(g.players)) {
+              const p = g.players.find(pp => String((pp.user && (pp.user._id || pp.user)) || '') === sid);
+              if (p && p.user && p.user.username) setLetterSelectorName(p.user.username);
+            }
+          }
+          if (typeof g?.currentRound === 'number') setCurrentRound(g.currentRound);
+        }
+      } catch (e) {}
     };
     const onLetterAccepted = (data) => {
       if (data.revealDeadline) startRevealTimer(new Date(data.revealDeadline));
@@ -590,6 +609,13 @@ const GameplayScreen = ({ navigation, route }) => {
     };
     trySync();
   }, [letterTimeLeft, phase, gameId]);
+
+  // Recompute turn when either the selector or current user id changes
+  useEffect(() => {
+    if (letterSelectorId != null && userId != null) {
+      setIsPlayerTurn(String(letterSelectorId) === String(userId));
+    }
+  }, [letterSelectorId, userId]);
 
   const handleNextRound = async () => {
     const result = await nextRound(gameId);

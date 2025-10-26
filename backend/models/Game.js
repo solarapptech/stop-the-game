@@ -220,10 +220,19 @@ gameSchema.methods.nextRound = function() {
     this.currentLetter = null;
     this.status = 'selecting_letter';
     
-    // Rotate letter selector
-    const currentIndex = this.players.findIndex(p => p.user.toString() === this.letterSelector.toString());
+    // Rotate letter selector (handle populated docs and ObjectIds)
+    const getIdStr = (u) => {
+      if (!u) return '';
+      const id = (u._id) ? u._id : u;
+      return id.toString();
+    };
+    const curSel = getIdStr(this.letterSelector);
+    let currentIndex = this.players.findIndex(p => getIdStr(p.user) === curSel);
+    if (currentIndex < 0) currentIndex = -1; // if not found, start from -1 so next is 0
     const nextIndex = (currentIndex + 1) % this.players.length;
-    this.letterSelector = this.players[nextIndex].user;
+    const nextUser = this.players[nextIndex].user;
+    // Always store as ObjectId, not populated doc
+    this.letterSelector = nextUser._id ? nextUser._id : nextUser;
     
     return true;
   }
