@@ -57,6 +57,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const [rematchTotal, setRematchTotal] = useState(0);
   const [hasVotedRematch, setHasVotedRematch] = useState(false);
   const [rematchAborted, setRematchAborted] = useState(false);
+  const [rematchCountdown, setRematchCountdown] = useState(null);
   
   const timerRef = useRef(null);
   const selectTimerRef = useRef(null);
@@ -243,6 +244,9 @@ const GameplayScreen = ({ navigation, route }) => {
       // New game begins
       navigation.replace('Gameplay', { gameId: data.gameId });
     };
+    const onRematchCountdown = (data) => {
+      if (typeof data.seconds === 'number') setRematchCountdown(data.seconds);
+    };
 
     socket.on('category-selection-started', onCategorySelectionStarted);
     socket.on('category-selected', onCategorySelected);
@@ -260,6 +264,7 @@ const GameplayScreen = ({ navigation, route }) => {
     socket.on('rematch-update', onRematchUpdate);
     socket.on('rematch-aborted', onRematchAborted);
     socket.on('game-starting', onGameStarting);
+    socket.on('rematch-countdown', onRematchCountdown);
 
     return () => {
       socket.off('category-selection-started', onCategorySelectionStarted);
@@ -278,6 +283,7 @@ const GameplayScreen = ({ navigation, route }) => {
       socket.off('rematch-update', onRematchUpdate);
       socket.off('rematch-aborted', onRematchAborted);
       socket.off('game-starting', onGameStarting);
+      socket.off('rematch-countdown', onRematchCountdown);
     };
   }, [socket, userId, gameId]);
 
@@ -862,14 +868,14 @@ const GameplayScreen = ({ navigation, route }) => {
                 style={styles.nextButton}
                 disabled={hasVotedRematch || rematchAborted}
               >
-                {rematchAborted ? 'A user left' : hasVotedRematch ? 'Waiting for others...' : 'Play Again'}
+                {rematchAborted ? 'A user left' : (typeof rematchCountdown === 'number') ? `Starting in ${rematchCountdown}s...` : hasVotedRematch ? 'Waiting for others...' : 'Play Again'}
               </Button>
               <Button
                 mode="outlined"
                 onPress={() => navigation.replace('Menu')}
                 style={styles.nextButton}
               >
-                Exit to Lobby
+                Return to lobby
               </Button>
             </>
           ) : (

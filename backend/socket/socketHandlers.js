@@ -8,6 +8,7 @@ const roundTimers = new Map();
 const nextRoundTimers = new Map();
 const nextRoundReady = new Map();
 const rematchReady = new Map();
+const rematchCountdownTimers = new Map();
 
 module.exports = (io, socket) => {
   // Helper to finalize categories for a game (dedupe, fill to min 6, cap at 8)
@@ -862,6 +863,11 @@ module.exports = (io, socket) => {
       try {
         if (socket.roomId) {
           rematchReady.delete(socket.roomId.toString());
+          const t = rematchCountdownTimers.get(socket.roomId.toString());
+          if (t) {
+            clearInterval(t);
+            rematchCountdownTimers.delete(socket.roomId.toString());
+          }
           io.to(socket.roomId).emit('rematch-aborted', { reason: 'player-left' });
         }
       } catch (e) {}
@@ -890,38 +896,60 @@ module.exports = (io, socket) => {
       io.to(`game-${gameId}`).emit('rematch-update', { ready: set.size, total });
 
       if (set.size >= total) {
-        rematchReady.delete(roomId);
-        // Recreate game using existing room and original player order
-        const Room = require('../models/Room');
-        const room = await Room.findById(roomId).populate('players.user');
-        if (!room) return;
+        // Start a 5-second countdown if not already running
+        if (!rematchCountdownTimers.get(roomId)) {
+          let seconds = 5;
+          io.to(`game-${gameId}`).emit('rematch-countdown', { seconds });
+          const timer = setInterval(async () => {
+            seconds -= 1;
+            if (seconds > 0) {
+              io.to(`game-${gameId}`).emit('rematch-countdown', { seconds });
+              return;
+            }
+            // Countdown finished
+            clearInterval(timer);
+            rematchCountdownTimers.delete(roomId);
+            rematchReady.delete(roomId);
 
-        const newGame = new Game({
-          room: room._id,
-          rounds: room.rounds,
-          players: room.players.map(p => ({
-            user: p.user._id || p.user,
-            score: 0,
-            answers: []
-          })),
-          letterSelector: (room.players[0].user._id || room.players[0].user)
-        });
-        newGame.categoryDeadline = null;
-        newGame.status = 'selecting_categories';
-        newGame.confirmedPlayers = [];
-        newGame.categoryReadyPlayers = [];
-        await newGame.save();
-
-        room.status = 'in_progress';
-        room.currentGame = newGame._id;
-        await room.save();
-
-        // Notify room to transition to gameplay
-        io.to(roomId).emit('game-starting', {
-          roomId,
-          gameId: newGame._id,
-          countdown: 0
-        });
+            // Recreate game using existing room and original player order
+            try {
+              const Room = require('../models/Room');
+              const room = await Room.findById(roomId).populate('players.user');
+              if (!room) return;
+  
+              const newGame = new Game({
+                room: room._id,
+                rounds: room.rounds,
+                players: room.players.map(p => ({
+                  user: p.user._id || p.user,
+                  score: 0,
+                  answers: []
+                })),
+                letterSelector: (room.players[0].user._id || room.players[0].user)
+              });
+              newGame.categoryDeadline = null;
+              newGame.status = 'selecting_categories';
+              newGame.confirmedPlayers = [];
+              newGame.categoryReadyPlayers = [];
+              await newGame.save();
+  
+              room.status = 'in_progress';
+              room.currentGame = newGame._id;
+              await room.save();
+  
+              // Notify room to transition to gameplay
+              io.to(roomId).emit('game-starting', {
+                roomId,
+                gameId: newGame._id,
+                countdown: 0
+              });
+            } catch (err) {
+              console.error('Rematch create game error:', err);
+              io.to(`game-${gameId}`).emit('rematch-aborted', { reason: 'server-error' });
+            }
+          }, 1000);
+          rematchCountdownTimers.set(roomId, timer);
+        }
       }
     } catch (error) {
       console.error('Play again ready socket error:', error);
