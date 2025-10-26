@@ -867,6 +867,7 @@ const GameplayScreen = ({ navigation, route }) => {
                 onPress={() => { if (!hasVotedRematch && !rematchAborted) { setHasVotedRematch(true); playAgainReady(gameId); } }}
                 style={styles.nextButton}
                 disabled={hasVotedRematch || rematchAborted}
+                labelStyle={{ color: '#FFFFFF' }}
               >
                 {rematchAborted ? 'A user left' : (typeof rematchCountdown === 'number') ? `Starting in ${rematchCountdown}s...` : hasVotedRematch ? 'Waiting for others...' : 'Play Again'}
               </Button>
@@ -874,6 +875,7 @@ const GameplayScreen = ({ navigation, route }) => {
                 mode="outlined"
                 onPress={() => navigation.replace('Menu')}
                 style={styles.nextButton}
+                labelStyle={{ color: theme.colors.primary }}
               >
                 Return to lobby
               </Button>

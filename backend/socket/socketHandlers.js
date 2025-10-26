@@ -917,6 +917,10 @@ module.exports = (io, socket) => {
               const room = await Room.findById(roomId).populate('players.user');
               if (!room) return;
   
+              // Load previous game to copy categories
+              const prevGame = await Game.findById(gameId).select('categories');
+              const startingSelector = (room.players[0].user._id || room.players[0].user);
+
               const newGame = new Game({
                 room: room._id,
                 rounds: room.rounds,
@@ -925,24 +929,106 @@ module.exports = (io, socket) => {
                   score: 0,
                   answers: []
                 })),
-                letterSelector: (room.players[0].user._id || room.players[0].user)
+                categories: Array.isArray(prevGame?.categories) ? prevGame.categories : [],
+                letterSelector: startingSelector,
+                currentRound: 1,
+                status: 'selecting_letter'
               });
               newGame.categoryDeadline = null;
-              newGame.status = 'selecting_categories';
               newGame.confirmedPlayers = [];
               newGame.categoryReadyPlayers = [];
+              // set initial 12s letter selection deadline so join-game will push the event
+              newGame.letterDeadline = new Date(Date.now() + 12000);
               await newGame.save();
   
               room.status = 'in_progress';
               room.currentGame = newGame._id;
               await room.save();
   
-              // Notify room to transition to gameplay
-              io.to(roomId).emit('game-starting', {
-                roomId,
-                gameId: newGame._id,
-                countdown: 0
-              });
+              // Notify both the room and the old game room to transition to gameplay
+              const payload = { roomId, gameId: newGame._id, countdown: 0 };
+              io.to(roomId).emit('game-starting', payload);
+              io.to(`game-${gameId}`).emit('game-starting', payload);
+
+              // Immediately announce letter selection for new game and start 12s timer
+              try {
+                const selectorId = (newGame.letterSelector || '').toString();
+                const selectorPlayer = room.players.find(p => (p.user._id || p.user).toString() === selectorId);
+                const selectorName = selectorPlayer?.user?.username || 'Player';
+                const letterDeadline = newGame.letterDeadline;
+                io.to(roomId).emit('letter-selection-started', {
+                  gameId: newGame._id,
+                  selectorId,
+                  selectorName,
+                  deadline: letterDeadline,
+                  currentRound: newGame.currentRound
+                });
+                io.to(`game-${newGame._id}`).emit('letter-selection-started', {
+                  gameId: newGame._id,
+                  selectorId,
+                  selectorName,
+                  deadline: letterDeadline,
+                  currentRound: newGame.currentRound
+                });
+
+                // Schedule auto-pick after 12s
+                const existingL = letterTimers.get(newGame._id.toString());
+                if (existingL) clearTimeout(existingL);
+                const selTimer = setTimeout(async () => {
+                  letterTimers.delete(newGame._id.toString());
+                  try {
+                    const g = await Game.findById(newGame._id);
+                    if (g && g.status === 'selecting_letter' && !g.currentLetter) {
+                      const autoLetter = g.selectRandomLetter();
+                      g.letterDeadline = null;
+                      await g.save();
+
+                      const revealDeadline = new Date(Date.now() + 3000);
+                      io.to(`game-${g._id}`).emit('letter-accepted', {
+                        letter: g.currentLetter,
+                        revealDeadline
+                      });
+
+                      const existingR = letterRevealTimers.get(g._id.toString());
+                      if (existingR) clearTimeout(existingR);
+                      const revTimer = setTimeout(async () => {
+                        letterRevealTimers.delete(g._id.toString());
+                        const gg = await Game.findById(g._id);
+                        if (!gg) return;
+                        gg.status = 'playing';
+                        gg.roundStartTime = new Date();
+                        await gg.save();
+                        io.to(`game-${gg._id}`).emit('letter-selected', {
+                          letter: gg.currentLetter
+                        });
+                        // start 60s round auto-end timer
+                        const existingRound = roundTimers.get(gg._id.toString());
+                        if (existingRound) clearTimeout(existingRound);
+                        const rt = setTimeout(async () => {
+                          roundTimers.delete(gg._id.toString());
+                          try {
+                            const g3 = await Game.findById(gg._id);
+                            if (g3 && g3.status === 'playing') {
+                              g3.status = 'validating';
+                              await g3.save();
+                              io.to(`game-${g3._id}`).emit('round-ended', { reason: 'timeout' });
+                            }
+                          } catch (e) {
+                            console.error('Round auto-end error:', e);
+                          }
+                        }, 60000);
+                        roundTimers.set(gg._id.toString(), rt);
+                      }, 3000);
+                      letterRevealTimers.set(g._id.toString(), revTimer);
+                    }
+                  } catch (e) {
+                    console.error('Auto-pick letter error (rematch):', e);
+                  }
+                }, 12000);
+                letterTimers.set(newGame._id.toString(), selTimer);
+              } catch (e) {
+                console.error('Emit initial letter-selection for rematch error:', e);
+              }
             } catch (err) {
               console.error('Rematch create game error:', err);
               io.to(`game-${gameId}`).emit('rematch-aborted', { reason: 'server-error' });
