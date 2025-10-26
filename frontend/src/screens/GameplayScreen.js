@@ -241,7 +241,8 @@ const GameplayScreen = ({ navigation, route }) => {
       setRematchAborted(true);
     };
     const onGameStarting = (data) => {
-      // New game begins
+      // New game begins: proactively join new game room before navigating
+      try { if (joinGame && data?.gameId) joinGame(data.gameId); } catch (e) {}
       navigation.replace('Gameplay', { gameId: data.gameId });
     };
     const onRematchCountdown = (data) => {

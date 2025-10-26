@@ -949,6 +949,37 @@ module.exports = (io, socket) => {
               const payload = { roomId, gameId: newGame._id, countdown: 0 };
               io.to(roomId).emit('game-starting', payload);
               io.to(`game-${gameId}`).emit('game-starting', payload);
+              // Also emit directly to every socket found in either room to avoid any missed events
+              try {
+                const socketsInRoom = await io.in(roomId).fetchSockets();
+                const socketsInOldGame = await io.in(`game-${gameId}`).fetchSockets();
+                const uniq = new Set();
+                [...socketsInRoom, ...socketsInOldGame].forEach(s => {
+                  if (s && !uniq.has(s.id)) {
+                    uniq.add(s.id);
+                    s.emit('game-starting', payload);
+                  }
+                });
+              } catch (e) {
+                console.error('Direct emit to sockets for rematch failed:', e);
+              }
+              setTimeout(async () => {
+                io.to(roomId).emit('game-starting', payload);
+                io.to(`game-${gameId}`).emit('game-starting', payload);
+                try {
+                  const socketsInRoom2 = await io.in(roomId).fetchSockets();
+                  const socketsInOldGame2 = await io.in(`game-${gameId}`).fetchSockets();
+                  const uniq2 = new Set();
+                  [...socketsInRoom2, ...socketsInOldGame2].forEach(s => {
+                    if (s && !uniq2.has(s.id)) {
+                      uniq2.add(s.id);
+                      s.emit('game-starting', payload);
+                    }
+                  });
+                } catch (e2) {
+                  console.error('Direct emit retry failed:', e2);
+                }
+              }, 500);
 
               // Immediately announce letter selection for new game and start 12s timer
               try {
