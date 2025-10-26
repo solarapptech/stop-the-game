@@ -130,6 +130,14 @@ const GameplayScreen = ({ navigation, route }) => {
     const onLetterSelectionStarted = async (data) => {
       setPhase('letter-selection');
       if (timerRef.current) clearInterval(timerRef.current);
+      if (data.gameId && String(data.gameId) !== String(gameId)) {
+        setIsFinished(false);
+        setFinalConfirmed(false);
+        try { if (joinGame) joinGame(data.gameId); } catch (e) {}
+        navigation.replace('Gameplay', { gameId: data.gameId });
+        return;
+      }
+      if (data.deadline) startLetterTimer(new Date(data.deadline));
       if (data.selectorId) {
         const selId = String(data.selectorId);
         setLetterSelectorId(selId);
@@ -241,7 +249,13 @@ const GameplayScreen = ({ navigation, route }) => {
       setRematchAborted(true);
     };
     const onGameStarting = (data) => {
-      // New game begins: proactively join new game room before navigating
+      setIsFinished(false);
+      setFinalConfirmed(false);
+      setShowConfetti(false);
+      setRematchReady(0);
+      setRematchTotal(0);
+      setRematchAborted(false);
+      setRematchCountdown(null);
       try { if (joinGame && data?.gameId) joinGame(data.gameId); } catch (e) {}
       navigation.replace('Gameplay', { gameId: data.gameId });
     };
@@ -929,7 +943,7 @@ const GameplayScreen = ({ navigation, route }) => {
         </View>
       )}
       {phase === 'round-end' && renderRoundEnd()}
-      {isFinished && renderFinalResults()}
+      {isFinished && phase === 'round-end' && renderFinalResults()}
     </View>
   );
 };

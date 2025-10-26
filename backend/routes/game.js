@@ -198,8 +198,14 @@ router.post('/:gameId/submit', authMiddleware, [
       return res.status(400).json({ message: 'Not in playing phase' });
     }
 
+    // Sanitize answers: trim and restrict to game's selected categories
+    const sanitized = Array.isArray(answers) ? answers.map(a => ({
+      category: String(a?.category || '').trim(),
+      answer: String(a?.answer || '').trim()
+    })).filter(a => a.category && typeof a.answer === 'string' && game.categories.includes(a.category)) : [];
+
     // Submit answers
-    const submitted = game.submitAnswer(req.user._id, answers, stoppedFirst);
+    const submitted = game.submitAnswer(req.user._id, sanitized, stoppedFirst);
     if (!submitted) {
       return res.status(400).json({ message: 'Failed to submit answers' });
     }

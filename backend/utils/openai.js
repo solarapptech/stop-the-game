@@ -6,20 +6,21 @@ const openai = new OpenAI({
 
 const validateAnswers = async (category, letter, answer) => {
   try {
+    const a = String(answer || '').trim();
     // Basic validation
-    if (!answer || answer.length < 2) {
+    if (!a || a.length < 2) {
       return false;
     }
 
     // Check if answer starts with the correct letter
-    if (answer.charAt(0).toUpperCase() !== letter.toUpperCase()) {
+    if (a.charAt(0).toUpperCase() !== String(letter || '').toUpperCase()) {
       return false;
     }
 
     // Use OpenAI to validate if the answer is valid for the category
-    const prompt = `Is "${answer}" a valid answer for the category "${category}" in the game Stop/Tutti Frutti? 
+    const prompt = `Is "${a}" a valid answer for the category "${category}" in the game Stop/Tutti Frutti? 
     The answer must:
-    1. Start with the letter "${letter}"
+    1. Start with the letter "${String(letter || '').toUpperCase()}"
     2. Be a real word or name that fits the category
     3. Be spelled correctly (minor variations acceptable)
     
@@ -41,12 +42,14 @@ const validateAnswers = async (category, letter, answer) => {
       max_tokens: 10
     });
 
-    const response = completion.choices[0].message.content.toLowerCase().trim();
+    const content = (completion && completion.choices && completion.choices[0] && completion.choices[0].message && completion.choices[0].message.content) || '';
+    const response = String(content).toLowerCase().trim();
     return response === 'true';
   } catch (error) {
     console.error('OpenAI validation error:', error);
     // Fallback to basic validation if OpenAI fails
-    return answer.length >= 2 && answer.charAt(0).toUpperCase() === letter.toUpperCase();
+    const a = String(answer || '').trim();
+    return a.length >= 2 && a.charAt(0).toUpperCase() === String(letter || '').toUpperCase();
   }
 };
 
@@ -66,9 +69,10 @@ const validateMultipleAnswers = async (answers, letter) => {
     // Fallback validation
     return answers.map(answer => ({
       ...answer,
-      isValid: answer.answer && 
-               answer.answer.length >= 2 && 
-               answer.answer.charAt(0).toUpperCase() === letter.toUpperCase()
+      isValid: (() => {
+        const a = String(answer.answer || '').trim();
+        return a && a.length >= 2 && a.charAt(0).toUpperCase() === String(letter || '').toUpperCase();
+      })()
     }));
   }
 };
