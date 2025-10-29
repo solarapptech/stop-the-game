@@ -520,8 +520,9 @@ module.exports = (io, socket) => {
             const g3 = await Game.findById(game._id);
             if (g3 && g3.status === 'playing') {
               g3.status = 'validating';
+              g3.validationDeadline = new Date(Date.now() + 2000);
               await g3.save();
-              io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout' });
+              io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
             }
           } catch (e) {
             console.error('Round auto-end error:', e);
@@ -562,6 +563,7 @@ module.exports = (io, socket) => {
 
       // Transition to validating first to avoid duplicate STOPs racing
       g.status = 'validating';
+      g.validationDeadline = new Date(Date.now() + 2000);
       await g.save();
 
       // Notify clients
@@ -570,7 +572,7 @@ module.exports = (io, socket) => {
         username,
         timestamp: new Date()
       });
-      io.to(`game-${gameId}`).emit('round-ended', { reason: 'stopped' });
+      io.to(`game-${gameId}`).emit('round-ended', { reason: 'stopped', validationDeadline: g.validationDeadline });
     } catch (error) {
       console.error('Player stopped socket error:', error);
     }

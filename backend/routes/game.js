@@ -5,7 +5,7 @@ const Game = require('../models/Game');
 const Room = require('../models/Room');
 const User = require('../models/User');
 const { authMiddleware } = require('../middleware/auth');
-const { validateAnswers } = require('../utils/openai');
+const { validateAnswers, validateBatchAnswersFast } = require('../utils/openai');
 
 // Start game
 router.post('/start/:roomId', authMiddleware, async (req, res) => {
@@ -194,7 +194,9 @@ router.post('/:gameId/submit', authMiddleware, [
       return res.status(404).json({ message: 'Game not found' });
     }
 
-    if (game.status !== 'playing') {
+    const now = new Date();
+    const allowDuringValidation = game.status === 'validating' && game.validationDeadline && now <= new Date(game.validationDeadline);
+    if (!(game.status === 'playing' || allowDuringValidation)) {
       return res.status(400).json({ message: 'Not in playing phase' });
     }
 
@@ -204,6 +206,7 @@ router.post('/:gameId/submit', authMiddleware, [
       answer: String(a?.answer || '').trim()
     })).filter(a => a.category && typeof a.answer === 'string' && game.categories.includes(a.category)) : [];
 
+    console.log(`[SUBMIT] user=${req.user._id} game=${gameId} round=${game.currentRound} stoppedFirst=${!!stoppedFirst} allowDuringValidation=${!!allowDuringValidation} answers=${sanitized.length}`);
     // Submit answers
     const submitted = game.submitAnswer(req.user._id, sanitized, stoppedFirst);
     if (!submitted) {
@@ -213,6 +216,7 @@ router.post('/:gameId/submit', authMiddleware, [
     // If someone stopped first, end the round
     if (stoppedFirst) {
       game.status = 'validating';
+      game.validationDeadline = new Date(Date.now() + 2000);
     }
 
     await game.save();
@@ -258,10 +262,11 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
       }
     }
 
-    const resultByKey = {};
-    for (const item of unique) {
-      resultByKey[item.key] = await validateAnswers(item.category, game.currentLetter, item.answer);
-    }
+    const t0 = Date.now();
+    console.log(`[VALIDATION] Start: game=${gameId}, round=${game.currentRound}, unique=${unique.length}`);
+    const resultByKey = await validateBatchAnswersFast(unique.map(u => ({ category: u.category, answer: u.answer })), game.currentLetter);
+    const t1 = Date.now();
+    console.log(`[VALIDATION] AI done in ${t1 - t0}ms for unique=${unique.length}`);
 
     for (const player of game.players) {
       const answer = player.answers.find(a => a.round === game.currentRound);
@@ -305,6 +310,7 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
       standings,
       roundResults
     });
+    console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswers=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
   } catch (error) {
     console.error('Validate error:', error);
     res.status(500).json({ message: 'Error validating answers' });
