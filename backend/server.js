@@ -27,6 +27,7 @@ const socketHandlers = require('./socket/socketHandlers');
 require('./config/passport');
 
 const app = express();
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 // Allow multiple client origins (comma-separated env var CLIENT_URLS or single CLIENT_URL)
 const rawClientUrls = process.env.CLIENT_URLS || process.env.CLIENT_URL || 'http://localhost:8081';
