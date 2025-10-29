@@ -7,6 +7,64 @@ const User = require('../models/User');
 const { authMiddleware } = require('../middleware/auth');
 const { validateAnswers, validateBatchAnswersFast } = require('../utils/openai');
 
+async function runValidationAndBroadcast(app, gameId) {
+  const game = await Game.findById(gameId).populate('players.user', 'username');
+  if (!game || game.status !== 'validating') return {};
+  const unique = [];
+  const seen = new Set();
+  for (const player of game.players) {
+    const answer = player.answers.find(a => a.round === game.currentRound);
+    if (answer) {
+      for (const catAnswer of answer.categoryAnswers) {
+        const a = String(catAnswer.answer || '').trim();
+        const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push({ key, category: catAnswer.category, answer: a });
+        }
+      }
+    }
+  }
+  const t0 = Date.now();
+  console.log(`[VALIDATION] Start: game=${gameId}, round=${game.currentRound}, unique=${unique.length}`);
+  const resultByKey = await validateBatchAnswersFast(unique.map(u => ({ category: u.category, answer: u.answer })), game.currentLetter);
+  const t1 = Date.now();
+  console.log(`[VALIDATION] AI done in ${t1 - t0}ms for unique=${unique.length}`);
+  for (const player of game.players) {
+    const answer = player.answers.find(a => a.round === game.currentRound);
+    if (answer) {
+      for (const catAnswer of answer.categoryAnswers) {
+        const a = String(catAnswer.answer || '').trim();
+        const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
+        catAnswer.isValid = !!resultByKey[key];
+      }
+    }
+  }
+  game.calculateRoundScores();
+  game.status = 'round_ended';
+  game.validationInProgress = false;
+  game.validationDeadline = null;
+  await game.save();
+  const standings = game.getStandings();
+  const roundResults = game.players.map(p => ({
+    user: p.user,
+    answers: p.answers.find(a => a.round === game.currentRound)
+  }));
+  try {
+    const io = app.get('io');
+    if (io) {
+      io.to(`game-${gameId}`).emit('round-results', {
+        standings,
+        results: roundResults,
+        currentRound: game.currentRound,
+        timestamp: new Date()
+      });
+    }
+  } catch (e) {}
+  console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswers=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
+  return { standings, roundResults };
+}
+
 // Start game
 router.post('/start/:roomId', authMiddleware, async (req, res) => {
   try {
@@ -246,71 +304,34 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Not in validation phase' });
     }
 
-    const unique = [];
-    const seen = new Set();
-    for (const player of game.players) {
-      const answer = player.answers.find(a => a.round === game.currentRound);
-      if (answer) {
-        for (const catAnswer of answer.categoryAnswers) {
-          const a = String(catAnswer.answer || '').trim();
-          const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            unique.push({ key, category: catAnswer.category, answer: a });
-          }
-        }
-      }
+    const allSubmitted = game.players.every(p => p.answers.some(a => a.round === game.currentRound));
+    const deadlineMs = game.validationDeadline ? new Date(game.validationDeadline).getTime() : 0;
+    const nowMs = Date.now();
+    if (!allSubmitted && deadlineMs && nowMs < deadlineMs) {
+      return res.status(202).json({ message: 'Waiting for submissions', validationDeadline: game.validationDeadline });
     }
 
-    const t0 = Date.now();
-    console.log(`[VALIDATION] Start: game=${gameId}, round=${game.currentRound}, unique=${unique.length}`);
-    const resultByKey = await validateBatchAnswersFast(unique.map(u => ({ category: u.category, answer: u.answer })), game.currentLetter);
-    const t1 = Date.now();
-    console.log(`[VALIDATION] AI done in ${t1 - t0}ms for unique=${unique.length}`);
-
-    for (const player of game.players) {
-      const answer = player.answers.find(a => a.round === game.currentRound);
-      if (answer) {
-        for (const catAnswer of answer.categoryAnswers) {
-          const a = String(catAnswer.answer || '').trim();
-          const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
-          catAnswer.isValid = !!resultByKey[key];
-        }
+    const locked = await Game.findOneAndUpdate(
+      { _id: gameId, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
+      { $set: { validationInProgress: true } },
+      { new: true }
+    );
+    if (!locked) {
+      const g2 = await Game.findById(gameId).select('status');
+      if (g2 && g2.status === 'round_ended') {
+        const g3 = await Game.findById(gameId).populate('players.user', 'username');
+        const standings = g3.getStandings();
+        const roundResults = g3.players.map(p => ({
+          user: p.user,
+          answers: p.answers.find(a => a.round === g3.currentRound)
+        }));
+        return res.json({ message: 'Validation complete', standings, roundResults });
       }
+      return res.status(202).json({ message: 'Validation in progress' });
     }
 
-    // Calculate scores
-    game.calculateRoundScores();
-    game.status = 'round_ended';
-    await game.save();
-
-    const standings = game.getStandings();
-    const roundResults = game.players.map(p => ({
-      user: p.user,
-      answers: p.answers.find(a => a.round === game.currentRound)
-    }));
-
-    // Broadcast results to all players in the room via sockets
-    try {
-      const io = req.app.get('io');
-      if (io) {
-        io.to(`game-${gameId}`).emit('round-results', {
-          standings,
-          results: roundResults,
-          currentRound: game.currentRound,
-          timestamp: new Date()
-        });
-      }
-    } catch (e) {
-      // ignore socket errors
-    }
-
-    res.json({
-      message: 'Validation complete',
-      standings,
-      roundResults
-    });
-    console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswers=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
+    const { standings, roundResults } = await runValidationAndBroadcast(req.app, gameId);
+    return res.json({ message: 'Validation complete', standings, roundResults });
   } catch (error) {
     console.error('Validate error:', error);
     res.status(500).json({ message: 'Error validating answers' });

@@ -73,6 +73,10 @@ const gameSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  validationInProgress: {
+    type: Boolean,
+    default: false
+  },
   roundStartTime: {
     type: Date,
     default: null

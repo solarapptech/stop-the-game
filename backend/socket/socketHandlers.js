@@ -1,6 +1,7 @@
 const Room = require('../models/Room');
 const Game = require('../models/Game');
 const jwt = require('jsonwebtoken');
+const { validateBatchAnswersFast } = require('../utils/openai');
 const categoryTimers = new Map();
 const letterTimers = new Map();
 const letterRevealTimers = new Map();
@@ -9,6 +10,7 @@ const nextRoundTimers = new Map();
 const nextRoundReady = new Map();
 const rematchReady = new Map();
 const rematchCountdownTimers = new Map();
+const validationTimers = new Map();
 
 module.exports = (io, socket) => {
   // Helper to finalize categories for a game (dedupe, fill to min 6, cap at 8)
@@ -99,6 +101,63 @@ module.exports = (io, socket) => {
       letterTimers.set(game._id.toString(), selTimer);
     } catch (error) {
       console.error('Finalize categories error:', error);
+    }
+  };
+
+  // Run validation and broadcast results for the current round
+  const runValidation = async (gameId) => {
+    try {
+      const game = await Game.findById(gameId).populate('players.user', 'username');
+      if (!game || game.status !== 'validating') return;
+      const unique = [];
+      const seen = new Set();
+      for (const player of game.players) {
+        const answer = player.answers.find(a => a.round === game.currentRound);
+        if (answer) {
+          for (const catAnswer of answer.categoryAnswers) {
+            const a = String(catAnswer.answer || '').trim();
+            const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              unique.push({ key, category: catAnswer.category, answer: a });
+            }
+          }
+        }
+      }
+      const t0 = Date.now();
+      console.log(`[VALIDATION] Start: game=${gameId}, round=${game.currentRound}, unique=${unique.length}`);
+      const resultByKey = await validateBatchAnswersFast(unique.map(u => ({ category: u.category, answer: u.answer })), game.currentLetter);
+      console.log(`[VALIDATION] AI done in ${Date.now() - t0}ms for unique=${unique.length}`);
+      for (const player of game.players) {
+        const answer = player.answers.find(a => a.round === game.currentRound);
+        if (answer) {
+          for (const catAnswer of answer.categoryAnswers) {
+            const a = String(catAnswer.answer || '').trim();
+            const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
+            catAnswer.isValid = !!resultByKey[key];
+          }
+        }
+      }
+      game.calculateRoundScores();
+      game.status = 'round_ended';
+      game.validationInProgress = false;
+      game.validationDeadline = null;
+      await game.save();
+      const standings = game.getStandings();
+      const roundResults = game.players.map(p => ({
+        user: p.user,
+        answers: p.answers.find(a => a.round === game.currentRound)
+      }));
+      io.to(`game-${gameId}`).emit('round-results', {
+        standings,
+        results: roundResults,
+        currentRound: game.currentRound,
+        timestamp: new Date()
+      });
+      console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswers=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
+    } catch (err) {
+      console.error('Socket runValidation error:', err);
+      try { await Game.updateOne({ _id: gameId }, { $set: { validationInProgress: false } }); } catch (e) {}
     }
   };
   // Authenticate socket connection
@@ -563,7 +622,8 @@ module.exports = (io, socket) => {
 
       // Transition to validating first to avoid duplicate STOPs racing
       g.status = 'validating';
-      g.validationDeadline = new Date(Date.now() + 2000);
+      const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '1000');
+      g.validationDeadline = new Date(Date.now() + graceMs);
       await g.save();
 
       // Notify clients
@@ -573,6 +633,24 @@ module.exports = (io, socket) => {
         timestamp: new Date()
       });
       io.to(`game-${gameId}`).emit('round-ended', { reason: 'stopped', validationDeadline: g.validationDeadline });
+      const vt = validationTimers.get(idStr);
+      if (vt) clearTimeout(vt);
+      const allSubmitted = (g.players || []).every(p => (p.answers || []).some(a => a.round === g.currentRound));
+      const waitMs = allSubmitted ? 0 : graceMs;
+      const timer = setTimeout(async () => {
+        validationTimers.delete(idStr);
+        try {
+          const locked = await Game.findOneAndUpdate(
+            { _id: gameId, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
+            { $set: { validationInProgress: true } },
+            { new: true }
+          );
+          if (locked) await runValidation(gameId);
+        } catch (e) {
+          console.error('Auto validation error:', e);
+        }
+      }, waitMs);
+      validationTimers.set(idStr, timer);
     } catch (error) {
       console.error('Player stopped socket error:', error);
     }
@@ -704,8 +782,28 @@ module.exports = (io, socket) => {
                     const g3 = await Game.findById(game._id);
                     if (g3 && g3.status === 'playing') {
                       g3.status = 'validating';
+                      const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '1000');
+                      g3.validationDeadline = new Date(Date.now() + graceMs);
                       await g3.save();
-                      io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout' });
+                      io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                      const vt = validationTimers.get(game._id.toString());
+                      if (vt) clearTimeout(vt);
+                      const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
+                      const waitMs = allSubmitted ? 0 : graceMs;
+                      const timer = setTimeout(async () => {
+                        validationTimers.delete(game._id.toString());
+                        try {
+                          const locked = await Game.findOneAndUpdate(
+                            { _id: game._id, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
+                            { $set: { validationInProgress: true } },
+                            { new: true }
+                          );
+                          if (locked) await runValidation(gameId);
+                        } catch (e) {
+                          console.error('Auto validation error:', e);
+                        }
+                      }, waitMs);
+                      validationTimers.set(game._id.toString(), timer);
                     }
                   } catch (e) {
                     console.error('Round auto-end error:', e);
