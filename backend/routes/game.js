@@ -242,16 +242,34 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Not in validation phase' });
     }
 
-    // Validate all answers using OpenAI
+    const unique = [];
+    const seen = new Set();
     for (const player of game.players) {
       const answer = player.answers.find(a => a.round === game.currentRound);
       if (answer) {
         for (const catAnswer of answer.categoryAnswers) {
-          catAnswer.isValid = await validateAnswers(
-            catAnswer.category,
-            game.currentLetter,
-            catAnswer.answer
-          );
+          const a = String(catAnswer.answer || '').trim();
+          const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            unique.push({ key, category: catAnswer.category, answer: a });
+          }
+        }
+      }
+    }
+
+    const resultByKey = {};
+    for (const item of unique) {
+      resultByKey[item.key] = await validateAnswers(item.category, game.currentLetter, item.answer);
+    }
+
+    for (const player of game.players) {
+      const answer = player.answers.find(a => a.round === game.currentRound);
+      if (answer) {
+        for (const catAnswer of answer.categoryAnswers) {
+          const a = String(catAnswer.answer || '').trim();
+          const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
+          catAnswer.isValid = !!resultByKey[key];
         }
       }
     }
