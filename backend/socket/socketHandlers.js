@@ -91,6 +91,42 @@ module.exports = (io, socket) => {
               io.to(`game-${gameId}`).emit('letter-selected', {
                 letter: gg.currentLetter
               });
+              const existingRound = roundTimers.get(game._id.toString());
+              if (existingRound) clearTimeout(existingRound);
+              const rt = setTimeout(async () => {
+                roundTimers.delete(game._id.toString());
+                try {
+                  const g3 = await Game.findById(game._id);
+                  if (g3 && g3.status === 'playing') {
+                    g3.status = 'validating';
+                    const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '1000');
+                    g3.validationDeadline = new Date(Date.now() + graceMs);
+                    await g3.save();
+                    io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                    const vt = validationTimers.get(game._id.toString());
+                    if (vt) clearTimeout(vt);
+                    const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
+                    const waitMs = allSubmitted ? 0 : graceMs;
+                    const timer = setTimeout(async () => {
+                      validationTimers.delete(game._id.toString());
+                      try {
+                        const locked = await Game.findOneAndUpdate(
+                          { _id: game._id, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
+                          { $set: { validationInProgress: true } },
+                          { new: true }
+                        );
+                        if (locked) await runValidation(gameId);
+                      } catch (e) {
+                        console.error('Auto validation error:', e);
+                      }
+                    }, waitMs);
+                    validationTimers.set(game._id.toString(), timer);
+                  }
+                } catch (e) {
+                  console.error('Round auto-end error:', e);
+                }
+              }, 60000);
+              roundTimers.set(game._id.toString(), rt);
             }, 3000);
             letterRevealTimers.set(game._id.toString(), revTimer);
           }
@@ -579,9 +615,30 @@ module.exports = (io, socket) => {
             const g3 = await Game.findById(game._id);
             if (g3 && g3.status === 'playing') {
               g3.status = 'validating';
-              g3.validationDeadline = new Date(Date.now() + 2000);
+              const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '1000');
+              g3.validationDeadline = new Date(Date.now() + graceMs);
               await g3.save();
               io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+
+              // Schedule validation similar to STOP path
+              const vt = validationTimers.get(game._id.toString());
+              if (vt) clearTimeout(vt);
+              const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
+              const waitMs = allSubmitted ? 0 : graceMs;
+              const timer = setTimeout(async () => {
+                validationTimers.delete(game._id.toString());
+                try {
+                  const locked = await Game.findOneAndUpdate(
+                    { _id: game._id, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
+                    { $set: { validationInProgress: true } },
+                    { new: true }
+                  );
+                  if (locked) await runValidation(gameId);
+                } catch (e) {
+                  console.error('Auto validation error:', e);
+                }
+              }, waitMs);
+              validationTimers.set(game._id.toString(), timer);
             }
           } catch (e) {
             console.error('Round auto-end error:', e);
