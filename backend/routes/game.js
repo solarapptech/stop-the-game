@@ -27,6 +27,25 @@ async function runValidationAndBroadcast(app, gameId) {
   }
   const t0 = Date.now();
   console.log(`[VALIDATION] Start: game=${gameId}, round=${game.currentRound}, unique=${unique.length}`);
+  const playersCount = (game.players || []).length;
+  const submittedPlayers = game.players.filter(p => p.answers.find(a => a.round === game.currentRound));
+  const missingPlayers = playersCount - submittedPlayers.length;
+  let totalCatAnswers = 0;
+  const perUserLines = [];
+  for (const player of game.players) {
+    const ans = player.answers.find(a => a.round === game.currentRound);
+    if (ans) {
+      const list = (ans.categoryAnswers || []).map(ca => {
+        totalCatAnswers += 1;
+        return `${ca.category}: "${String(ca.answer || '').trim()}"`;
+      }).join(', ');
+      const uname = player.user?.username || (player.user?._id || player.user || '').toString();
+      perUserLines.push(`- ${uname} (${(ans.categoryAnswers || []).length}): ${list}`);
+    }
+  }
+  console.log(`[VALIDATION] Input: game=${gameId}, round=${game.currentRound}, players=${playersCount}, submitted=${submittedPlayers.length}, missing=${missingPlayers}, totalAnswers=${totalCatAnswers}, uniqueItems=${unique.length}, letter=${game.currentLetter}`);
+  perUserLines.forEach(l => console.log(`[VALIDATION] Answers ${l}`));
+
   const resultByKey = await validateBatchAnswersFast(unique.map(u => ({ category: u.category, answer: u.answer })), game.currentLetter);
   const t1 = Date.now();
   console.log(`[VALIDATION] AI done in ${t1 - t0}ms for unique=${unique.length}`);
@@ -61,7 +80,7 @@ async function runValidationAndBroadcast(app, gameId) {
       });
     }
   } catch (e) {}
-  console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswers=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
+  console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswerSets=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
   return { standings, roundResults };
 }
 
@@ -265,6 +284,10 @@ router.post('/:gameId/submit', authMiddleware, [
     })).filter(a => a.category && typeof a.answer === 'string' && game.categories.includes(a.category)) : [];
 
     console.log(`[SUBMIT] user=${req.user._id} game=${gameId} round=${game.currentRound} stoppedFirst=${!!stoppedFirst} allowDuringValidation=${!!allowDuringValidation} answers=${sanitized.length}`);
+    if (sanitized.length > 0) {
+      const details = sanitized.map(a => `${a.category}: "${a.answer}"`).join(', ');
+      console.log(`[SUBMIT] details user=${req.user._id} game=${gameId} round=${game.currentRound} -> ${details}`);
+    }
     // Submit answers
     const submitted = game.submitAnswer(req.user._id, sanitized, stoppedFirst);
     if (!submitted) {
@@ -274,7 +297,8 @@ router.post('/:gameId/submit', authMiddleware, [
     // If someone stopped first, end the round
     if (stoppedFirst) {
       game.status = 'validating';
-      game.validationDeadline = new Date(Date.now() + 2000);
+      const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
+      game.validationDeadline = new Date(Date.now() + graceMs);
     }
 
     await game.save();

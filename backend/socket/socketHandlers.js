@@ -99,7 +99,7 @@ module.exports = (io, socket) => {
                   const g3 = await Game.findById(game._id);
                   if (g3 && g3.status === 'playing') {
                     g3.status = 'validating';
-                    const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '1000');
+                    const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
                     g3.validationDeadline = new Date(Date.now() + graceMs);
                     await g3.save();
                     io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
@@ -107,6 +107,7 @@ module.exports = (io, socket) => {
                     if (vt) clearTimeout(vt);
                     const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
                     const waitMs = allSubmitted ? 0 : graceMs;
+                    console.log(`[ROUND END] reason=timeout game=${gameId} round=${g3.currentRound} allSubmitted=${allSubmitted} graceMs=${graceMs} waitMs=${waitMs}`);
                     const timer = setTimeout(async () => {
                       validationTimers.delete(game._id.toString());
                       try {
@@ -162,6 +163,25 @@ module.exports = (io, socket) => {
       }
       const t0 = Date.now();
       console.log(`[VALIDATION] Start: game=${gameId}, round=${game.currentRound}, unique=${unique.length}`);
+      const playersCount = (game.players || []).length;
+      const submittedPlayers = game.players.filter(p => p.answers.find(a => a.round === game.currentRound));
+      const missingPlayers = playersCount - submittedPlayers.length;
+      let totalCatAnswers = 0;
+      const perUserLines = [];
+      for (const player of game.players) {
+        const ans = player.answers.find(a => a.round === game.currentRound);
+        if (ans) {
+          const list = (ans.categoryAnswers || []).map(ca => {
+            totalCatAnswers += 1;
+            return `${ca.category}: "${String(ca.answer || '').trim()}"`;
+          }).join(', ');
+          const uname = player.user?.username || (player.user?._id || player.user || '').toString();
+          perUserLines.push(`- ${uname} (${(ans.categoryAnswers || []).length}): ${list}`);
+        }
+      }
+      console.log(`[VALIDATION] Input: game=${gameId}, round=${game.currentRound}, players=${playersCount}, submitted=${submittedPlayers.length}, missing=${missingPlayers}, totalAnswers=${totalCatAnswers}, uniqueItems=${unique.length}, letter=${game.currentLetter}`);
+      perUserLines.forEach(l => console.log(`[VALIDATION] Answers ${l}`));
+
       const resultByKey = await validateBatchAnswersFast(unique.map(u => ({ category: u.category, answer: u.answer })), game.currentLetter);
       console.log(`[VALIDATION] AI done in ${Date.now() - t0}ms for unique=${unique.length}`);
       for (const player of game.players) {
@@ -190,7 +210,7 @@ module.exports = (io, socket) => {
         currentRound: game.currentRound,
         timestamp: new Date()
       });
-      console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswers=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
+      console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswerSets=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
     } catch (err) {
       console.error('Socket runValidation error:', err);
       try { await Game.updateOne({ _id: gameId }, { $set: { validationInProgress: false } }); } catch (e) {}
@@ -615,7 +635,7 @@ module.exports = (io, socket) => {
             const g3 = await Game.findById(game._id);
             if (g3 && g3.status === 'playing') {
               g3.status = 'validating';
-              const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '1000');
+              const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
               g3.validationDeadline = new Date(Date.now() + graceMs);
               await g3.save();
               io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
@@ -625,6 +645,7 @@ module.exports = (io, socket) => {
               if (vt) clearTimeout(vt);
               const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
               const waitMs = allSubmitted ? 0 : graceMs;
+              console.log(`[ROUND END] reason=timeout game=${gameId} round=${g3.currentRound} allSubmitted=${allSubmitted} graceMs=${graceMs} waitMs=${waitMs}`);
               const timer = setTimeout(async () => {
                 validationTimers.delete(game._id.toString());
                 try {
@@ -679,7 +700,7 @@ module.exports = (io, socket) => {
 
       // Transition to validating first to avoid duplicate STOPs racing
       g.status = 'validating';
-      const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '1000');
+      const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
       g.validationDeadline = new Date(Date.now() + graceMs);
       await g.save();
 
@@ -694,6 +715,7 @@ module.exports = (io, socket) => {
       if (vt) clearTimeout(vt);
       const allSubmitted = (g.players || []).every(p => (p.answers || []).some(a => a.round === g.currentRound));
       const waitMs = allSubmitted ? 0 : graceMs;
+      console.log(`[ROUND END] reason=stopped game=${gameId} round=${g.currentRound} stopper=${username} allSubmitted=${allSubmitted} graceMs=${graceMs} waitMs=${waitMs}`);
       const timer = setTimeout(async () => {
         validationTimers.delete(idStr);
         try {
@@ -839,7 +861,7 @@ module.exports = (io, socket) => {
                     const g3 = await Game.findById(game._id);
                     if (g3 && g3.status === 'playing') {
                       g3.status = 'validating';
-                      const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '1000');
+                      const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
                       g3.validationDeadline = new Date(Date.now() + graceMs);
                       await g3.save();
                       io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
@@ -847,6 +869,7 @@ module.exports = (io, socket) => {
                       if (vt) clearTimeout(vt);
                       const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
                       const waitMs = allSubmitted ? 0 : graceMs;
+                      console.log(`[ROUND END] reason=timeout game=${gameId} round=${g3.currentRound} allSubmitted=${allSubmitted} graceMs=${graceMs} waitMs=${waitMs}`);
                       const timer = setTimeout(async () => {
                         validationTimers.delete(game._id.toString());
                         try {
@@ -1198,8 +1221,29 @@ module.exports = (io, socket) => {
                             const g3 = await Game.findById(gg._id);
                             if (g3 && g3.status === 'playing') {
                               g3.status = 'validating';
+                              const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
+                              g3.validationDeadline = new Date(Date.now() + graceMs);
                               await g3.save();
-                              io.to(`game-${g3._id}`).emit('round-ended', { reason: 'timeout' });
+                              io.to(`game-${g3._id}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                              const vt = validationTimers.get(g3._id.toString());
+                              if (vt) clearTimeout(vt);
+                              const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
+                              const waitMs = allSubmitted ? 0 : graceMs;
+                              console.log(`[ROUND END] reason=timeout game=${g3._id} round=${g3.currentRound} allSubmitted=${allSubmitted} graceMs=${graceMs} waitMs=${waitMs}`);
+                              const timer = setTimeout(async () => {
+                                validationTimers.delete(g3._id.toString());
+                                try {
+                                  const locked = await Game.findOneAndUpdate(
+                                    { _id: g3._id, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
+                                    { $set: { validationInProgress: true } },
+                                    { new: true }
+                                  );
+                                  if (locked) await runValidation(g3._id.toString());
+                                } catch (e) {
+                                  console.error('Auto validation error:', e);
+                                }
+                              }, waitMs);
+                              validationTimers.set(g3._id.toString(), timer);
                             }
                           } catch (e) {
                             console.error('Round auto-end error:', e);

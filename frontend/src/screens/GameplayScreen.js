@@ -212,6 +212,11 @@ const GameplayScreen = ({ navigation, route }) => {
         setShowStopOverlay(true);
         setTimeout(() => setShowStopOverlay(false), 1500);
       }
+      if (phaseRef.current === 'playing' && data && data.reason === 'timeout') {
+        try {
+          await submitAnswers(gameId, answersRef.current, false);
+        } catch (e) {}
+      }
       setPhase('validation');
       // Trigger validation; server will broadcast results. Duplicate calls are safely rejected server-side.
       await handleValidation();
