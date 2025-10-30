@@ -194,6 +194,28 @@ module.exports = (io, socket) => {
           }
         }
       }
+      // Per-answer correctness logs
+      try {
+        let totalValid = 0, totalInvalid = 0;
+        const summaries = [];
+        for (const player of game.players) {
+          const ans = player.answers.find(a => a.round === game.currentRound);
+          if (!ans) continue;
+          const uname = player.user?.username || (player.user?._id || player.user || '').toString();
+          let c = 0, i = 0;
+          for (const ca of (ans.categoryAnswers || [])) {
+            const txt = String(ca.answer || '').trim();
+            const ok = !!ca.isValid;
+            if (ok) { c++; totalValid++; } else { i++; totalInvalid++; }
+            console.log(`[VALIDATION] Result - ${uname} | ${ca.category}: "${txt}" => ${ok ? 'VALID' : 'INVALID'}`);
+          }
+          summaries.push(`[VALIDATION] Summary - ${uname}: correct=${c}, incorrect=${i}`);
+        }
+        summaries.forEach(l => console.log(l));
+        console.log(`[VALIDATION] Output totals: correct=${totalValid}, incorrect=${totalInvalid}`);
+      } catch (e) {
+        console.error('Validation result logging error:', e);
+      }
       game.calculateRoundScores();
       game.status = 'round_ended';
       game.validationInProgress = false;
