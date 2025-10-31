@@ -334,7 +334,15 @@ router.post('/:gameId/submit', authMiddleware, [
     // 2) If none existed, push a new one only if not present yet
     if (!existed) {
       const pushUpdate = await Game.updateOne(
-        { _id: gameId, 'players.user': req.user._id, 'players.answers.round': { $ne: game.currentRound } },
+        { 
+          _id: gameId, 
+          players: { 
+            $elemMatch: { 
+              user: req.user._id, 
+              'answers.round': { $ne: game.currentRound } 
+            } 
+          } 
+        },
         Object.assign({ $push: { 'players.$[p].answers': roundAnswer } }, Object.keys(setValidation).length ? { $set: setValidation } : {}),
         { arrayFilters: [ { 'p.user': req.user._id } ] }
       );
