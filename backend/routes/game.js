@@ -310,25 +310,62 @@ router.post('/:gameId/submit', authMiddleware, [
       const details = sanitized.map(a => `${a.category}: "${a.answer}"`).join(', ');
       console.log(`[SUBMIT] details user=${req.user._id} game=${gameId} round=${game.currentRound} -> ${details}`);
     }
-    // Submit answers
-    const submitted = game.submitAnswer(req.user._id, sanitized, stoppedFirst);
-    if (!submitted) {
-      return res.status(400).json({ message: 'Failed to submit answers' });
+    // Build round answer and upsert atomically to avoid VersionError races
+    const roundAnswer = {
+      round: game.currentRound,
+      letter: game.currentLetter,
+      categoryAnswers: sanitized,
+      stoppedFirst: !!stoppedFirst,
+      submittedAt: new Date()
+    };
+
+    const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
+    const setValidation = stoppedFirst ? { status: 'validating', validationDeadline: new Date(Date.now() + graceMs) } : {};
+
+    // 1) Try update existing answer for this round
+    const updateExisting = await Game.updateOne(
+      { _id: gameId, 'players.user': req.user._id, 'players.answers.round': game.currentRound },
+      { $set: Object.assign({ 'players.$[p].answers.$[a]': roundAnswer }, setValidation) },
+      { arrayFilters: [ { 'p.user': req.user._id }, { 'a.round': game.currentRound } ] }
+    );
+
+    const existed = (updateExisting?.modifiedCount || updateExisting?.nModified || 0) > 0;
+
+    // 2) If none existed, push a new one only if not present yet
+    if (!existed) {
+      const pushUpdate = await Game.updateOne(
+        { _id: gameId, 'players.user': req.user._id, 'players.answers.round': { $ne: game.currentRound } },
+        Object.assign({ $push: { 'players.$[p].answers': roundAnswer } }, Object.keys(setValidation).length ? { $set: setValidation } : {}),
+        { arrayFilters: [ { 'p.user': req.user._id } ] }
+      );
+      const pushed = (pushUpdate?.modifiedCount || pushUpdate?.nModified || 0) > 0;
+      if (!pushed) {
+        return res.status(409).json({ message: 'Concurrent update, please retry' });
+      }
     }
 
-    // If someone stopped first, end the round
-    if (stoppedFirst) {
-      game.status = 'validating';
-      const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
-      game.validationDeadline = new Date(Date.now() + graceMs);
-    }
-
-    await game.save();
+    // If we are in validating window and now everyone submitted, trigger validation immediately
+    try {
+      const g2 = await Game.findById(gameId).select('players currentRound status validationDeadline validationInProgress');
+      const allSubmittedNow = g2 && (g2.players || []).every(p => (p.answers || []).some(a => a.round === g2.currentRound));
+      const deadlineMs = g2 && g2.validationDeadline ? new Date(g2.validationDeadline).getTime() : 0;
+      const nowMs2 = Date.now();
+      if (g2 && g2.status === 'validating' && !g2.validationInProgress && allSubmittedNow && (!deadlineMs || nowMs2 <= deadlineMs)) {
+        const locked = await Game.findOneAndUpdate(
+          { _id: gameId, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
+          { $set: { validationInProgress: true } },
+          { new: true }
+        );
+        if (locked) {
+          runValidationAndBroadcast(req.app, gameId).catch(() => {});
+        }
+      }
+    } catch (e) { /* ignore */ }
 
     res.json({
       message: 'Answers submitted',
       stoppedFirst,
-      status: game.status
+      status: stoppedFirst ? 'validating' : game.status
     });
   } catch (error) {
     console.error('Submit answers error:', error);
