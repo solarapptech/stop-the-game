@@ -8,8 +8,20 @@ const { authMiddleware } = require('../middleware/auth');
 const { validateAnswers, validateBatchAnswersFast } = require('../utils/openai');
 
 async function runValidationAndBroadcast(app, gameId) {
-  const game = await Game.findById(gameId).populate('players.user', 'username');
+  let game = await Game.findById(gameId).populate('players.user', 'username');
   if (!game || game.status !== 'validating') return {};
+  try {
+    const allSubmittedPre = (game.players || []).every(p => (p.answers || []).some(a => a.round === game.currentRound));
+    const deadlineMs = game.validationDeadline ? new Date(game.validationDeadline).getTime() : 0;
+    const nowMs = Date.now();
+    if (!allSubmittedPre && deadlineMs && nowMs < deadlineMs) {
+      const waitMs = Math.max(0, deadlineMs - nowMs);
+      console.log(`[VALIDATION] Waiting ${waitMs}ms for late submissions before validating game=${gameId} round=${game.currentRound}`);
+      await new Promise(r => setTimeout(r, waitMs));
+      game = await Game.findById(gameId).populate('players.user', 'username');
+      if (!game || game.status !== 'validating') return {};
+    }
+  } catch (e) {}
   const unique = [];
   const seen = new Set();
   for (const player of game.players) {
@@ -310,6 +322,10 @@ router.post('/:gameId/submit', authMiddleware, [
       const details = sanitized.map(a => `${a.category}: "${a.answer}"`).join(', ');
       console.log(`[SUBMIT] details user=${req.user._id} game=${gameId} round=${game.currentRound} -> ${details}`);
     }
+    // If no answers and player didn't stop first, do not write an empty record
+    if (sanitized.length === 0 && !stoppedFirst) {
+      return res.json({ message: 'No answers submitted', stoppedFirst: false, status: game.status });
+    }
     // Build round answer and upsert atomically to avoid VersionError races
     const roundAnswer = {
       round: game.currentRound,
@@ -324,7 +340,7 @@ router.post('/:gameId/submit', authMiddleware, [
 
     // 1) Try update existing answer for this round
     const updateExisting = await Game.updateOne(
-      { _id: gameId, 'players.user': req.user._id, 'players.answers.round': game.currentRound },
+      { _id: gameId, players: { $elemMatch: { user: req.user._id, 'answers.round': game.currentRound } } },
       { $set: Object.assign({ 'players.$[p].answers.$[a]': roundAnswer }, setValidation) },
       { arrayFilters: [ { 'p.user': req.user._id }, { 'a.round': game.currentRound } ] }
     );
@@ -334,7 +350,7 @@ router.post('/:gameId/submit', authMiddleware, [
     // 2) If none existed, push a new one only if not present yet
     if (!existed) {
       const pushUpdate = await Game.updateOne(
-        { _id: gameId, 'players.user': req.user._id, 'players.answers.round': { $ne: game.currentRound } },
+        { _id: gameId, players: { $elemMatch: { user: req.user._id, answers: { $not: { $elemMatch: { round: game.currentRound } } } } } },
         Object.assign({ $push: { 'players.$[p].answers': roundAnswer } }, Object.keys(setValidation).length ? { $set: setValidation } : {}),
         { arrayFilters: [ { 'p.user': req.user._id } ] }
       );
@@ -347,7 +363,7 @@ router.post('/:gameId/submit', authMiddleware, [
     // If we are in validating window and now everyone submitted, trigger validation immediately
     try {
       const g2 = await Game.findById(gameId).select('players currentRound status validationDeadline validationInProgress');
-      const allSubmittedNow = g2 && (g2.players || []).every(p => (p.answers || []).some(a => a.round === g2.currentRound));
+      const allSubmittedNow = g2 && (g2.players || []).every(p => (p.answers || []).some(a => a.round === g2.currentRound && (((a.categoryAnswers || []).length > 0) || a.stoppedFirst)));
       const deadlineMs = g2 && g2.validationDeadline ? new Date(g2.validationDeadline).getTime() : 0;
       const nowMs2 = Date.now();
       if (g2 && g2.status === 'validating' && !g2.validationInProgress && allSubmittedNow && (!deadlineMs || nowMs2 <= deadlineMs)) {
@@ -387,7 +403,7 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Not in validation phase' });
     }
 
-    const allSubmitted = game.players.every(p => p.answers.some(a => a.round === game.currentRound));
+    const allSubmitted = game.players.every(p => p.answers.some(a => a.round === game.currentRound && (((a.categoryAnswers || []).length > 0) || a.stoppedFirst)));
     const deadlineMs = game.validationDeadline ? new Date(game.validationDeadline).getTime() : 0;
     const nowMs = Date.now();
     if (!allSubmitted && deadlineMs && nowMs < deadlineMs) {
