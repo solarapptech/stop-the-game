@@ -105,7 +105,7 @@ module.exports = (io, socket) => {
                     io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
                     const vt = validationTimers.get(game._id.toString());
                     if (vt) clearTimeout(vt);
-                    const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound && (((a.categoryAnswers || []).length > 0) || a.stoppedFirst)));
+                    const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
                     const waitMs = allSubmitted ? 0 : graceMs;
                     console.log(`[ROUND END] reason=timeout game=${gameId} round=${g3.currentRound} allSubmitted=${allSubmitted} graceMs=${graceMs} waitMs=${waitMs}`);
                     const timer = setTimeout(async () => {
@@ -144,23 +144,8 @@ module.exports = (io, socket) => {
   // Run validation and broadcast results for the current round
   const runValidation = async (gameId) => {
     try {
-      let game = await Game.findById(gameId).populate('players.user', 'username');
+      const game = await Game.findById(gameId).populate('players.user', 'username');
       if (!game || game.status !== 'validating') return;
-      try {
-        const allSubmittedPre = (game.players || []).every(p => (p.answers || []).some(a => a.round === game.currentRound));
-        const deadlineMs = game.validationDeadline ? new Date(game.validationDeadline).getTime() : 0;
-        const nowMs = Date.now();
-        if (!allSubmittedPre && deadlineMs && nowMs < deadlineMs) {
-          const waitMs = Math.max(0, deadlineMs - nowMs);
-          console.log(`[VALIDATION] Waiting ${waitMs}ms for late submissions before validating game=${gameId} round=${game.currentRound}`);
-          await new Promise(r => setTimeout(r, waitMs));
-          game = await Game.findById(gameId).populate('players.user', 'username');
-          if (!game || game.status !== 'validating') return;
-        }
-        // Always refresh once more at boundary to include very-late submissions
-        game = await Game.findById(gameId).populate('players.user', 'username');
-        if (!game || game.status !== 'validating') return;
-      } catch (e) {}
       const unique = [];
       const seen = new Set();
       for (const player of game.players) {
@@ -680,7 +665,7 @@ module.exports = (io, socket) => {
               // Schedule validation similar to STOP path
               const vt = validationTimers.get(game._id.toString());
               if (vt) clearTimeout(vt);
-              const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound && (((a.categoryAnswers || []).length > 0) || a.stoppedFirst)));
+              const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
               const waitMs = allSubmitted ? 0 : graceMs;
               console.log(`[ROUND END] reason=timeout game=${gameId} round=${g3.currentRound} allSubmitted=${allSubmitted} graceMs=${graceMs} waitMs=${waitMs}`);
               const timer = setTimeout(async () => {
@@ -750,7 +735,7 @@ module.exports = (io, socket) => {
       io.to(`game-${gameId}`).emit('round-ended', { reason: 'stopped', validationDeadline: g.validationDeadline });
       const vt = validationTimers.get(idStr);
       if (vt) clearTimeout(vt);
-      const allSubmitted = (g.players || []).every(p => (p.answers || []).some(a => a.round === g.currentRound && (((a.categoryAnswers || []).length > 0) || a.stoppedFirst)));
+      const allSubmitted = (g.players || []).every(p => (p.answers || []).some(a => a.round === g.currentRound));
       const waitMs = allSubmitted ? 0 : graceMs;
       console.log(`[ROUND END] reason=stopped game=${gameId} round=${g.currentRound} stopper=${username} allSubmitted=${allSubmitted} graceMs=${graceMs} waitMs=${waitMs}`);
       const timer = setTimeout(async () => {

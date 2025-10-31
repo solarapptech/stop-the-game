@@ -130,13 +130,7 @@ gameSchema.methods.selectRandomLetter = function() {
 
 // Submit answer
 gameSchema.methods.submitAnswer = function(userId, answers, stoppedFirst = false) {
-  const getIdStr = (u) => {
-    if (!u) return '';
-    const id = (u._id) ? u._id : u;
-    return id.toString();
-  };
-  const targetId = getIdStr(userId);
-  const player = this.players.find(p => getIdStr(p.user) === targetId);
+  const player = this.players.find(p => p.user.toString() === userId.toString());
   if (!player) {
     return false;
   }
@@ -162,19 +156,13 @@ gameSchema.methods.submitAnswer = function(userId, answers, stoppedFirst = false
 
 // Calculate scores for round
 gameSchema.methods.calculateRoundScores = function() {
-  const getIdStr = (u) => {
-    if (!u) return '';
-    const id = (u._id) ? u._id : u;
-    return id.toString();
-  };
   const roundAnswers = {};
   
   // Collect all answers for this round
   this.players.forEach(player => {
     const answer = player.answers.find(a => a.round === this.currentRound);
     if (answer) {
-      const pid = getIdStr(player.user);
-      roundAnswers[pid] = answer;
+      roundAnswers[player.user.toString()] = answer;
     }
   });
   
@@ -189,7 +177,7 @@ gameSchema.methods.calculateRoundScores = function() {
         const sameAnswers = Object.values(roundAnswers).filter(pa => 
           pa.categoryAnswers.find(ca => 
             ca.category === catAnswer.category && 
-            String(ca.answer || '').toLowerCase() === String(catAnswer.answer || '').toLowerCase() &&
+            ca.answer.toLowerCase() === catAnswer.answer.toLowerCase() &&
             ca.isValid
           )
         ).length;
@@ -211,7 +199,7 @@ gameSchema.methods.calculateRoundScores = function() {
       roundScore += 5;
     }
     
-    const player = this.players.find(p => getIdStr(p.user) === playerId);
+    const player = this.players.find(p => p.user.toString() === playerId);
     if (player) {
       player.score += roundScore;
     }
