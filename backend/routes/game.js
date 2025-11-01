@@ -324,7 +324,15 @@ router.post('/:gameId/submit', authMiddleware, [
 
     // 1) Try update existing answer for this round
     const updateExisting = await Game.updateOne(
-      { _id: gameId, 'players.user': req.user._id, 'players.answers.round': game.currentRound },
+      { 
+        _id: gameId, 
+        players: { 
+          $elemMatch: { 
+            user: req.user._id, 
+            'answers.round': game.currentRound 
+          } 
+        } 
+      },
       { $set: Object.assign({ 'players.$[p].answers.$[a]': roundAnswer }, setValidation) },
       { arrayFilters: [ { 'p.user': req.user._id }, { 'a.round': game.currentRound } ] }
     );
