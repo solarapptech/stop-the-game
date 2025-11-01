@@ -139,7 +139,20 @@ const JoinRoomScreen = ({ navigation }) => {
         {/* Public Rooms */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.sectionTitle}>Public Rooms</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Public Rooms</Text>
+              <Button
+                mode="outlined"
+                icon="refresh"
+                onPress={handleRefresh}
+                loading={refreshing}
+                disabled={refreshing}
+                compact
+                style={styles.refreshButton}
+              >
+                Refresh
+              </Button>
+            </View>
             {loading && publicRooms.length === 0 ? (
               <ActivityIndicator style={styles.loader} />
             ) : publicRooms.length === 0 ? (
@@ -234,11 +247,19 @@ const styles = StyleSheet.create({
     elevation: 2,
     borderRadius: 15,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: theme.colors.primary,
-    marginBottom: 15,
+  },
+  refreshButton: {
+    borderColor: theme.colors.primary,
   },
   codeInputContainer: {
     flexDirection: 'row',

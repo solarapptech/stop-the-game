@@ -11,6 +11,7 @@ const nextRoundReady = new Map();
 const rematchReady = new Map();
 const rematchCountdownTimers = new Map();
 const validationTimers = new Map();
+const quickPlayQueue = new Set(); // Set of socket IDs waiting for quick play match
 
 module.exports = (io, socket) => {
   // Helper to finalize categories for a game (dedupe, fill to min 6, cap at 8)
@@ -1293,6 +1294,115 @@ module.exports = (io, socket) => {
       }
     } catch (error) {
       console.error('Play again ready socket error:', error);
+    }
+  });
+
+  // Quick Play: Join matchmaking queue
+  socket.on('quickplay-join', async () => {
+    try {
+      if (!socket.userId) {
+        socket.emit('quickplay-error', { message: 'Not authenticated' });
+        return;
+      }
+
+      console.log(`[QUICKPLAY] User ${socket.userId} joining queue`);
+
+      // First, check if there are any available public rooms
+      const Room = require('../models/Room');
+      const availableRooms = await Room.find({
+        isPublic: true,
+        status: 'waiting',
+        $expr: { $lt: [{ $size: '$players' }, '$maxPlayers'] }
+      }).populate('players.user owner', 'username').limit(1);
+
+      if (availableRooms.length > 0) {
+        // Join the first available public room
+        const room = availableRooms[0];
+        console.log(`[QUICKPLAY] Found existing room ${room._id} for user ${socket.userId}`);
+        
+        // Check if user is already in the room
+        const alreadyInRoom = room.players.some(p => (p.user._id || p.user).toString() === socket.userId.toString());
+        if (!alreadyInRoom) {
+          room.players.push({ user: socket.userId, isReady: false });
+          await room.save();
+        }
+
+        socket.emit('quickplay-matched', { roomId: room._id.toString() });
+        return;
+      }
+
+      // No available rooms, add to queue
+      quickPlayQueue.add(socket.id);
+      socket.quickPlayUserId = socket.userId;
+      console.log(`[QUICKPLAY] Added to queue. Queue size: ${quickPlayQueue.size}`);
+
+      // Check if we have enough players to create a room
+      const minPlayers = parseInt(process.env.QUICKPLAY_MIN_PLAYERS || '2');
+      if (quickPlayQueue.size >= minPlayers) {
+        console.log(`[QUICKPLAY] Enough players (${quickPlayQueue.size}/${minPlayers}), creating room...`);
+
+        // Get the first N players from the queue
+        const selectedSockets = Array.from(quickPlayQueue).slice(0, minPlayers);
+        const sockets = [];
+        
+        for (const socketId of selectedSockets) {
+          const s = io.sockets.sockets.get(socketId);
+          if (s && s.quickPlayUserId) {
+            sockets.push(s);
+          }
+        }
+
+        if (sockets.length >= minPlayers) {
+          // Create a new public room
+          const owner = sockets[0].quickPlayUserId;
+          const newRoom = new Room({
+            name: `Quick Play Room`,
+            owner,
+            isPublic: true,
+            maxPlayers: 8,
+            rounds: 3,
+            hasPassword: false,
+            players: sockets.map(s => ({ user: s.quickPlayUserId, isReady: s.quickPlayUserId.toString() === owner.toString() }))
+          });
+          await newRoom.save();
+          const roomId = newRoom._id.toString();
+
+          console.log(`[QUICKPLAY] Created room ${roomId} with ${sockets.length} players`);
+
+          // Remove matched players from queue
+          for (const s of sockets) {
+            quickPlayQueue.delete(s.id);
+            s.quickPlayUserId = null;
+          }
+
+          // Notify all matched players
+          for (const s of sockets) {
+            s.emit('quickplay-matched', { roomId });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Quick play join error:', error);
+      socket.emit('quickplay-error', { message: 'Failed to join quick play' });
+    }
+  });
+
+  // Quick Play: Leave matchmaking queue
+  socket.on('quickplay-leave', () => {
+    if (quickPlayQueue.has(socket.id)) {
+      quickPlayQueue.delete(socket.id);
+      socket.quickPlayUserId = null;
+      console.log(`[QUICKPLAY] User left queue. Queue size: ${quickPlayQueue.size}`);
+    }
+  });
+
+  // Clean up quick play queue on disconnect
+  const originalDisconnectHandler = socket.listeners('disconnect')[0];
+  socket.on('disconnect', () => {
+    if (quickPlayQueue.has(socket.id)) {
+      quickPlayQueue.delete(socket.id);
+      socket.quickPlayUserId = null;
+      console.log(`[QUICKPLAY] User disconnected from queue. Queue size: ${quickPlayQueue.size}`);
     }
   });
 };

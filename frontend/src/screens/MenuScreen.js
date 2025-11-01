@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { Text, Button, Card, Avatar, IconButton, Badge } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
+import { Text, Button, Card, Avatar, IconButton, Badge, ActivityIndicator } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
@@ -8,12 +8,63 @@ import theme from '../theme';
 
 const MenuScreen = ({ navigation }) => {
   const { user, logout } = useAuth();
-  const { connected } = useSocket();
+  const { socket, connected } = useSocket();
   const [stats, setStats] = useState({
     winPoints: user?.winPoints || 0,
     matchesPlayed: user?.matchesPlayed || 0,
     friends: user?.friends?.length || 0,
   });
+  const [quickPlayVisible, setQuickPlayVisible] = useState(false);
+  const [matchmakingStatus, setMatchmakingStatus] = useState('searching'); // 'searching' | 'found'
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleQuickPlayMatched = (data) => {
+      setMatchmakingStatus('found');
+      setTimeout(() => {
+        setQuickPlayVisible(false);
+        setMatchmakingStatus('searching');
+        if (data.roomId) {
+          navigation.navigate('Room', { roomId: data.roomId });
+        }
+      }, 2000);
+    };
+
+    const handleQuickPlayError = (data) => {
+      setQuickPlayVisible(false);
+      setMatchmakingStatus('searching');
+      Alert.alert('Error', data.message || 'Failed to find a match');
+    };
+
+    socket.on('quickplay-matched', handleQuickPlayMatched);
+    socket.on('quickplay-error', handleQuickPlayError);
+
+    return () => {
+      socket.off('quickplay-matched', handleQuickPlayMatched);
+      socket.off('quickplay-error', handleQuickPlayError);
+    };
+  }, [socket, navigation]);
+
+  const handleQuickPlay = () => {
+    if (!connected) {
+      Alert.alert('Error', 'Not connected to server');
+      return;
+    }
+    setQuickPlayVisible(true);
+    setMatchmakingStatus('searching');
+    if (socket) {
+      socket.emit('quickplay-join');
+    }
+  };
+
+  const handleCancelQuickPlay = () => {
+    if (socket) {
+      socket.emit('quickplay-leave');
+    }
+    setQuickPlayVisible(false);
+    setMatchmakingStatus('searching');
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -114,15 +165,16 @@ const MenuScreen = ({ navigation }) => {
             </View>
           </View>
 
-          {/* Subscription Badge */}
-          {!user?.isSubscribed && (
-            <TouchableOpacity 
-              style={styles.subscriptionBanner}
-              onPress={() => navigation.navigate('Payment')}
-            >
-              <Text style={styles.subscriptionText}>🎮 Go Premium - Remove Ads!</Text>
-            </TouchableOpacity>
-          )}
+          {/* Quick Play Button */}
+          <Button
+            mode="contained"
+            onPress={handleQuickPlay}
+            style={styles.quickPlayButton}
+            contentStyle={styles.quickPlayContent}
+            icon="play-circle"
+          >
+            Quick Play
+          </Button>
         </View>
 
         {/* Menu Items */}
@@ -155,17 +207,43 @@ const MenuScreen = ({ navigation }) => {
           ))}
         </View>
 
-        {/* Quick Play Button */}
-        <Button
-          mode="contained"
-          onPress={() => navigation.navigate('JoinRoom')}
-          style={styles.quickPlayButton}
-          contentStyle={styles.quickPlayContent}
-          icon="play-circle"
-        >
-          Quick Play
-        </Button>
+        {/* Subscription Banner */}
+        {!user?.isSubscribed && (
+          <TouchableOpacity 
+            style={styles.subscriptionBanner}
+            onPress={() => navigation.navigate('Payment')}
+          >
+            <Text style={styles.subscriptionText}>🎮 Go Premium - Remove Ads!</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
+
+      {/* Quick Play Modal */}
+      <Modal
+        visible={quickPlayVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelQuickPlay}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <ActivityIndicator size="large" color={theme.colors.primary} style={styles.spinner} />
+            <Text style={styles.modalTitle}>
+              {matchmakingStatus === 'searching' ? 'Searching for games...' : 'Game found!'}
+            </Text>
+            {matchmakingStatus === 'searching' && (
+              <Button
+                mode="outlined"
+                onPress={handleCancelQuickPlay}
+                style={styles.cancelButton}
+                textColor="#FFFFFF"
+              >
+                Cancel
+              </Button>
+            )}
+          </View>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 };
@@ -252,6 +330,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 12,
     alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 10,
   },
   subscriptionText: {
     color: '#FFFFFF',
@@ -291,13 +371,40 @@ const styles = StyleSheet.create({
     margin: 0,
   },
   quickPlayButton: {
-    marginHorizontal: 20,
-    marginTop: 10,
+    marginTop: 15,
     backgroundColor: '#FF9800',
     elevation: 5,
   },
   quickPlayContent: {
     paddingVertical: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 40,
+    alignItems: 'center',
+    minWidth: 280,
+    elevation: 10,
+  },
+  spinner: {
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#424242',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  cancelButton: {
+    borderColor: '#757575',
+    borderWidth: 1,
   },
 });
 
