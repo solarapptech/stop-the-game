@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text, Button, Card, IconButton, Chip, ProgressBar } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList } from 'react-native';
+import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable } from 'react-native-paper';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
@@ -58,6 +58,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const [hasVotedRematch, setHasVotedRematch] = useState(false);
   const [rematchAborted, setRematchAborted] = useState(false);
   const [rematchCountdown, setRematchCountdown] = useState(null);
+  const [viewingPlayerId, setViewingPlayerId] = useState(null);
   
   const timerRef = useRef(null);
   const selectTimerRef = useRef(null);
@@ -229,6 +230,8 @@ const GameplayScreen = ({ navigation, route }) => {
       setPhase('round-end');
       // Initialize total from standings length if available
       if (Array.isArray(data.standings)) setReadyTotal(data.standings.length);
+      // Set viewing player to current user by default
+      setViewingPlayerId(userIdRef.current);
     };
     const onReadyUpdate = (data) => {
       if (typeof data.ready === 'number') setReadyCount(data.ready);
@@ -802,52 +805,172 @@ const GameplayScreen = ({ navigation, route }) => {
     </View>
   );
 
-  const renderRoundEnd = () => (
-    <Card style={styles.card}>
-      <Card.Content>
-        <Text style={styles.phaseTitle}>Round {currentRound} Results</Text>
-        <View style={styles.scoresContainer}>
-          {Array.isArray(playerScores) && playerScores.map((s, idx) => {
-            const pid = (s.user && s.user._id) ? s.user._id : s.user;
-            const pidStr = typeof pid === 'string' ? pid : String(pid || '');
-            const name = pidStr === user.id ? 'You' : `Player ${pidStr.substring(0, 5)}`;
-            return (
-              <View key={pidStr || String(idx)} style={styles.scoreItem}>
-                <Text style={styles.playerName}>{name}</Text>
-                <Text style={styles.playerScore}>{s.score} pts</Text>
+  const renderRoundEnd = () => {
+    // Find the player result we're viewing
+    const viewingResult = Array.isArray(roundResults) 
+      ? roundResults.find(r => {
+          const pid = (r.user && r.user._id) ? r.user._id : r.user;
+          const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+          return pidStr === String(viewingPlayerId || '');
+        })
+      : null;
+
+    const viewingPlayer = viewingResult ? viewingResult.user : null;
+    const viewingAnswers = viewingResult?.answers;
+    const isCurrentUser = String(viewingPlayerId || '') === String(userId || '');
+    
+    // Get player name
+    const getPlayerName = (playerUser) => {
+      if (!playerUser) return 'Unknown';
+      const pid = (playerUser._id) ? playerUser._id : playerUser;
+      const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+      if (pidStr === String(userId || '')) return 'You';
+      return playerUser.username || `Player ${pidStr.substring(0, 5)}`;
+    };
+
+    // Calculate total points for this round
+    const roundPoints = viewingAnswers?.categoryAnswers?.reduce((sum, ca) => sum + (ca.points || 0), 0) || 0;
+    const stopBonus = viewingAnswers?.stoppedFirst ? 5 : 0;
+    const totalRoundPoints = roundPoints + stopBonus;
+
+    return (
+      <ScrollView style={styles.container}>
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.phaseTitle}>Round {currentRound} Results</Text>
+            
+            {/* Player Navigation */}
+            <View style={styles.playerNavigationContainer}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.playerTabsScroll}>
+                {Array.isArray(roundResults) && roundResults.map((result, idx) => {
+                  const pid = (result.user && result.user._id) ? result.user._id : result.user;
+                  const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+                  const isSelected = pidStr === String(viewingPlayerId || '');
+                  const isCurrentUserTab = pidStr === String(userId || '');
+                  const playerName = getPlayerName(result.user);
+                  
+                  return (
+                    <Button
+                      key={pidStr || String(idx)}
+                      mode={isSelected ? 'contained' : 'outlined'}
+                      onPress={() => setViewingPlayerId(pidStr)}
+                      style={[styles.playerTab, isSelected && styles.playerTabSelected]}
+                      labelStyle={isSelected ? styles.playerTabLabelSelected : styles.playerTabLabel}
+                      compact
+                    >
+                      {playerName}
+                    </Button>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Answer Details Table */}
+            {viewingAnswers && viewingAnswers.categoryAnswers && viewingAnswers.categoryAnswers.length > 0 ? (
+              <View style={styles.answerDetailsContainer}>
+                <Text style={styles.answerDetailsTitle}>{getPlayerName(viewingPlayer)}'s Answers</Text>
+                
+                <DataTable style={styles.dataTable}>
+                  <DataTable.Header>
+                    <DataTable.Title style={styles.tableHeaderCategory}>Category</DataTable.Title>
+                    <DataTable.Title style={styles.tableHeaderAnswer}>Answer</DataTable.Title>
+                    <DataTable.Title style={styles.tableHeaderPoints} numeric>Pts</DataTable.Title>
+                    <DataTable.Title style={styles.tableHeaderStatus}></DataTable.Title>
+                  </DataTable.Header>
+
+                  {viewingAnswers.categoryAnswers.map((ca, idx) => (
+                    <DataTable.Row key={idx} style={styles.tableRow}>
+                      <DataTable.Cell style={styles.tableCellCategory}>
+                        <Text style={styles.categoryText}>{ca.category}</Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell style={styles.tableCellAnswer}>
+                        <Text style={styles.answerText} numberOfLines={1}>{ca.answer || '-'}</Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell style={styles.tableCellPoints} numeric>
+                        <Text style={[styles.pointsText, ca.isValid && styles.pointsTextValid]}>
+                          {ca.points || 0}
+                        </Text>
+                      </DataTable.Cell>
+                      <DataTable.Cell style={styles.tableCellStatus}>
+                        <IconButton
+                          icon={ca.isValid ? 'check-circle' : 'close-circle'}
+                          iconColor={ca.isValid ? '#4CAF50' : '#F44336'}
+                          size={20}
+                          style={styles.validationIcon}
+                        />
+                      </DataTable.Cell>
+                    </DataTable.Row>
+                  ))}
+                </DataTable>
+
+                {/* Round Summary */}
+                <View style={styles.roundSummary}>
+                  {viewingAnswers.stoppedFirst && (
+                    <View style={styles.summaryRow}>
+                      <Text style={styles.summaryLabel}>Stop Bonus:</Text>
+                      <Text style={styles.summaryValue}>+5 pts</Text>
+                    </View>
+                  )}
+                  <View style={[styles.summaryRow, styles.summaryTotal]}>
+                    <Text style={styles.summaryTotalLabel}>Round Total:</Text>
+                    <Text style={styles.summaryTotalValue}>{totalRoundPoints} pts</Text>
+                  </View>
+                </View>
               </View>
-            );
-          })}
-        </View>
-        {currentRound < totalRounds && (
-          <>
-            <Text style={styles.instruction}>{`(${readyCount}/${readyTotal}) players ready...`}</Text>
-            {typeof nextCountdown === 'number' && nextCountdown >= 0 && (
-              <Text style={styles.instruction}>Next round in {nextCountdown}s</Text>
+            ) : (
+              <Text style={styles.noAnswersText}>{getPlayerName(viewingPlayer)} didn't submit answers</Text>
             )}
-            <Button
-              mode="contained"
-              onPress={() => readyNextRound(gameId)}
-              style={styles.nextButton}
-            >
-              Continue
-            </Button>
-          </>
-        )}
-        {currentRound >= totalRounds && !isFinished && (
-          <>
-            <Button
-              mode="contained"
-              onPress={() => setFinalConfirmed(true) || setIsFinished(true)}
-              style={styles.nextButton}
-            >
-              Confirm Final Results
-            </Button>
-          </>
-        )}
-      </Card.Content>
-    </Card>
-  );
+
+            {/* Overall Standings */}
+            <View style={styles.standingsContainer}>
+              <Text style={styles.standingsTitle}>Overall Standings</Text>
+              <View style={styles.scoresContainer}>
+                {Array.isArray(playerScores) && playerScores.map((s, idx) => {
+                  const pid = (s.user && s.user._id) ? s.user._id : s.user;
+                  const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+                  const name = getPlayerName(s.user);
+                  return (
+                    <View key={pidStr || String(idx)} style={styles.scoreItem}>
+                      <Text style={styles.playerName}>{name}</Text>
+                      <Text style={styles.playerScore}>{s.score} pts</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Continue Button */}
+            {currentRound < totalRounds && (
+              <>
+                <Text style={styles.instruction}>{`(${readyCount}/${readyTotal}) players ready...`}</Text>
+                {typeof nextCountdown === 'number' && nextCountdown >= 0 && (
+                  <Text style={styles.instruction}>Next round in {nextCountdown}s</Text>
+                )}
+                <Button
+                  mode="contained"
+                  onPress={() => readyNextRound(gameId)}
+                  style={styles.nextButton}
+                >
+                  Continue
+                </Button>
+              </>
+            )}
+            {currentRound >= totalRounds && !isFinished && (
+              <>
+                <Button
+                  mode="contained"
+                  onPress={() => setFinalConfirmed(true) || setIsFinished(true)}
+                  style={styles.nextButton}
+                >
+                  Confirm Final Results
+                </Button>
+              </>
+            )}
+          </Card.Content>
+        </Card>
+      </ScrollView>
+    );
+  };
 
   const renderFinalResults = () => {
     const scores = Array.isArray(playerScores) ? playerScores : [];
@@ -1172,6 +1295,151 @@ const styles = StyleSheet.create({
   nextButton: {
     marginTop: 20,
     backgroundColor: theme.colors.primary,
+  },
+  playerNavigationContainer: {
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    paddingBottom: 10,
+  },
+  playerTabsScroll: {
+    flexDirection: 'row',
+  },
+  playerTab: {
+    marginHorizontal: 4,
+    borderRadius: 8,
+  },
+  playerTabSelected: {
+    backgroundColor: theme.colors.primary,
+  },
+  playerTabLabel: {
+    fontSize: 14,
+    color: theme.colors.primary,
+  },
+  playerTabLabelSelected: {
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
+  answerDetailsContainer: {
+    marginBottom: 20,
+  },
+  answerDetailsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#424242',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  dataTable: {
+    backgroundColor: '#FAFAFA',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  tableHeaderCategory: {
+    flex: 2,
+  },
+  tableHeaderAnswer: {
+    flex: 3,
+  },
+  tableHeaderPoints: {
+    flex: 1,
+  },
+  tableHeaderStatus: {
+    flex: 1,
+  },
+  tableRow: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  tableCellCategory: {
+    flex: 2,
+  },
+  tableCellAnswer: {
+    flex: 3,
+  },
+  tableCellPoints: {
+    flex: 1,
+  },
+  tableCellStatus: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categoryText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.primary,
+  },
+  answerText: {
+    fontSize: 13,
+    color: '#424242',
+  },
+  pointsText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#757575',
+  },
+  pointsTextValid: {
+    color: '#4CAF50',
+  },
+  validationIcon: {
+    margin: 0,
+  },
+  roundSummary: {
+    marginTop: 15,
+    padding: 15,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: '#424242',
+  },
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4CAF50',
+  },
+  summaryTotal: {
+    borderTopWidth: 2,
+    borderTopColor: theme.colors.primary,
+    marginTop: 8,
+    paddingTop: 10,
+  },
+  summaryTotalLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#424242',
+  },
+  summaryTotalValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: theme.colors.primary,
+  },
+  noAnswersText: {
+    fontSize: 14,
+    color: '#757575',
+    textAlign: 'center',
+    marginVertical: 20,
+    fontStyle: 'italic',
+  },
+  standingsContainer: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  standingsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#424242',
+    marginBottom: 10,
+    textAlign: 'center',
   },
 });
 
