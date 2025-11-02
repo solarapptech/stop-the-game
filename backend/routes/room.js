@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const Room = require('../models/Room');
 const { authMiddleware } = require('../middleware/auth');
 const bcrypt = require('bcrypt');
+const { cleanupEmptyRooms } = require('../utils/roomCleanup');
 
 // Create room
 router.post('/create', authMiddleware, [
@@ -245,6 +246,8 @@ router.post('/leave/:roomId', authMiddleware, async (req, res) => {
   try {
     const { roomId } = req.params;
 
+    console.log(`[HTTP LEAVE] User ${req.user._id} leaving room ${roomId}`);
+
     // Load minimal fields to check ownership before removal
     const before = await Room.findById(roomId).select('owner players');
     if (!before) {
@@ -264,15 +267,21 @@ router.post('/leave/:roomId', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Room not found' });
     }
 
+    console.log(`[HTTP LEAVE] After removal, room ${roomId} has ${updated.players.length} player(s)`);
+
+    // CRITICAL: Delete empty rooms immediately
     if (updated.players.length === 0) {
+      console.log(`[HTTP LEAVE] Room ${roomId} is empty, deleting`);
       await Room.deleteOne({ _id: updated._id });
-      return res.json({ message: 'Room deleted' });
+      return res.json({ message: 'Room deleted (was empty)' });
     }
 
     if (wasOwner) {
       // Transfer ownership to next player and set ready
       const next = updated.players[0];
       const newOwnerId = (next.user._id || next.user).toString();
+      console.log(`[HTTP LEAVE] Transferring ownership to ${newOwnerId}`);
+      
       await Room.updateOne(
         { _id: updated._id },
         { $set: { owner: newOwnerId, 'players.$[elem].isReady': true } },
@@ -351,6 +360,21 @@ router.post('/:roomId/ready', authMiddleware, [
   } catch (error) {
     console.error('Set ready error:', error);
     res.status(500).json({ message: 'Error updating ready status' });
+  }
+});
+
+// Manual cleanup endpoint (for debugging/admin use)
+router.post('/cleanup-empty', authMiddleware, async (req, res) => {
+  try {
+    console.log(`[MANUAL CLEANUP] Triggered by user ${req.user._id}`);
+    const result = await cleanupEmptyRooms();
+    res.json({
+      message: 'Cleanup completed',
+      ...result
+    });
+  } catch (error) {
+    console.error('Manual cleanup error:', error);
+    res.status(500).json({ message: 'Error during cleanup' });
   }
 });
 

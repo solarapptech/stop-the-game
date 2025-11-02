@@ -14,6 +14,41 @@ const validationTimers = new Map();
 const quickPlayQueue = new Set(); // Set of socket IDs waiting for quick play match
 
 module.exports = (io, socket) => {
+  // Helper to clean up empty rooms - CRITICAL for preventing orphaned rooms
+  const cleanupEmptyRoom = async (roomId) => {
+    try {
+      if (!roomId) return false;
+      
+      const room = await Room.findById(roomId).select('players name');
+      if (!room) {
+        console.log(`[ROOM CLEANUP] Room ${roomId} not found (already deleted)`);
+        return false;
+      }
+      
+      if (room.players.length === 0) {
+        console.log(`[ROOM CLEANUP] Deleting empty room: ${roomId} (${room.name})`);
+        await Room.deleteOne({ _id: roomId });
+        
+        // Clean up any associated timers
+        rematchReady.delete(roomId.toString());
+        const rematchTimer = rematchCountdownTimers.get(roomId.toString());
+        if (rematchTimer) {
+          clearInterval(rematchTimer);
+          rematchCountdownTimers.delete(roomId.toString());
+        }
+        
+        console.log(`[ROOM CLEANUP] Successfully deleted room ${roomId}`);
+        return true;
+      }
+      
+      console.log(`[ROOM CLEANUP] Room ${roomId} still has ${room.players.length} player(s), not deleting`);
+      return false;
+    } catch (error) {
+      console.error('[ROOM CLEANUP] Error cleaning up room:', error);
+      return false;
+    }
+  };
+
   // Helper to finalize categories for a game (dedupe, fill to min 6, cap at 8)
   const finalizeCategories = async (gameId) => {
     try {
@@ -294,14 +329,21 @@ module.exports = (io, socket) => {
     try {
       if (!(socket.roomId && socket.userId)) return;
 
+      const roomIdToCleanup = socket.roomId;
       const User = require('../models/User');
       const user = await User.findById(socket.userId);
       const username = user?.username || 'Player';
 
+      console.log(`[LEAVE ROOM] User ${socket.userId} (${username}) leaving room ${roomIdToCleanup}`);
+
       // Load room to determine ownership before removal
       const roomBefore = await Room.findById(socket.roomId).select('owner players')
         .populate('players.user', 'username winPoints');
-      if (!roomBefore) return;
+      if (!roomBefore) {
+        console.log(`[LEAVE ROOM] Room ${socket.roomId} not found`);
+        socket.roomId = null;
+        return;
+      }
 
       const wasOwner = roomBefore.owner.toString() === socket.userId.toString();
 
@@ -312,44 +354,55 @@ module.exports = (io, socket) => {
         { new: true }
       ).populate('players.user', 'username winPoints');
 
-      if (!room) return;
-
-      if (room.players.length === 0) {
-        // Room empty => delete it
-        await Room.deleteOne({ _id: room._id });
-      } else if (wasOwner) {
-        // Transfer ownership to next player and set them ready
-        const next = room.players[0];
-        const newOwnerId = (next.user._id || next.user).toString();
-        await Room.updateOne(
-          { _id: room._id },
-          { 
-            $set: { owner: newOwnerId, 'players.$[elem].isReady': true }
-          },
-          { arrayFilters: [ { 'elem.user': next.user._id || next.user } ] }
-        );
-        // Reload populated
-        room = await Room.findById(room._id).populate('players.user', 'username winPoints');
-
-        io.to(socket.roomId).emit('ownership-transferred', {
-          newOwnerId,
-          players: room.players,
-          username: next.user.username || 'Player',
-          inviteCode: room.inviteCode
-        });
+      if (!room) {
+        socket.roomId = null;
+        return;
       }
 
-      // Notify others about the player leaving with updated list
-      socket.to(socket.roomId).emit('player-left', {
-        roomId: socket.roomId,
-        players: room.players,
-        username,
-        newOwnerId: wasOwner && room.players.length > 0 ? (room.players[0].user._id || room.players[0].user).toString() : null
-      });
+      console.log(`[LEAVE ROOM] After removal, room ${room._id} has ${room.players.length} player(s)`);
 
-      // Leave socket room
-      socket.leave(socket.roomId);
+      // Leave socket room BEFORE cleanup
+      socket.leave(roomIdToCleanup);
       socket.roomId = null;
+
+      // Check if room is empty and delete if so
+      if (room.players.length === 0) {
+        console.log(`[LEAVE ROOM] Room is empty, calling cleanup`);
+        await cleanupEmptyRoom(room._id);
+      } else {
+        // Room still has players
+        if (wasOwner) {
+          // Transfer ownership to next player and set them ready
+          const next = room.players[0];
+          const newOwnerId = (next.user._id || next.user).toString();
+          console.log(`[LEAVE ROOM] Transferring ownership to ${newOwnerId}`);
+          
+          await Room.updateOne(
+            { _id: room._id },
+            { 
+              $set: { owner: newOwnerId, 'players.$[elem].isReady': true }
+            },
+            { arrayFilters: [ { 'elem.user': next.user._id || next.user } ] }
+          );
+          // Reload populated
+          room = await Room.findById(room._id).populate('players.user', 'username winPoints');
+
+          io.to(roomIdToCleanup).emit('ownership-transferred', {
+            newOwnerId,
+            players: room.players,
+            username: next.user.username || 'Player',
+            inviteCode: room.inviteCode
+          });
+        }
+
+        // Notify others about the player leaving with updated list
+        io.to(roomIdToCleanup).emit('player-left', {
+          roomId: roomIdToCleanup,
+          players: room.players,
+          username,
+          newOwnerId: wasOwner && room.players.length > 0 ? (room.players[0].user._id || room.players[0].user).toString() : null
+        });
+      }
     } catch (error) {
       console.error('Leave room socket error:', error);
     }
@@ -1013,15 +1066,28 @@ module.exports = (io, socket) => {
   // Disconnect (atomic updates)
   socket.on('disconnect', async () => {
     try {
+      // Clean up quick play queue
+      if (quickPlayQueue.has(socket.id)) {
+        quickPlayQueue.delete(socket.id);
+        socket.quickPlayUserId = null;
+        console.log(`[DISCONNECT] User removed from quick play queue. Queue size: ${quickPlayQueue.size}`);
+      }
+
       if (!(socket.roomId && socket.userId)) return;
 
+      const roomIdToCleanup = socket.roomId;
       const User = require('../models/User');
       const user = await User.findById(socket.userId);
       const username = user?.username || 'Player';
 
+      console.log(`[DISCONNECT] User ${socket.userId} (${username}) disconnected from room ${roomIdToCleanup}`);
+
       const roomBefore = await Room.findById(socket.roomId).select('owner players')
         .populate('players.user', 'username winPoints');
-      if (!roomBefore) return;
+      if (!roomBefore) {
+        console.log(`[DISCONNECT] Room ${socket.roomId} not found`);
+        return;
+      }
 
       const wasOwner = roomBefore.owner.toString() === socket.userId.toString();
 
@@ -1033,14 +1099,33 @@ module.exports = (io, socket) => {
 
       if (!room) return;
 
+      console.log(`[DISCONNECT] After removal, room ${room._id} has ${room.players.length} player(s)`);
+
+      // Abort any ongoing rematch readiness for this room
+      try {
+        rematchReady.delete(roomIdToCleanup.toString());
+        const t = rematchCountdownTimers.get(roomIdToCleanup.toString());
+        if (t) {
+          clearInterval(t);
+          rematchCountdownTimers.delete(roomIdToCleanup.toString());
+        }
+        io.to(roomIdToCleanup).emit('rematch-aborted', { reason: 'player-left' });
+      } catch (e) {
+        console.error('[DISCONNECT] Error aborting rematch:', e);
+      }
+
       if (room.players.length === 0) {
-        await Room.deleteOne({ _id: room._id });
+        console.log(`[DISCONNECT] Room is empty, calling cleanup`);
+        await cleanupEmptyRoom(room._id);
         return;
       }
 
+      // Room still has players
       if (wasOwner) {
         const next = room.players[0];
         const newOwnerId = (next.user._id || next.user).toString();
+        console.log(`[DISCONNECT] Transferring ownership to ${newOwnerId}`);
+        
         await Room.updateOne(
           { _id: room._id },
           { $set: { owner: newOwnerId, 'players.$[elem].isReady': true } },
@@ -1048,7 +1133,7 @@ module.exports = (io, socket) => {
         );
         room = await Room.findById(room._id).populate('players.user', 'username winPoints');
 
-        io.to(socket.roomId).emit('ownership-transferred', {
+        io.to(roomIdToCleanup).emit('ownership-transferred', {
           newOwnerId,
           players: room.players,
           username: next.user.username || 'Player',
@@ -1056,24 +1141,12 @@ module.exports = (io, socket) => {
         });
       }
 
-      socket.to(socket.roomId).emit('player-left', {
-        roomId: socket.roomId,
+      io.to(roomIdToCleanup).emit('player-left', {
+        roomId: roomIdToCleanup,
         players: room.players,
         username,
         newOwnerId: wasOwner && room.players.length > 0 ? (room.players[0].user._id || room.players[0].user).toString() : null
       });
-      // Abort any ongoing rematch readiness for this room
-      try {
-        if (socket.roomId) {
-          rematchReady.delete(socket.roomId.toString());
-          const t = rematchCountdownTimers.get(socket.roomId.toString());
-          if (t) {
-            clearInterval(t);
-            rematchCountdownTimers.delete(socket.roomId.toString());
-          }
-          io.to(socket.roomId).emit('rematch-aborted', { reason: 'player-left' });
-        }
-      } catch (e) {}
     } catch (error) {
       console.error('Disconnect socket error:', error);
     }
@@ -1393,16 +1466,6 @@ module.exports = (io, socket) => {
       quickPlayQueue.delete(socket.id);
       socket.quickPlayUserId = null;
       console.log(`[QUICKPLAY] User left queue. Queue size: ${quickPlayQueue.size}`);
-    }
-  });
-
-  // Clean up quick play queue on disconnect
-  const originalDisconnectHandler = socket.listeners('disconnect')[0];
-  socket.on('disconnect', () => {
-    if (quickPlayQueue.has(socket.id)) {
-      quickPlayQueue.delete(socket.id);
-      socket.quickPlayUserId = null;
-      console.log(`[QUICKPLAY] User disconnected from queue. Queue size: ${quickPlayQueue.size}`);
     }
   });
 };

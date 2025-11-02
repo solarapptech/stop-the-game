@@ -26,6 +26,9 @@ const socketHandlers = require('./socket/socketHandlers');
 // Import passport config
 require('./config/passport');
 
+// Import room cleanup utility
+const { startPeriodicCleanup } = require('./utils/roomCleanup');
+
 const app = express();
 app.set('trust proxy', 1);
 const server = http.createServer(app);
@@ -87,6 +90,10 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/stop-the-
   useUnifiedTopology: true
 }).then(() => {
   console.log('Connected to MongoDB');
+  
+  // Start periodic room cleanup (every 5 minutes)
+  // This is a safety net to catch any orphaned empty rooms
+  startPeriodicCleanup(5);
 }).catch(err => {
   console.error('MongoDB connection error:', err);
   process.exit(1);
