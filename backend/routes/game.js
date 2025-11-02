@@ -454,66 +454,25 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
     const hasNextRound = game.nextRound();
 
     if (hasNextRound) {
-      // Start 12s letter selection window for the new selector
-      const selectorId = (game.letterSelector || '').toString();
-      const selectorPlayer = (game.players || []).find(p => (p.user._id || p.user).toString() === selectorId);
-      const selectorName = selectorPlayer?.user?.username || 'Player';
-      const deadline = new Date(Date.now() + 12000);
-      game.letterDeadline = deadline;
+      // Save game state with new round
       await game.save();
+      
+      console.log(`[HTTP NEXT-ROUND] Game ${gameId} advancing to round ${game.currentRound}`);
 
-      // Broadcast to socket room
+      // Emit event to trigger socket layer to handle timer management
+      // Socket layer has centralized timer handling to avoid conflicts
       try {
         const io = req.app.get('io');
         if (io) {
-          io.to(`game-${gameId}`).emit('letter-selection-started', {
-            gameId,
-            selectorId,
-            selectorName,
-            deadline,
+          // Emit advance-round event to trigger socket handler
+          io.to(`game-${gameId}`).emit('advance-round-trigger', {
+            gameId: gameId.toString(),
             currentRound: game.currentRound
           });
         }
       } catch (e) {
-        // ignore emit errors
+        console.error('[HTTP NEXT-ROUND] Socket emit error:', e);
       }
-
-      // Schedule auto-pick after 12s if no letter chosen
-      setTimeout(async () => {
-        try {
-          const g = await Game.findById(gameId);
-          if (g && g.status === 'selecting_letter' && !g.currentLetter) {
-            g.selectRandomLetter();
-            g.letterDeadline = null;
-            await g.save();
-
-            const io2 = req.app.get('io');
-            const revealDeadline = new Date(Date.now() + 3000);
-            if (io2) {
-              io2.to(`game-${gameId}`).emit('letter-accepted', {
-                letter: g.currentLetter,
-                revealDeadline
-              });
-            }
-
-            setTimeout(async () => {
-              const gg = await Game.findById(gameId);
-              if (!gg) return;
-              gg.status = 'playing';
-              gg.roundStartTime = new Date();
-              await gg.save();
-              const io3 = req.app.get('io');
-              if (io3) {
-                io3.to(`game-${gameId}`).emit('letter-selected', {
-                  letter: gg.currentLetter
-                });
-              }
-            }, 3000);
-          }
-        } catch (e) {
-          // ignore timer errors
-        }
-      }, 12000);
 
       res.json({
         message: 'Next round started',

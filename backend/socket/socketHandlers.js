@@ -12,6 +12,7 @@ const rematchReady = new Map();
 const rematchCountdownTimers = new Map();
 const validationTimers = new Map();
 const quickPlayQueue = new Set(); // Set of socket IDs waiting for quick play match
+const roundAdvancementLocks = new Map(); // Prevent concurrent round advancement
 
 module.exports = (io, socket) => {
   // Helper to clean up empty rooms - CRITICAL for preventing orphaned rooms
@@ -46,6 +47,207 @@ module.exports = (io, socket) => {
     } catch (error) {
       console.error('[ROOM CLEANUP] Error cleaning up room:', error);
       return false;
+    }
+  };
+
+  // Centralized function to clear all timers for a game
+  const clearGameTimers = (gameId) => {
+    const id = gameId.toString();
+    
+    // Clear letter selection timer
+    const lt = letterTimers.get(id);
+    if (lt) {
+      clearTimeout(lt);
+      letterTimers.delete(id);
+      console.log(`[TIMER CLEANUP] Cleared letter timer for game ${id}`);
+    }
+    
+    // Clear letter reveal timer
+    const rt = letterRevealTimers.get(id);
+    if (rt) {
+      clearTimeout(rt);
+      letterRevealTimers.delete(id);
+      console.log(`[TIMER CLEANUP] Cleared letter reveal timer for game ${id}`);
+    }
+    
+    // Clear round timer
+    const rnd = roundTimers.get(id);
+    if (rnd) {
+      clearTimeout(rnd);
+      roundTimers.delete(id);
+      console.log(`[TIMER CLEANUP] Cleared round timer for game ${id}`);
+    }
+  };
+
+  // Centralized letter selection starter - ensures letter is ALWAYS selected (manual or auto)
+  const startLetterSelection = async (game) => {
+    try {
+      const gameId = game._id.toString();
+      console.log(`[LETTER SELECTION] Starting for game ${gameId}, round ${game.currentRound}`);
+      
+      // Clear any existing timers first
+      clearGameTimers(gameId);
+      
+      // Set up letter selection deadline
+      const selectorId = (game.letterSelector || '').toString();
+      const selectorPlayer = game.players.find(p => (p.user._id || p.user).toString() === selectorId);
+      const selectorName = selectorPlayer?.user?.username || 'Player';
+      const letterDeadline = new Date(Date.now() + 12000);
+      game.letterDeadline = letterDeadline;
+      game.status = 'selecting_letter';
+      await game.save();
+
+      // Emit letter selection started event
+      io.to(`game-${gameId}`).emit('letter-selection-started', {
+        gameId,
+        selectorId,
+        selectorName,
+        deadline: letterDeadline,
+        currentRound: game.currentRound
+      });
+
+      console.log(`[LETTER SELECTION] Timer set for game ${gameId}, selector: ${selectorName}, deadline: 12s`);
+
+      // Schedule auto-pick after 12s if not chosen
+      const selTimer = setTimeout(async () => {
+        letterTimers.delete(gameId);
+        try {
+          const g = await Game.findById(gameId);
+          if (!g) {
+            console.log(`[LETTER AUTO-PICK] Game ${gameId} not found`);
+            return;
+          }
+          
+          // Only auto-pick if still in letter selection and no letter chosen
+          if (g.status === 'selecting_letter' && !g.currentLetter) {
+            console.log(`[LETTER AUTO-PICK] Auto-selecting letter for game ${gameId}, round ${g.currentRound}`);
+            const autoLetter = g.selectRandomLetter();
+            g.letterDeadline = null;
+            await g.save();
+            console.log(`[LETTER AUTO-PICK] Selected letter ${autoLetter} for game ${gameId}`);
+
+            // Proceed to reveal phase
+            await proceedWithLetterReveal(gameId, g.currentLetter);
+          } else {
+            console.log(`[LETTER AUTO-PICK] Skipped for game ${gameId} - status: ${g.status}, letter: ${g.currentLetter}`);
+          }
+        } catch (e) {
+          console.error(`[LETTER AUTO-PICK] Error for game ${gameId}:`, e);
+        }
+      }, 12000);
+      
+      letterTimers.set(gameId, selTimer);
+    } catch (error) {
+      console.error('[LETTER SELECTION] Start error:', error);
+    }
+  };
+
+  // Helper to proceed with letter reveal and start round
+  const proceedWithLetterReveal = async (gameId, letter) => {
+    try {
+      console.log(`[LETTER REVEAL] Starting for game ${gameId}, letter: ${letter}`);
+      
+      const revealDeadline = new Date(Date.now() + 3000);
+      io.to(`game-${gameId}`).emit('letter-accepted', {
+        letter: letter,
+        revealDeadline
+      });
+
+      // Clear any existing reveal timer
+      const existingR = letterRevealTimers.get(gameId);
+      if (existingR) clearTimeout(existingR);
+      
+      const revTimer = setTimeout(async () => {
+        letterRevealTimers.delete(gameId);
+        try {
+          const gg = await Game.findById(gameId);
+          if (!gg) {
+            console.log(`[LETTER REVEAL] Game ${gameId} not found`);
+            return;
+          }
+          
+          gg.status = 'playing';
+          gg.roundStartTime = new Date();
+          await gg.save();
+          
+          console.log(`[ROUND START] Game ${gameId}, round ${gg.currentRound}, letter: ${letter}`);
+          
+          io.to(`game-${gameId}`).emit('letter-selected', {
+            letter: gg.currentLetter
+          });
+          
+          // Start 60s round timer
+          const existingRound = roundTimers.get(gameId);
+          if (existingRound) clearTimeout(existingRound);
+          
+          const rt = setTimeout(async () => {
+            roundTimers.delete(gameId);
+            try {
+              const g3 = await Game.findById(gameId);
+              if (g3 && g3.status === 'playing') {
+                console.log(`[ROUND TIMEOUT] Game ${gameId}, round ${g3.currentRound}`);
+                g3.status = 'validating';
+                const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
+                g3.validationDeadline = new Date(Date.now() + graceMs);
+                await g3.save();
+                
+                io.to(`game-${gameId}`).emit('round-ended', { 
+                  reason: 'timeout', 
+                  validationDeadline: g3.validationDeadline 
+                });
+
+                // Schedule validation
+                const vt = validationTimers.get(gameId);
+                if (vt) clearTimeout(vt);
+                
+                const allSubmitted = (g3.players || []).every(p => 
+                  (p.answers || []).some(a => a.round === g3.currentRound)
+                );
+                const waitMs = allSubmitted ? 0 : graceMs;
+                
+                console.log(`[ROUND END] Game=${gameId} Round=${g3.currentRound} AllSubmitted=${allSubmitted} WaitMs=${waitMs}`);
+                
+                const timer = setTimeout(async () => {
+                  validationTimers.delete(gameId);
+                  try {
+                    const locked = await Game.findOneAndUpdate(
+                      { 
+                        _id: gameId, 
+                        status: 'validating', 
+                        $or: [
+                          { validationInProgress: { $exists: false } }, 
+                          { validationInProgress: false }
+                        ] 
+                      },
+                      { $set: { validationInProgress: true } },
+                      { new: true }
+                    );
+                    if (locked) {
+                      await runValidation(gameId);
+                    } else {
+                      console.log(`[VALIDATION] Lock failed for game ${gameId}`);
+                    }
+                  } catch (e) {
+                    console.error('[VALIDATION] Auto validation error:', e);
+                  }
+                }, waitMs);
+                
+                validationTimers.set(gameId, timer);
+              }
+            } catch (e) {
+              console.error('[ROUND TIMEOUT] Error:', e);
+            }
+          }, 60000);
+          
+          roundTimers.set(gameId, rt);
+        } catch (e) {
+          console.error('[LETTER REVEAL] Error:', e);
+        }
+      }, 3000);
+      
+      letterRevealTimers.set(gameId, revTimer);
+    } catch (error) {
+      console.error('[LETTER REVEAL] Error:', error);
     }
   };
 
@@ -658,17 +860,30 @@ module.exports = (io, socket) => {
     try {
       const { gameId, letter } = data;
       const game = await Game.findById(gameId);
-      if (!game) return;
-      if (game.status !== 'selecting_letter') return;
-      if (game.letterSelector.toString() !== socket.userId.toString()) return;
+      if (!game) {
+        console.log(`[LETTER SELECTED] Game ${gameId} not found`);
+        return;
+      }
+      if (game.status !== 'selecting_letter') {
+        console.log(`[LETTER SELECTED] Game ${gameId} not in selecting_letter status (current: ${game.status})`);
+        return;
+      }
+      if (game.letterSelector.toString() !== socket.userId.toString()) {
+        console.log(`[LETTER SELECTED] User ${socket.userId} is not the letter selector`);
+        return;
+      }
 
-      // Clear letter selection timer if running
+      console.log(`[LETTER SELECTED] Manual selection by user ${socket.userId} for game ${gameId}, letter: ${letter}`);
+
+      // Clear letter selection timer since user picked manually
       const lt = letterTimers.get(game._id.toString());
       if (lt) {
         clearTimeout(lt);
         letterTimers.delete(game._id.toString());
+        console.log(`[LETTER SELECTED] Cleared auto-pick timer for game ${gameId}`);
       }
 
+      // Validate and set letter
       let chosen = null;
       if (letter && /^[A-Za-z]$/.test(letter)) {
         const up = letter.toUpperCase();
@@ -678,74 +893,22 @@ module.exports = (io, socket) => {
           chosen = up;
         }
       }
+      
+      // Fallback to random if invalid letter provided
       if (!chosen) {
+        console.log(`[LETTER SELECTED] Invalid letter "${letter}", selecting random`);
         chosen = game.selectRandomLetter();
       }
+      
       game.letterDeadline = null;
       await game.save();
 
-      const revealDeadline = new Date(Date.now() + 3000);
-      io.to(`game-${gameId}`).emit('letter-accepted', {
-        letter: game.currentLetter,
-        revealDeadline
-      });
+      console.log(`[LETTER SELECTED] Final letter: ${chosen} for game ${gameId}, proceeding to reveal`);
 
-      const existingR = letterRevealTimers.get(game._id.toString());
-      if (existingR) clearTimeout(existingR);
-      const revTimer = setTimeout(async () => {
-        letterRevealTimers.delete(game._id.toString());
-        const gg = await Game.findById(game._id);
-        if (!gg) return;
-        gg.status = 'playing';
-        gg.roundStartTime = new Date();
-        await gg.save();
-        io.to(`game-${gameId}`).emit('letter-selected', {
-          letter: gg.currentLetter
-        });
-        // start 60s round auto-end timer
-        const existingRound = roundTimers.get(game._id.toString());
-        if (existingRound) clearTimeout(existingRound);
-        const rt = setTimeout(async () => {
-          roundTimers.delete(game._id.toString());
-          try {
-            const g3 = await Game.findById(game._id);
-            if (g3 && g3.status === 'playing') {
-              g3.status = 'validating';
-              const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
-              g3.validationDeadline = new Date(Date.now() + graceMs);
-              await g3.save();
-              io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
-
-              // Schedule validation similar to STOP path
-              const vt = validationTimers.get(game._id.toString());
-              if (vt) clearTimeout(vt);
-              const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
-              const waitMs = allSubmitted ? 0 : graceMs;
-              console.log(`[ROUND END] reason=timeout game=${gameId} round=${g3.currentRound} allSubmitted=${allSubmitted} graceMs=${graceMs} waitMs=${waitMs}`);
-              const timer = setTimeout(async () => {
-                validationTimers.delete(game._id.toString());
-                try {
-                  const locked = await Game.findOneAndUpdate(
-                    { _id: game._id, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
-                    { $set: { validationInProgress: true } },
-                    { new: true }
-                  );
-                  if (locked) await runValidation(gameId);
-                } catch (e) {
-                  console.error('Auto validation error:', e);
-                }
-              }, waitMs);
-              validationTimers.set(game._id.toString(), timer);
-            }
-          } catch (e) {
-            console.error('Round auto-end error:', e);
-          }
-        }, 60000);
-        roundTimers.set(game._id.toString(), rt);
-      }, 3000);
-      letterRevealTimers.set(game._id.toString(), revTimer);
+      // Use centralized reveal logic
+      await proceedWithLetterReveal(gameId.toString(), chosen);
     } catch (error) {
-      console.error('Letter selected socket error:', error);
+      console.error('[LETTER SELECTED] Error:', error);
     }
   });
 
@@ -825,6 +988,32 @@ module.exports = (io, socket) => {
     }
   });
 
+  // Handle HTTP route triggering round advancement (no double round advance, just start letter selection)
+  socket.on('advance-round-trigger', async (data) => {
+    try {
+      const { gameId } = data;
+      if (!gameId) return;
+      
+      console.log(`[ADVANCE-ROUND-TRIGGER] Received for game ${gameId}`);
+      
+      const game = await Game.findById(gameId).populate('players.user', 'username');
+      if (!game) {
+        console.log(`[ADVANCE-ROUND-TRIGGER] Game ${gameId} not found`);
+        return;
+      }
+      
+      // Game has already been advanced by HTTP route, just start letter selection
+      if (game.status === 'selecting_letter') {
+        console.log(`[ADVANCE-ROUND-TRIGGER] Starting letter selection for game ${gameId}, round ${game.currentRound}`);
+        await startLetterSelection(game);
+      } else {
+        console.log(`[ADVANCE-ROUND-TRIGGER] Game ${gameId} not in selecting_letter status (current: ${game.status})`);
+      }
+    } catch (error) {
+      console.error('[ADVANCE-ROUND-TRIGGER] Error:', error);
+    }
+  });
+
   // Next round readiness
   socket.on('next-round-ready', async (data) => {
     try {
@@ -879,101 +1068,36 @@ module.exports = (io, socket) => {
   });
 
   async function advanceToNextRound(gameId) {
+    const gameIdStr = gameId.toString();
+    
+    // Prevent concurrent advancement with lock
+    if (roundAdvancementLocks.get(gameIdStr)) {
+      console.log(`[ROUND ADVANCEMENT] Already in progress for game ${gameIdStr}, skipping duplicate call`);
+      return;
+    }
+    
     try {
+      roundAdvancementLocks.set(gameIdStr, true);
+      console.log(`[ROUND ADVANCEMENT] Starting for game ${gameIdStr}`);
+      
       const game = await Game.findById(gameId).populate('players.user', 'username');
-      if (!game) return;
+      if (!game) {
+        console.log(`[ROUND ADVANCEMENT] Game ${gameIdStr} not found`);
+        return;
+      }
+      
+      if (game.status !== 'round_ended') {
+        console.log(`[ROUND ADVANCEMENT] Game ${gameIdStr} not in round_ended status (current: ${game.status})`);
+        return;
+      }
+      
       const hasNext = game.nextRound();
       if (hasNext) {
-        const selectorId = (game.letterSelector || '').toString();
-        const selectorPlayer = (game.players || []).find(p => (p.user._id || p.user).toString() === selectorId);
-        const selectorName = selectorPlayer?.user?.username || 'Player';
-        const letterDeadline = new Date(Date.now() + 12000);
-        game.letterDeadline = letterDeadline;
+        console.log(`[ROUND ADVANCEMENT] Advancing to round ${game.currentRound} for game ${gameIdStr}`);
         await game.save();
-
-        io.to(`game-${gameId}`).emit('letter-selection-started', {
-          gameId,
-          selectorId,
-          selectorName,
-          deadline: letterDeadline,
-          currentRound: game.currentRound
-        });
-
-        const existingL = letterTimers.get(game._id.toString());
-        if (existingL) clearTimeout(existingL);
-        const selTimer = setTimeout(async () => {
-          letterTimers.delete(game._id.toString());
-          try {
-            const g = await Game.findById(game._id);
-            if (g && g.status === 'selecting_letter' && !g.currentLetter) {
-              const autoLetter = g.selectRandomLetter();
-              g.letterDeadline = null;
-              await g.save();
-
-              const revealDeadline = new Date(Date.now() + 3000);
-              io.to(`game-${gameId}`).emit('letter-accepted', {
-                letter: g.currentLetter,
-                revealDeadline
-              });
-
-              const existingR = letterRevealTimers.get(game._id.toString());
-              if (existingR) clearTimeout(existingR);
-              const revTimer = setTimeout(async () => {
-                letterRevealTimers.delete(game._id.toString());
-                const gg = await Game.findById(game._id);
-                if (!gg) return;
-                gg.status = 'playing';
-                gg.roundStartTime = new Date();
-                await gg.save();
-                io.to(`game-${gameId}`).emit('letter-selected', {
-                  letter: gg.currentLetter
-                });
-                // start 60s round auto-end timer
-                const existingRound = roundTimers.get(game._id.toString());
-                if (existingRound) clearTimeout(existingRound);
-                const rt = setTimeout(async () => {
-                  roundTimers.delete(game._id.toString());
-                  try {
-                    const g3 = await Game.findById(game._id);
-                    if (g3 && g3.status === 'playing') {
-                      g3.status = 'validating';
-                      const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
-                      g3.validationDeadline = new Date(Date.now() + graceMs);
-                      await g3.save();
-                      io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
-                      const vt = validationTimers.get(game._id.toString());
-                      if (vt) clearTimeout(vt);
-                      const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
-                      const waitMs = allSubmitted ? 0 : graceMs;
-                      console.log(`[ROUND END] reason=timeout game=${gameId} round=${g3.currentRound} allSubmitted=${allSubmitted} graceMs=${graceMs} waitMs=${waitMs}`);
-                      const timer = setTimeout(async () => {
-                        validationTimers.delete(game._id.toString());
-                        try {
-                          const locked = await Game.findOneAndUpdate(
-                            { _id: game._id, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
-                            { $set: { validationInProgress: true } },
-                            { new: true }
-                          );
-                          if (locked) await runValidation(gameId);
-                        } catch (e) {
-                          console.error('Auto validation error:', e);
-                        }
-                      }, waitMs);
-                      validationTimers.set(game._id.toString(), timer);
-                    }
-                  } catch (e) {
-                    console.error('Round auto-end error:', e);
-                  }
-                }, 60000);
-                roundTimers.set(game._id.toString(), rt);
-              }, 3000);
-              letterRevealTimers.set(game._id.toString(), revTimer);
-            }
-          } catch (e) {
-            console.error('Auto-pick letter error:', e);
-          }
-        }, 12000);
-        letterTimers.set(game._id.toString(), selTimer);
+        
+        // Use centralized letter selection
+        await startLetterSelection(game);
       } else {
         // Update room status and user stats when game finishes
         try {
@@ -998,7 +1122,11 @@ module.exports = (io, socket) => {
         }
       }
     } catch (err) {
-      console.error('Advance to next round error:', err);
+      console.error('[ROUND ADVANCEMENT] Error:', err);
+    } finally {
+      // Always release lock
+      roundAdvancementLocks.delete(gameIdStr);
+      console.log(`[ROUND ADVANCEMENT] Lock released for game ${gameIdStr}`);
     }
   }
 
