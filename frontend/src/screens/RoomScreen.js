@@ -34,7 +34,7 @@ const RoomScreen = ({ navigation, route }) => {
       
       const playersData = currentRoom.players.map(p => ({
         id: p.user._id || p.user,
-        username: p.user.username || 'Player',
+        displayName: p.user.displayName || p.user.username || 'Player',
         isReady: p.isReady,
         isOwner: (p.user._id || p.user).toString() === ownerId.toString()
       }));
@@ -65,7 +65,7 @@ const RoomScreen = ({ navigation, route }) => {
         
         const playersData = (room.players || []).map(p => ({
           id: p.user._id || p.user,
-          username: p.user.username || 'Player',
+          displayName: p.user.displayName || p.user.username || 'Player',
           isReady: p.isReady,
           isOwner: (p.user._id || p.user).toString() === ownerId.toString()
         }));
@@ -79,14 +79,14 @@ const RoomScreen = ({ navigation, route }) => {
       socket.on('player-joined', (data) => {
         const playersData = data.players.map(p => ({
           id: p.user._id || p.user,
-          username: p.user.username || 'Player',
+          displayName: p.user.displayName || p.user.username || 'Player',
           isReady: p.isReady,
           isOwner: (p.user._id || p.user).toString() === roomOwner
         }));
         setPlayers(playersData);
         setMessages(prev => [...prev, {
           type: 'system',
-          text: `${data.username || 'A player'} joined the room`
+          text: `${data.displayName || data.username || 'A player'} joined the room`
         }]);
       });
 
@@ -99,14 +99,14 @@ const RoomScreen = ({ navigation, route }) => {
         const currentOwnerId = data.newOwnerId || roomOwner;
         const playersData = data.players.map(p => ({
           id: p.user._id || p.user,
-          username: p.user.username || 'Player',
+          displayName: p.user.displayName || p.user.username || 'Player',
           isReady: p.isReady,
           isOwner: (p.user._id || p.user).toString() === currentOwnerId
         }));
         setPlayers(playersData);
         setMessages(prev => [...prev, {
           type: 'system',
-          text: `${data.username} left the room`
+          text: `${data.displayName || data.username} left the room`
         }]);
       });
 
@@ -123,7 +123,7 @@ const RoomScreen = ({ navigation, route }) => {
       socket.on('new-message', (data) => {
         setMessages(prev => [...prev, {
           type: 'chat',
-          username: data.username || user?.username || 'Player',
+          displayName: data.displayName || data.username || user?.displayName || user?.username || 'Player',
           text: data.message
         }]);
       });
@@ -134,7 +134,7 @@ const RoomScreen = ({ navigation, route }) => {
         
         const playersData = data.players.map(p => ({
           id: p.user._id || p.user,
-          username: p.user.username || 'Player',
+          displayName: p.user.displayName || p.user.username || 'Player',
           isReady: p.isReady,
           isOwner: (p.user._id || p.user).toString() === data.newOwnerId
         }));
@@ -157,7 +157,7 @@ const RoomScreen = ({ navigation, route }) => {
         } else {
           setMessages(prev => [...prev, {
             type: 'system',
-            text: `${data.username} is now the room owner`
+            text: `${data.displayName || data.username} is now the room owner`
           }]);
         }
       });
@@ -359,12 +359,12 @@ const RoomScreen = ({ navigation, route }) => {
               {players.map((player, index) => (
                 <List.Item
                   key={player.id}
-                  title={player.username}
+                  title={player.displayName}
                   description={player.isOwner ? 'Room Owner' : player.isReady ? 'Ready' : 'Not Ready'}
                   left={() => (
                     <Avatar.Text
                       size={40}
-                      label={player.username.substring(0, 2).toUpperCase()}
+                      label={player.displayName.substring(0, 2).toUpperCase()}
                       style={{ backgroundColor: theme.colors.primary }}
                     />
                   )}
@@ -414,7 +414,7 @@ const RoomScreen = ({ navigation, route }) => {
                         <Text style={styles.systemMessage}>{msg.text}</Text>
                       ) : (
                         <Text style={styles.chatMessage}>
-                          <Text style={styles.chatUsername}>{msg.username}: </Text>
+                          <Text style={styles.chatUsername}>{msg.displayName || msg.username}: </Text>
                           {msg.text}
                         </Text>
                       )}

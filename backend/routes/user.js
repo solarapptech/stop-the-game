@@ -17,6 +17,7 @@ router.get('/profile/:userId', async (req, res) => {
       user: {
         id: user._id,
         username: user.username,
+        displayName: user.displayName,
         winPoints: user.winPoints,
         matchesPlayed: user.matchesPlayed,
         subscribed: user.subscribed
@@ -90,7 +91,7 @@ router.post('/friends/add', authMiddleware, async (req, res) => {
 router.get('/friends', authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
-      .populate('friends', 'username winPoints matchesPlayed');
+      .populate('friends', 'username displayName winPoints matchesPlayed');
 
     res.json({
       friends: user.friends
@@ -113,7 +114,7 @@ router.get('/search', async (req, res) => {
     const users = await User.find({
       username: { $regex: query, $options: 'i' }
     })
-    .select('username winPoints matchesPlayed')
+    .select('username displayName winPoints matchesPlayed')
     .limit(10);
 
     res.json({ users });

@@ -230,6 +230,24 @@ export const AuthProvider = ({ children }) => {
     await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
   };
 
+  const updateDisplayName = async (displayName) => {
+    try {
+      const response = await axios.put('auth/displayname', { displayName });
+      
+      const updatedUser = { ...user, displayName: response.data.user.displayName };
+      setUser(updatedUser);
+      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+      
+      return { success: true };
+    } catch (error) {
+      console.error('[AuthContext] updateDisplayName error:', error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message || 'Failed to update display name'
+      };
+    }
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -241,6 +259,7 @@ export const AuthProvider = ({ children }) => {
       verifyEmail,
       resendVerificationCode,
       updateUser,
+      updateDisplayName,
       isAuthenticated: !!token
     }}>
       {children}

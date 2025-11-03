@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
-import { Text, Button, Card, Avatar, IconButton, Badge, ActivityIndicator } from 'react-native-paper';
+import { Text, Button, Card, Avatar, IconButton, Badge, ActivityIndicator, TextInput, Portal, Dialog } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import theme from '../theme';
 
 const MenuScreen = ({ navigation }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, updateDisplayName } = useAuth();
   const { socket, connected } = useSocket();
   const [stats, setStats] = useState({
     winPoints: user?.winPoints || 0,
@@ -16,6 +16,9 @@ const MenuScreen = ({ navigation }) => {
   });
   const [quickPlayVisible, setQuickPlayVisible] = useState(false);
   const [matchmakingStatus, setMatchmakingStatus] = useState('searching'); // 'searching' | 'found'
+  const [editNameVisible, setEditNameVisible] = useState(false);
+  const [newDisplayName, setNewDisplayName] = useState(user?.displayName || user?.username || '');
+  const [savingName, setSavingName] = useState(false);
 
   useEffect(() => {
     if (!socket) return;
@@ -130,7 +133,19 @@ const MenuScreen = ({ navigation }) => {
               style={styles.avatar}
             />
             <View style={styles.userDetails}>
-              <Text style={styles.username}>{user?.username || 'Player'}</Text>
+              <View style={styles.usernameRow}>
+                <Text style={styles.username}>{user?.displayName || user?.username || 'Player'}</Text>
+                <IconButton
+                  icon="pencil"
+                  size={16}
+                  onPress={() => {
+                    setNewDisplayName(user?.displayName || user?.username || '');
+                    setEditNameVisible(true);
+                  }}
+                  style={styles.editIcon}
+                  iconColor={theme.colors.primary}
+                />
+              </View>
               <View style={styles.connectionStatus}>
                 <View style={[styles.statusDot, { backgroundColor: connected ? '#4CAF50' : '#F44336' }]} />
                 <Text style={styles.statusText}>
@@ -244,6 +259,57 @@ const MenuScreen = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Edit Display Name Dialog */}
+      <Portal>
+        <Dialog visible={editNameVisible} onDismiss={() => !savingName && setEditNameVisible(false)}>
+          <Dialog.Title>Edit Display Name</Dialog.Title>
+          <Dialog.Content>
+            <TextInput
+              label="Display Name"
+              value={newDisplayName}
+              onChangeText={setNewDisplayName}
+              mode="outlined"
+              maxLength={30}
+              disabled={savingName}
+              autoFocus
+            />
+            <Text style={styles.helperText}>
+              This is the name other players will see (3-30 characters)
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setEditNameVisible(false)} disabled={savingName}>
+              Cancel
+            </Button>
+            <Button 
+              onPress={async () => {
+                if (!newDisplayName || newDisplayName.trim().length < 3) {
+                  Alert.alert('Invalid Name', 'Display name must be at least 3 characters');
+                  return;
+                }
+                if (newDisplayName.trim().length > 30) {
+                  Alert.alert('Invalid Name', 'Display name must be at most 30 characters');
+                  return;
+                }
+                setSavingName(true);
+                const result = await updateDisplayName(newDisplayName.trim());
+                setSavingName(false);
+                if (result.success) {
+                  setEditNameVisible(false);
+                  Alert.alert('Success', 'Display name updated successfully');
+                } else {
+                  Alert.alert('Error', result.error || 'Failed to update display name');
+                }
+              }}
+              loading={savingName}
+              disabled={savingName}
+            >
+              Save
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </LinearGradient>
   );
 };
@@ -405,6 +471,19 @@ const styles = StyleSheet.create({
   cancelButton: {
     borderColor: '#757575',
     borderWidth: 1,
+  },
+  usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editIcon: {
+    margin: 0,
+    marginLeft: -4,
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#757575',
+    marginTop: 8,
   },
 });
 

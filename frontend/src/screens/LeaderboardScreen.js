@@ -91,7 +91,7 @@ const LeaderboardScreen = ({ navigation }) => {
             <View style={styles.userRankContent}>
               <Avatar.Text
                 size={50}
-                label={user?.username?.substring(0, 2).toUpperCase()}
+                label={(user?.displayName || user?.username)?.substring(0, 2).toUpperCase()}
                 style={{ backgroundColor: theme.colors.primary }}
               />
               <View style={styles.userRankInfo}>
@@ -129,7 +129,7 @@ const LeaderboardScreen = ({ navigation }) => {
               {leaderboardData.map((player, index) => (
                 <List.Item
                   key={index}
-                  title={player.username}
+                  title={player.displayName || player.username}
                   description={`${player.winPoints || player.weeklyPoints || 0} points • ${player.matchesPlayed || player.gamesPlayed || 0} games`}
                   left={() => (
                     <View style={styles.rankContainer}>

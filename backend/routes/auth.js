@@ -46,9 +46,10 @@ router.post('/register', [
       });
     }
 
-    // Create user (set emailHash for validation)
+    // Create user (set emailHash for validation, displayName defaults to username)
     const user = new User({
       username,
+      displayName: username,
       email,
       password,
       emailHash,
@@ -79,6 +80,7 @@ router.post('/register', [
       user: {
         id: user._id,
         username: user.username,
+        displayName: user.displayName,
         email: user.getDecryptedEmail(),
         verified: user.verified
       }
@@ -134,6 +136,7 @@ router.post('/login', [
       user: {
         id: user._id,
         username: user.username,
+        displayName: user.displayName,
         email: user.getDecryptedEmail(),
         verified: user.verified,
         subscribed: user.subscribed,
@@ -234,6 +237,7 @@ router.get('/me', authMiddleware, async (req, res) => {
     user: {
       id: req.user._id,
       username: req.user.username,
+      displayName: req.user.displayName,
       email: req.user.getDecryptedEmail(),
       verified: req.user.verified,
       subscribed: req.user.subscribed,
@@ -242,6 +246,36 @@ router.get('/me', authMiddleware, async (req, res) => {
       settings: req.user.settings
     }
   });
+});
+
+// Update display name
+router.put('/displayname', authMiddleware, [
+  body('displayName').isLength({ min: 3, max: 30 }).trim()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { displayName } = req.body;
+    const user = req.user;
+
+    user.displayName = displayName;
+    await user.save();
+
+    res.json({
+      message: 'Display name updated successfully',
+      user: {
+        id: user._id,
+        username: user.username,
+        displayName: user.displayName
+      }
+    });
+  } catch (error) {
+    console.error('Update display name error:', error);
+    res.status(500).json({ message: 'Error updating display name' });
+  }
 });
 
 module.exports = router;

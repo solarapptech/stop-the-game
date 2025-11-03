@@ -174,7 +174,7 @@ const JoinRoomScreen = ({ navigation }) => {
                         </Button>
                       </View>
                       <View style={styles.roomMeta}>
-                        <Text style={styles.roomHost}>Host: {room.owner?.username || 'Unknown'}</Text>
+                        <Text style={styles.roomHost}>Host: {room.owner?.displayName || room.owner?.username || 'Unknown'}</Text>
                         <Chip style={styles.playersChip} icon="account-group">
                           {room.players.length}/{room.maxPlayers} players
                         </Chip>

@@ -495,7 +495,7 @@ module.exports = (io, socket) => {
       }
 
       const room = await Room.findById(roomId)
-        .populate('players.user', 'username winPoints');
+        .populate('players.user', 'username displayName winPoints');
 
       if (!room) {
         return socket.emit('error', { message: 'Room not found' });
@@ -540,7 +540,7 @@ module.exports = (io, socket) => {
 
       // Load room to determine ownership before removal
       const roomBefore = await Room.findById(socket.roomId).select('owner players')
-        .populate('players.user', 'username winPoints');
+        .populate('players.user', 'username displayName winPoints');
       if (!roomBefore) {
         console.log(`[LEAVE ROOM] Room ${socket.roomId} not found`);
         socket.roomId = null;
@@ -554,7 +554,7 @@ module.exports = (io, socket) => {
         { _id: socket.roomId },
         { $pull: { players: { user: socket.userId } } },
         { new: true }
-      ).populate('players.user', 'username winPoints');
+      ).populate('players.user', 'username displayName winPoints');
 
       if (!room) {
         socket.roomId = null;
@@ -587,7 +587,7 @@ module.exports = (io, socket) => {
             { arrayFilters: [ { 'elem.user': next.user._id || next.user } ] }
           );
           // Reload populated
-          room = await Room.findById(room._id).populate('players.user', 'username winPoints');
+          room = await Room.findById(room._id).populate('players.user', 'username displayName winPoints');
 
           io.to(roomIdToCleanup).emit('ownership-transferred', {
             newOwnerId,
@@ -1211,7 +1211,7 @@ module.exports = (io, socket) => {
       console.log(`[DISCONNECT] User ${socket.userId} (${username}) disconnected from room ${roomIdToCleanup}`);
 
       const roomBefore = await Room.findById(socket.roomId).select('owner players')
-        .populate('players.user', 'username winPoints');
+        .populate('players.user', 'username displayName winPoints');
       if (!roomBefore) {
         console.log(`[DISCONNECT] Room ${socket.roomId} not found`);
         return;
@@ -1223,7 +1223,7 @@ module.exports = (io, socket) => {
         { _id: socket.roomId },
         { $pull: { players: { user: socket.userId } } },
         { new: true }
-      ).populate('players.user', 'username winPoints');
+      ).populate('players.user', 'username displayName winPoints');
 
       if (!room) return;
 
@@ -1259,7 +1259,7 @@ module.exports = (io, socket) => {
           { $set: { owner: newOwnerId, 'players.$[elem].isReady': true } },
           { arrayFilters: [ { 'elem.user': next.user._id || next.user } ] }
         );
-        room = await Room.findById(room._id).populate('players.user', 'username winPoints');
+        room = await Room.findById(room._id).populate('players.user', 'username displayName winPoints');
 
         io.to(roomIdToCleanup).emit('ownership-transferred', {
           newOwnerId,
@@ -1514,7 +1514,7 @@ module.exports = (io, socket) => {
         isPublic: true,
         status: 'waiting',
         $expr: { $lt: [{ $size: '$players' }, '$maxPlayers'] }
-      }).populate('players.user owner', 'username').limit(1);
+      }).populate('players.user owner', 'username displayName').limit(1);
 
       if (availableRooms.length > 0) {
         // Join the first available public room

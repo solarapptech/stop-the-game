@@ -938,7 +938,7 @@ const GameplayScreen = ({ navigation, route }) => {
       const pid = (playerUser._id) ? playerUser._id : playerUser;
       const pidStr = typeof pid === 'string' ? pid : String(pid || '');
       if (pidStr === String(userId || '')) return 'You';
-      return playerUser.username || `Player ${pidStr.substring(0, 5)}`;
+      return playerUser.displayName || playerUser.username || `Player ${pidStr.substring(0, 5)}`;
     };
 
     // Calculate total points for this round

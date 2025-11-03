@@ -8,7 +8,7 @@ const { authMiddleware } = require('../middleware/auth');
 const { validateAnswers, validateBatchAnswersFast } = require('../utils/openai');
 
 async function runValidationAndBroadcast(app, gameId) {
-  const game = await Game.findById(gameId).populate('players.user', 'username');
+  const game = await Game.findById(gameId).populate('players.user', 'username displayName');
   if (!game || game.status !== 'validating') return {};
   const unique = [];
   const seen = new Set();
@@ -394,7 +394,7 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
   try {
     const { gameId } = req.params;
 
-    const game = await Game.findById(gameId).populate('players.user', 'username');
+    const game = await Game.findById(gameId).populate('players.user', 'username displayName');
     if (!game) {
       return res.status(404).json({ message: 'Game not found' });
     }
@@ -418,7 +418,7 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
     if (!locked) {
       const g2 = await Game.findById(gameId).select('status');
       if (g2 && g2.status === 'round_ended') {
-        const g3 = await Game.findById(gameId).populate('players.user', 'username');
+        const g3 = await Game.findById(gameId).populate('players.user', 'username displayName');
         const standings = g3.getStandings();
         const roundResults = g3.players.map(p => ({
           user: p.user,
@@ -442,7 +442,7 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
   try {
     const { gameId } = req.params;
 
-    const game = await Game.findById(gameId).populate('players.user', 'username');
+    const game = await Game.findById(gameId).populate('players.user', 'username displayName');
     if (!game) {
       return res.status(404).json({ message: 'Game not found' });
     }
@@ -483,14 +483,24 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
     } else {
       // Game finished, update user stats
       const standings = game.getStandings();
+      
+      // Update stats for all players
       for (const standing of standings) {
-        const user = await User.findById(standing.user);
+        const userId = standing.user._id || standing.user;
+        const user = await User.findById(userId);
         if (user) {
+          // All players get matchesPlayed incremented
           user.matchesPlayed += 1;
-          if (standing.user.toString() === game.winner.toString()) {
+          
+          // Winner gets their score added to winPoints
+          const winnerId = game.winner._id || game.winner;
+          if (userId.toString() === winnerId.toString()) {
             user.winPoints += standing.score;
+            console.log(`[GAME FINISH] Winner ${user.displayName} (${userId}) earned ${standing.score} points. Total winPoints: ${user.winPoints}`);
           }
+          
           await user.save();
+          console.log(`[GAME FINISH] Updated stats for ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
         }
       }
 
@@ -523,9 +533,9 @@ router.get('/:gameId', authMiddleware, async (req, res) => {
     const { gameId } = req.params;
 
     const game = await Game.findById(gameId)
-      .populate('players.user', 'username winPoints')
-      .populate('letterSelector', 'username')
-      .populate('winner', 'username');
+      .populate('players.user', 'username displayName winPoints')
+      .populate('letterSelector', 'username displayName')
+      .populate('winner', 'username displayName');
 
     if (!game) {
       return res.status(404).json({ message: 'Game not found' });

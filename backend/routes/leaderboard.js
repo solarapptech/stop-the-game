@@ -9,7 +9,7 @@ router.get('/global', async (req, res) => {
     const { limit = 100, offset = 0 } = req.query;
 
     const users = await User.find({ matchesPlayed: { $gt: 0 } })
-      .select('username winPoints matchesPlayed')
+      .select('username displayName winPoints matchesPlayed')
       .sort('-winPoints')
       .limit(parseInt(limit))
       .skip(parseInt(offset));
@@ -20,6 +20,7 @@ router.get('/global', async (req, res) => {
       leaderboard: users.map((user, index) => ({
         rank: offset + index + 1,
         username: user.username,
+        displayName: user.displayName,
         winPoints: user.winPoints,
         matchesPlayed: user.matchesPlayed,
         avgPoints: user.matchesPlayed > 0 ? Math.round(user.winPoints / user.matchesPlayed) : 0
@@ -43,7 +44,7 @@ router.get('/weekly', async (req, res) => {
     const games = await Game.find({
       createdAt: { $gte: oneWeekAgo },
       status: 'finished'
-    }).populate('winner', 'username');
+    }).populate('winner', 'username displayName');
 
     // Aggregate weekly scores
     const weeklyScores = {};
@@ -65,10 +66,11 @@ router.get('/weekly', async (req, res) => {
     // Get user details and sort
     const leaderboard = [];
     for (const [userId, data] of Object.entries(weeklyScores)) {
-      const user = await User.findById(userId).select('username');
+      const user = await User.findById(userId).select('username displayName');
       if (user) {
         leaderboard.push({
           username: user.username,
+          displayName: user.displayName,
           weeklyPoints: data.score,
           gamesPlayed: data.gamesPlayed,
           avgPoints: Math.round(data.score / data.gamesPlayed)
@@ -103,7 +105,7 @@ router.get('/friends', async (req, res) => {
       return res.status(400).json({ message: 'User ID required' });
     }
 
-    const user = await User.findById(userId).populate('friends', 'username winPoints matchesPlayed');
+    const user = await User.findById(userId).populate('friends', 'username displayName winPoints matchesPlayed');
     
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -114,6 +116,7 @@ router.get('/friends', async (req, res) => {
       {
         _id: user._id,
         username: user.username,
+        displayName: user.displayName,
         winPoints: user.winPoints,
         matchesPlayed: user.matchesPlayed
       },
@@ -127,6 +130,7 @@ router.get('/friends', async (req, res) => {
       leaderboard: friendsList.map((friend, index) => ({
         rank: index + 1,
         username: friend.username,
+        displayName: friend.displayName,
         winPoints: friend.winPoints,
         matchesPlayed: friend.matchesPlayed,
         avgPoints: friend.matchesPlayed > 0 ? Math.round(friend.winPoints / friend.matchesPlayed) : 0,

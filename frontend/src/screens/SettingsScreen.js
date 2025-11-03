@@ -105,6 +105,11 @@ const SettingsScreen = ({ navigation }) => {
               left={(props) => <List.Icon {...props} icon="account" />}
             />
             <List.Item
+              title="Display Name"
+              description={user?.displayName || user?.username}
+              left={(props) => <List.Icon {...props} icon="card-account-details" />}
+            />
+            <List.Item
               title="Email"
               description={user?.email || 'Not provided'}
               left={(props) => <List.Icon {...props} icon="email" />}

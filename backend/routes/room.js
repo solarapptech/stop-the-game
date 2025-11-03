@@ -43,7 +43,7 @@ router.post('/create', authMiddleware, [
     room.generateInviteCode();
     await room.save();
 
-    await room.populate('players.user', 'username winPoints');
+    await room.populate('players.user', 'username displayName winPoints');
 
     res.status(201).json({
       message: 'Room created successfully',
@@ -73,8 +73,8 @@ router.get('/public', async (req, res) => {
       isPublic: true,
       status: 'waiting'
     })
-    .populate('owner', 'username')
-    .populate('players.user', 'username')
+    .populate('owner', 'username displayName')
+    .populate('players.user', 'username displayName')
     .select('-password')
     .sort('-createdAt')
     .limit(20);
@@ -106,7 +106,7 @@ router.post('/join/:roomId', authMiddleware, [
     const { password } = req.body;
 
     const room = await Room.findById(roomId)
-      .populate('players.user', 'username winPoints');
+      .populate('players.user', 'username displayName winPoints');
 
     if (!room) {
       return res.status(404).json({ message: 'Room not found' });
@@ -136,7 +136,7 @@ router.post('/join/:roomId', authMiddleware, [
     try {
       room.addPlayer(req.user._id);
       await room.save();
-      await room.populate('players.user', 'username winPoints');
+      await room.populate('players.user', 'username displayName winPoints');
 
       res.json({
         message: 'Joined room successfully',
@@ -171,7 +171,7 @@ router.post('/join-by-code', authMiddleware, [
     const { inviteCode, password } = req.body;
 
     const room = await Room.findOne({ inviteCode })
-      .populate('players.user', 'username winPoints');
+      .populate('players.user', 'username displayName winPoints');
 
     if (!room) {
       return res.status(404).json({ message: 'Invalid invite code' });
@@ -216,7 +216,7 @@ router.post('/join-by-code', authMiddleware, [
     try {
       room.addPlayer(req.user._id);
       await room.save();
-      await room.populate('players.user', 'username winPoints');
+      await room.populate('players.user', 'username displayName winPoints');
 
       res.json({
         message: 'Joined room successfully',
@@ -236,7 +236,7 @@ router.post('/join-by-code', authMiddleware, [
       throw error;
     }
   } catch (error) {
-    console.error('Join by code error:', error);
+    console.error('Join room by code error:', error);
     res.status(500).json({ message: 'Error joining room' });
   }
 });
@@ -302,8 +302,8 @@ router.get('/:roomId', authMiddleware, async (req, res) => {
     const { roomId } = req.params;
 
     const room = await Room.findById(roomId)
-      .populate('owner', 'username')
-      .populate('players.user', 'username winPoints matchesPlayed')
+      .populate('owner', 'username displayName')
+      .populate('players.user', 'username displayName winPoints matchesPlayed')
       .select('-password');
 
     if (!room) {

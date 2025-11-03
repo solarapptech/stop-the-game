@@ -12,6 +12,13 @@ const userSchema = new mongoose.Schema({
     minlength: 3,
     maxlength: 30
   },
+  displayName: {
+    type: String,
+    required: true,
+    trim: true,
+    minlength: 3,
+    maxlength: 30
+  },
   password: {
     type: String,
     required: function() {
@@ -167,10 +174,7 @@ userSchema.methods.verifyCode = function(code) {
   return this.verificationCode === code;
 };
 
-// Virtual for display name
-userSchema.virtual('displayName').get(function() {
-  return this.username;
-});
+// No longer need virtual - displayName is now a real field
 
 // Remove sensitive data when converting to JSON
 userSchema.methods.toJSON = function() {
