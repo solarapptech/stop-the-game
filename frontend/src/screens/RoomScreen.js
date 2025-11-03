@@ -21,6 +21,7 @@ const RoomScreen = ({ navigation, route }) => {
   const [inputFocused, setInputFocused] = useState(false);
   const inputRef = useRef(null);
   const messagesRef = useRef(null);
+  const isLeavingRef = useRef(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [inviteCode, setInviteCode] = useState(null);
   const [isChatActive, setIsChatActive] = useState(false);
@@ -201,6 +202,29 @@ const RoomScreen = ({ navigation, route }) => {
     return () => backHandler.remove();
   }, [socket, connected, isAuthenticated]);
 
+  // Intercept header back arrow to use the same confirmation flow
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      // If already confirmed leaving, allow navigation
+      if (isLeavingRef.current) {
+        return;
+      }
+
+      // Allow navigation to Gameplay (game starting)
+      const targetRoute = e.data?.action?.payload?.name;
+      if (targetRoute === 'Gameplay') {
+        return;
+      }
+
+      // Prevent default behavior of leaving the screen
+      e.preventDefault();
+      // Use the same leave confirmation logic
+      handleLeaveRoom();
+    });
+
+    return unsubscribe;
+  }, [navigation, socket, connected, isAuthenticated]);
+
   const handleReady = () => {
     const newReadyState = !isReady;
     setIsReady(newReadyState);
@@ -228,6 +252,7 @@ const RoomScreen = ({ navigation, route }) => {
         {
           text: 'Yes',
           onPress: async () => {
+            isLeavingRef.current = true;
             try {
               if (socket && connected && isAuthenticated) {
                 socketLeaveRoom();

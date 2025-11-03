@@ -20,14 +20,23 @@ module.exports = (io, socket) => {
     try {
       if (!roomId) return false;
       
-      const room = await Room.findById(roomId).select('players name');
+      const room = await Room.findById(roomId).select('players name status currentGame');
       if (!room) {
         console.log(`[ROOM CLEANUP] Room ${roomId} not found (already deleted)`);
         return false;
       }
       
       if (room.players.length === 0) {
-        console.log(`[ROOM CLEANUP] Deleting empty room: ${roomId} (${room.name})`);
+        console.log(`[ROOM CLEANUP] Deleting empty room: ${roomId} (${room.name}) with status: ${room.status}`);
+        
+        // If room has an associated game, delete it too
+        if (room.currentGame) {
+          const Game = require('../models/Game');
+          console.log(`[ROOM CLEANUP] Deleting associated game: ${room.currentGame}`);
+          clearGameTimers(room.currentGame);
+          await Game.deleteOne({ _id: room.currentGame });
+        }
+        
         await Room.deleteOne({ _id: roomId });
         
         // Clean up any associated timers

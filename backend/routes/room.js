@@ -272,6 +272,14 @@ router.post('/leave/:roomId', authMiddleware, async (req, res) => {
     // CRITICAL: Delete empty rooms immediately
     if (updated.players.length === 0) {
       console.log(`[HTTP LEAVE] Room ${roomId} is empty, deleting`);
+      
+      // If room has an associated game, delete it too
+      if (updated.currentGame) {
+        const Game = require('../models/Game');
+        console.log(`[HTTP LEAVE] Deleting associated game: ${updated.currentGame}`);
+        await Game.deleteOne({ _id: updated.currentGame });
+      }
+      
       await Room.deleteOne({ _id: updated._id });
       return res.json({ message: 'Room deleted (was empty)' });
     }

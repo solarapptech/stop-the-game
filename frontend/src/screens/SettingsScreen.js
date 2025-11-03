@@ -6,7 +6,7 @@ import axios from 'axios';
 import theme from '../theme';
 
 const SettingsScreen = ({ navigation }) => {
-  const { user, updateUser, logout } = useAuth();
+  const { user, updateUser, logout, updateDisplayName } = useAuth();
   const [soundEnabled, setSoundEnabled] = useState(user?.settings?.soundEnabled ?? true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(user?.settings?.notificationsEnabled ?? true);
   const [vibrationEnabled, setVibrationEnabled] = useState(user?.settings?.vibrationEnabled ?? true);
@@ -15,6 +15,9 @@ const SettingsScreen = ({ navigation }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editDisplayNameVisible, setEditDisplayNameVisible] = useState(false);
+  const [newDisplayName, setNewDisplayName] = useState(user?.displayName || user?.username || '');
+  const [savingName, setSavingName] = useState(false);
 
   const handleSaveSettings = async () => {
     setLoading(true);
@@ -108,6 +111,17 @@ const SettingsScreen = ({ navigation }) => {
               title="Display Name"
               description={user?.displayName || user?.username}
               left={(props) => <List.Icon {...props} icon="card-account-details" />}
+              right={() => (
+                <Button
+                  mode="text"
+                  onPress={() => {
+                    setNewDisplayName(user?.displayName || user?.username || '');
+                    setEditDisplayNameVisible(true);
+                  }}
+                >
+                  Edit
+                </Button>
+              )}
             />
             <List.Item
               title="Email"
@@ -210,8 +224,9 @@ const SettingsScreen = ({ navigation }) => {
         </Button>
       </ScrollView>
 
-      {/* Change Password Dialog */}
+      {/* Dialogs */}
       <Portal>
+        {/* Change Password Dialog */}
         <Dialog visible={changePasswordDialog} onDismiss={() => setChangePasswordDialog(false)}>
           <Dialog.Title>Change Password</Dialog.Title>
           <Dialog.Content>
@@ -251,6 +266,57 @@ const SettingsScreen = ({ navigation }) => {
             </Button>
             <Button onPress={handleChangePassword} loading={loading}>
               Change
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        {/* Edit Display Name Dialog */}
+        <Dialog visible={editDisplayNameVisible} onDismiss={() => !savingName && setEditDisplayNameVisible(false)}>
+          <Dialog.Title>Edit Display Name</Dialog.Title>
+          <Dialog.Content>
+            <TextInput
+              label="Display Name"
+              value={newDisplayName}
+              onChangeText={setNewDisplayName}
+              mode="outlined"
+              maxLength={30}
+              disabled={savingName}
+              autoFocus
+              style={styles.dialogInput}
+            />
+            <Text style={{ fontSize: 12, color: '#757575' }}>
+              This is the name other players will see (3-30 characters)
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => setEditDisplayNameVisible(false)} disabled={savingName}>
+              Cancel
+            </Button>
+            <Button
+              onPress={async () => {
+                const name = (newDisplayName || '').trim();
+                if (name.length < 3) {
+                  Alert.alert('Invalid Name', 'Display name must be at least 3 characters');
+                  return;
+                }
+                if (name.length > 30) {
+                  Alert.alert('Invalid Name', 'Display name must be at most 30 characters');
+                  return;
+                }
+                setSavingName(true);
+                const result = await updateDisplayName(name);
+                setSavingName(false);
+                if (result?.success) {
+                  setEditDisplayNameVisible(false);
+                  Alert.alert('Success', 'Display name updated successfully');
+                } else {
+                  Alert.alert('Error', result?.error || 'Failed to update display name');
+                }
+              }}
+              loading={savingName}
+              disabled={savingName}
+            >
+              Save
             </Button>
           </Dialog.Actions>
         </Dialog>

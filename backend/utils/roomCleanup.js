@@ -1,4 +1,5 @@
 const Room = require('../models/Room');
+const Game = require('../models/Game');
 
 /**
  * Periodic cleanup of empty rooms - safety net for any edge cases
@@ -12,7 +13,7 @@ async function cleanupEmptyRooms() {
     // Find all rooms with no players
     const emptyRooms = await Room.find({
       $expr: { $eq: [{ $size: '$players' }, 0] }
-    }).select('_id name createdAt');
+    }).select('_id name createdAt status currentGame');
 
     if (emptyRooms.length === 0) {
       console.log('[ROOM CLEANUP TASK] No empty rooms found');
@@ -23,11 +24,19 @@ async function cleanupEmptyRooms() {
     
     const deletedRooms = [];
     for (const room of emptyRooms) {
-      console.log(`[ROOM CLEANUP TASK] Deleting empty room: ${room._id} (${room.name}) created at ${room.createdAt}`);
+      console.log(`[ROOM CLEANUP TASK] Deleting empty room: ${room._id} (${room.name}) with status: ${room.status} created at ${room.createdAt}`);
+      
+      // If room has an associated game, delete it too
+      if (room.currentGame) {
+        console.log(`[ROOM CLEANUP TASK] Deleting associated game: ${room.currentGame}`);
+        await Game.deleteOne({ _id: room.currentGame });
+      }
+      
       await Room.deleteOne({ _id: room._id });
       deletedRooms.push({
         id: room._id.toString(),
         name: room.name,
+        status: room.status,
         createdAt: room.createdAt
       });
     }
