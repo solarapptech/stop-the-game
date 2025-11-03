@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList } from 'react-native';
+import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler } from 'react-native';
 import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable } from 'react-native-paper';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useSocket } from '../contexts/SocketContext';
@@ -720,6 +720,37 @@ const GameplayScreen = ({ navigation, route }) => {
       if (cleanupTimer) clearTimeout(cleanupTimer);
     };
   }, [letterTimeLeft, phase, gameId]);
+
+  // Handle hardware back button press
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Show confirmation dialog
+      Alert.alert(
+        'Quit Game',
+        'Are you sure you want to quit the game?',
+        [
+          { text: 'No', style: 'cancel' },
+          {
+            text: 'Yes',
+            onPress: () => {
+              // Clean up timers
+              if (timerRef.current) clearInterval(timerRef.current);
+              if (selectTimerRef.current) clearInterval(selectTimerRef.current);
+              if (letterTimerRef.current) clearInterval(letterTimerRef.current);
+              if (revealTimerRef.current) clearInterval(revealTimerRef.current);
+              // Navigate to menu
+              navigation.replace('Menu');
+            },
+            style: 'destructive'
+          }
+        ]
+      );
+      // Return true to prevent default back behavior
+      return true;
+    });
+
+    return () => backHandler.remove();
+  }, [navigation]);
 
   // Recompute turn when either the selector or current user id changes
   useEffect(() => {

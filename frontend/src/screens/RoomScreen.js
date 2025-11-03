@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, BackHandler } from 'react-native';
 import { Text, Button, Card, List, Avatar, Chip, IconButton, TextInput } from 'react-native-paper';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
@@ -189,6 +189,18 @@ const RoomScreen = ({ navigation, route }) => {
     }
   }, [socket, currentRoom, user, roomOwner]);
 
+  // Handle hardware back button press
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Show confirmation dialog
+      handleLeaveRoom();
+      // Return true to prevent default back behavior
+      return true;
+    });
+
+    return () => backHandler.remove();
+  }, [socket, connected, isAuthenticated]);
+
   const handleReady = () => {
     const newReadyState = !isReady;
     setIsReady(newReadyState);
@@ -210,11 +222,11 @@ const RoomScreen = ({ navigation, route }) => {
   const handleLeaveRoom = () => {
     Alert.alert(
       'Leave Room',
-      'Are you sure you want to leave this room?',
+      'Are you sure you want to leave the game room?',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'No', style: 'cancel' },
         {
-          text: 'Leave',
+          text: 'Yes',
           onPress: async () => {
             try {
               if (socket && connected && isAuthenticated) {
