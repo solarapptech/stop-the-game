@@ -272,7 +272,7 @@ const RoomScreen = ({ navigation, route }) => {
   };
 
   const isOwner = roomOwner === user?.id;
-  const showInviteCode = isOwner;
+  const showInviteCode = inviteCode != null; // Show to all players if code exists
   const allPlayersReady = players.length >= 2 && players.every(p => p.isReady);
 
   const handleMessagesScroll = (e) => {
@@ -312,37 +312,28 @@ const RoomScreen = ({ navigation, route }) => {
                   </Chip>
                 </View>
               </View>
-              {showInviteCode ? (
-                <IconButton
-                  icon="content-copy"
-                  onPress={copyInviteCode}
-                  style={styles.copyButton}
-                />
-              ) : (
-                isOwner ? (
+              <View style={{ flexDirection: 'row' }}>
+                {showInviteCode && (
+                  <IconButton
+                    icon="content-copy"
+                    onPress={copyInviteCode}
+                    style={styles.copyButton}
+                  />
+                )}
+                {isOwner && (
                   <IconButton
                     icon="delete"
                     onPress={handleDeleteRoom}
                     iconColor="#F44336"
                     style={styles.copyButton}
                   />
-                ) : null
-              )}
+                )}
+              </View>
             </View>
             {showInviteCode && (
               <View style={styles.inviteContainer}>
                 <Text style={styles.inviteLabel}>Invite Code:</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={styles.inviteCode}>{inviteCode || 'XXXXXX'}</Text>
-                  {isOwner && (
-                    <IconButton
-                      icon="delete"
-                      onPress={handleDeleteRoom}
-                      iconColor="#F44336"
-                      style={{ marginLeft: 8 }}
-                    />
-                  )}
-                </View>
+                <Text style={styles.inviteCode}>{inviteCode || 'XXXXXX'}</Text>
               </View>
             )}
           </Card.Content>

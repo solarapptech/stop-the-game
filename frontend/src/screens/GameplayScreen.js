@@ -264,6 +264,31 @@ const GameplayScreen = ({ navigation, route }) => {
       setRematchTotal(0);
       setRematchAborted(false);
       setRematchCountdown(null);
+      // Critical: Reset category selection states to prevent disabled categories bug
+      setHasConfirmed(false);
+      setHasVotedRematch(false);
+      announcedReadyRef.current = false;
+      stopShownRef.current = false;
+      setSelectedCategories([]);
+      setAnswers({});
+      setConfirmedCount(0);
+      setTotalPlayers(0);
+      // Reset round and game state
+      setCurrentRound(1);
+      setRoundResults(null);
+      setHasStoppedFirst(false);
+      setIsFrozen(false);
+      setShowStopOverlay(false);
+      setShowReveal(false);
+      setReadyCount(0);
+      setReadyTotal(0);
+      setNextCountdown(null);
+      setLetterInput('');
+      // Clear any lingering timers
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (selectTimerRef.current) clearInterval(selectTimerRef.current);
+      if (letterTimerRef.current) clearInterval(letterTimerRef.current);
+      if (revealTimerRef.current) clearInterval(revealTimerRef.current);
       try { if (joinGame && data?.gameId) joinGame(data.gameId); } catch (e) {}
       navigation.replace('Gameplay', { gameId: data.gameId });
     };
@@ -614,14 +639,16 @@ const GameplayScreen = ({ navigation, route }) => {
   };
 
   useEffect(() => {
+    let validationPollTimer = null;
+    let cleanupTimer = null;
+
     const trySync = async () => {
+      // Letter selection: if countdown reached 0 but no transition happened, resync from server
       if (phase === 'letter-selection' && letterTimeLeft === 0) {
         const result = await getGameState(gameId);
         if (result?.success) {
           const g = result.game;
-          if (g?.currentLetter) {
-            setCurrentLetter(g.currentLetter);
-          }
+          if (g?.currentLetter) setCurrentLetter(g.currentLetter);
           if (g?.status === 'playing') {
             setShowReveal(false);
             setPhase('playing');
@@ -635,8 +662,63 @@ const GameplayScreen = ({ navigation, route }) => {
           }
         }
       }
+
+      // Validation watchdog: periodically retry validation and hard-resync state
+      if (phase === 'validation') {
+        const attempt = async () => {
+          // First, try to fetch results (idempotent on server)
+          const res = await validateAnswers(gameId);
+          if (res?.success) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            setTimeLeft(0);
+            setRoundResults(res.roundResults);
+            setPlayerScores(res.standings);
+            setPhase('round-end');
+            return; // exit attempt
+          }
+          // If results not yet available, resync game state to see if we moved on
+          const gs = await getGameState(gameId);
+          if (gs?.success) {
+            const g = gs.game;
+            if (g?.status === 'playing') {
+              // A new round started; resume gameplay safely
+              setShowReveal(false);
+              setPhase('playing');
+              setIsFrozen(false);
+              startTimer();
+              return;
+            }
+            if (g?.status === 'round_ended') {
+              const vr = await validateAnswers(gameId);
+              if (vr?.success) {
+                if (timerRef.current) clearInterval(timerRef.current);
+                setTimeLeft(0);
+                setRoundResults(vr.roundResults);
+                setPlayerScores(vr.standings);
+                setPhase('round-end');
+                return;
+              }
+            }
+          }
+        };
+
+        // Kick off immediate attempt, then poll every 4s while in validation
+        attempt();
+        validationPollTimer = setInterval(() => {
+          if (phaseRef.current !== 'validation') return; // stop if phase changed
+          attempt();
+        }, 4000);
+      }
     };
+
     trySync();
+
+    // Cleanup on phase change/unmount
+    cleanupTimer = setTimeout(() => {}, 0); // no-op placeholder to ensure handle
+    return () => {
+      if (validationPollTimer) clearInterval(validationPollTimer);
+      if (cleanupTimer) clearTimeout(cleanupTimer);
+    };
   }, [letterTimeLeft, phase, gameId]);
 
   // Recompute turn when either the selector or current user id changes
@@ -1068,6 +1150,9 @@ const GameplayScreen = ({ navigation, route }) => {
       {phase === 'validation' && (
         <View style={styles.validationContainer}>
           <Text style={styles.validationText}>Validating answers...</Text>
+          <Button mode="text" onPress={handleValidation} style={{ marginTop: 12 }}>
+            Refresh
+          </Button>
         </View>
       )}
       {phase === 'round-end' && renderRoundEnd()}

@@ -1565,6 +1565,8 @@ module.exports = (io, socket) => {
             hasPassword: false,
             players: sockets.map(s => ({ user: s.quickPlayUserId, isReady: s.quickPlayUserId.toString() === owner.toString() }))
           });
+          // Generate invite code so players can share the room
+          newRoom.generateInviteCode();
           await newRoom.save();
           const roomId = newRoom._id.toString();
 
