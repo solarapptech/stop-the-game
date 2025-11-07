@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler } from 'react-native';
+import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator } from 'react-native';
 import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable } from 'react-native-paper';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useSocket } from '../contexts/SocketContext';
@@ -59,9 +59,20 @@ const GameplayScreen = ({ navigation, route }) => {
   const [rematchAborted, setRematchAborted] = useState(false);
   const [rematchCountdown, setRematchCountdown] = useState(null);
   const [viewingPlayerId, setViewingPlayerId] = useState(null);
+  const [hiddenInputs, setHiddenInputs] = useState({});
+  const [hideAllInputs, setHideAllInputs] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
+  const [isRefreshingGameplay, setIsRefreshingGameplay] = useState(false);
+  const [gameplayRefreshError, setGameplayRefreshError] = useState(null);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   
   const timerRef = useRef(null);
+  const inputRefs = useRef({});
+  const scrollViewRef = useRef(null);
+  const cardRefs = useRef({});
   const selectTimerRef = useRef(null);
+  const autoRetryTimerRef = useRef(null);
   const announcedReadyRef = useRef(false);
   const letterTimerRef = useRef(null);
   const revealTimerRef = useRef(null);
@@ -81,6 +92,7 @@ const GameplayScreen = ({ navigation, route }) => {
       if (selectTimerRef.current) clearInterval(selectTimerRef.current);
       if (letterTimerRef.current) clearInterval(letterTimerRef.current);
       if (revealTimerRef.current) clearInterval(revealTimerRef.current);
+      if (autoRetryTimerRef.current) clearInterval(autoRetryTimerRef.current);
     };
   }, []);
 
@@ -154,6 +166,9 @@ const GameplayScreen = ({ navigation, route }) => {
       setReadyTotal(0);
       setNextCountdown(null);
       stopShownRef.current = false;
+      // Reset hidden inputs for new round
+      setHiddenInputs({});
+      setHideAllInputs(false);
       if (!data.selectorId && data.selectorName && user?.username && data.selectorName === user.username) {
         setIsPlayerTurn(true);
         setLetterSelectorId(String(userIdRef.current || ''));
@@ -190,6 +205,9 @@ const GameplayScreen = ({ navigation, route }) => {
       if (revealTimerRef.current) clearInterval(revealTimerRef.current);
       // entering playing phase: allow Stop! popup once
       stopShownRef.current = false;
+      // Reset gameplay refresh states
+      setIsRefreshingGameplay(false);
+      setGameplayRefreshError(null);
     };
     const onPlayerStopped = async (data) => {
       if (phaseRef.current === 'playing' && data.playerId !== userIdRef.current && !stopShownRef.current) {
@@ -219,6 +237,9 @@ const GameplayScreen = ({ navigation, route }) => {
         } catch (e) {}
       }
       setPhase('validation');
+      setIsRefreshing(false);
+      setRefreshError(null);
+      setRetryAttempt(0);
       // Trigger validation; server will broadcast results. Duplicate calls are safely rejected server-side.
       await handleValidation();
     };
@@ -284,6 +305,9 @@ const GameplayScreen = ({ navigation, route }) => {
       setReadyTotal(0);
       setNextCountdown(null);
       setLetterInput('');
+      // Reset hidden inputs state
+      setHiddenInputs({});
+      setHideAllInputs(false);
       // Clear any lingering timers
       if (timerRef.current) clearInterval(timerRef.current);
       if (selectTimerRef.current) clearInterval(selectTimerRef.current);
@@ -638,6 +662,211 @@ const GameplayScreen = ({ navigation, route }) => {
     }
   };
 
+  const handleRefreshGameplay = async () => {
+    setIsRefreshingGameplay(true);
+    setGameplayRefreshError(null);
+    
+    try {
+      // Fetch current game state to resync
+      const gameState = await getGameState(gameId);
+      if (gameState?.success) {
+        const game = gameState.game;
+        
+        // Update categories if available
+        if (game?.categories && Array.isArray(game.categories)) {
+          setSelectedCategories(game.categories);
+        }
+        
+        // Update current letter if available
+        if (game?.currentLetter) {
+          setCurrentLetter(game.currentLetter);
+        }
+        
+        // Update current round
+        if (typeof game?.currentRound === 'number') {
+          setCurrentRound(game.currentRound);
+        }
+        
+        // Sync to correct phase based on game status
+        if (game?.status === 'playing') {
+          setPhase('playing');
+          setIsFrozen(false);
+          
+          // Only start timer if it hasn't started yet (timeLeft is still at initial value)
+          if (timeLeft === 60 || timeLeft === 0) {
+            startTimer();
+          }
+          
+          setIsRefreshingGameplay(false);
+          return;
+        }
+        
+        if (game?.status === 'selecting_letter') {
+          setPhase('letter-selection');
+          if (game?.letterSelector) {
+            const lsId = game.letterSelector._id || game.letterSelector;
+            setLetterSelectorId(String(lsId));
+            setIsPlayerTurn(String(lsId) === String(userId));
+          }
+          setIsRefreshingGameplay(false);
+          return;
+        }
+        
+        if (game?.status === 'selecting_categories') {
+          setPhase('category-selection');
+          setIsRefreshingGameplay(false);
+          return;
+        }
+        
+        if (game?.status === 'validating' || game?.status === 'round_ended') {
+          setPhase(game.status === 'round_ended' ? 'round-end' : 'validation');
+          setIsRefreshingGameplay(false);
+          return;
+        }
+        
+        // If we got here, state was updated but phase unclear
+        setIsRefreshingGameplay(false);
+        return;
+      }
+      
+      // If fetch failed, show error
+      setGameplayRefreshError('Could not sync game state. Please try again.');
+      setIsRefreshingGameplay(false);
+    } catch (error) {
+      console.error('Error refreshing gameplay:', error);
+      setGameplayRefreshError('An error occurred while trying to refresh. Please try again.');
+      setIsRefreshingGameplay(false);
+    }
+  };
+
+  const handleRefreshValidation = async (isAutoRetry = false) => {
+    setIsRefreshing(true);
+    setRefreshError(null);
+    
+    if (!isAutoRetry) {
+      // Manual refresh: stop auto-retry timer and reset it
+      if (autoRetryTimerRef.current) {
+        clearInterval(autoRetryTimerRef.current);
+        autoRetryTimerRef.current = null;
+      }
+      setRetryAttempt(0); // Reset retry count on manual refresh
+    }
+    
+    try {
+      // First attempt: Try to validate answers
+      const result = await validateAnswers(gameId);
+      if (result?.success && result?.roundResults) {
+        if (timerRef.current) clearInterval(timerRef.current);
+        setTimeLeft(0);
+        setRoundResults(result.roundResults);
+        setPlayerScores(result.standings);
+        setPhase('round-end');
+        setIsRefreshing(false);
+        return;
+      }
+
+      // Second attempt: Fetch game state to check current status
+      const gameState = await getGameState(gameId);
+      if (gameState?.success) {
+        const game = gameState.game;
+        
+        // If game is in round_ended status, try to get results again
+        if (game?.status === 'round_ended') {
+          const retryResult = await validateAnswers(gameId);
+          if (retryResult?.success && retryResult?.roundResults) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            setTimeLeft(0);
+            setRoundResults(retryResult.roundResults);
+            setPlayerScores(retryResult.standings);
+            setPhase('round-end');
+            setIsRefreshing(false);
+            return;
+          }
+          
+          // If still no results but game has standings, use those
+          if (game?.standings && Array.isArray(game.standings)) {
+            if (timerRef.current) clearInterval(timerRef.current);
+            setTimeLeft(0);
+            setPlayerScores(game.standings);
+            // Try to construct basic round results from game data
+            if (game?.players && Array.isArray(game.players)) {
+              const basicResults = game.players.map(p => ({
+                user: p.user,
+                answers: p.answers?.[game.currentRound - 1] || {}
+              }));
+              setRoundResults(basicResults);
+            }
+            setPhase('round-end');
+            setIsRefreshing(false);
+            return;
+          }
+        }
+        
+        // If game moved to a different phase, sync to that phase
+        if (game?.status === 'playing') {
+          setPhase('playing');
+          if (game?.currentLetter) setCurrentLetter(game.currentLetter);
+          setIsFrozen(false);
+          startTimer();
+          setIsRefreshing(false);
+          return;
+        }
+        
+        if (game?.status === 'selecting_letter') {
+          setPhase('letter-selection');
+          setIsRefreshing(false);
+          return;
+        }
+      }
+      
+      // If all else fails, set error message and increment retry
+      setRefreshError('Could not fetch round results. The game may still be processing.');
+      setRetryAttempt(prev => prev + 1);
+      setIsRefreshing(false);
+    } catch (error) {
+      console.error('Error refreshing validation:', error);
+      setRefreshError('An error occurred while trying to refresh. Please try again.');
+      setRetryAttempt(prev => prev + 1);
+      setIsRefreshing(false);
+    }
+  };
+
+  // Auto-retry logic for validation phase
+  useEffect(() => {
+    if (phase === 'validation' && !isRefreshing) {
+      // Start auto-retry after initial load
+      const startAutoRetry = () => {
+        if (autoRetryTimerRef.current) {
+          clearInterval(autoRetryTimerRef.current);
+        }
+        
+        // Retry every 2 seconds
+        autoRetryTimerRef.current = setInterval(() => {
+          if (phaseRef.current === 'validation' && !isRefreshing) {
+            handleRefreshValidation(true);
+          }
+        }, 2000);
+      };
+      
+      // Start auto-retry after a short delay (1.5 seconds)
+      const initialDelay = setTimeout(() => {
+        startAutoRetry();
+      }, 1500);
+      
+      return () => {
+        clearTimeout(initialDelay);
+        if (autoRetryTimerRef.current) {
+          clearInterval(autoRetryTimerRef.current);
+        }
+      };
+    } else {
+      // Clear auto-retry when leaving validation phase
+      if (autoRetryTimerRef.current) {
+        clearInterval(autoRetryTimerRef.current);
+      }
+    }
+  }, [phase, isRefreshing]);
+
   useEffect(() => {
     let validationPollTimer = null;
     let cleanupTimer = null;
@@ -871,6 +1100,42 @@ const GameplayScreen = ({ navigation, route }) => {
     </Card>
   );
 
+  const toggleInputVisibility = (category) => {
+    setHiddenInputs(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }));
+  };
+
+  const toggleHideAll = () => {
+    setHideAllInputs(prev => !prev);
+  };
+
+  const focusNextInput = (currentIndex) => {
+    if (currentIndex < selectedCategories.length - 1) {
+      const nextCategory = selectedCategories[currentIndex + 1];
+      // Use setTimeout to prevent keyboard from closing
+      setTimeout(() => {
+        if (inputRefs.current[nextCategory]) {
+          inputRefs.current[nextCategory].focus();
+          
+          // Scroll to show the down arrow button of the next input
+          if (cardRefs.current[nextCategory] && scrollViewRef.current) {
+            cardRefs.current[nextCategory].measureLayout(
+              scrollViewRef.current,
+              (x, y, width, height) => {
+                // Scroll with extra offset to show the down arrow button below the input
+                // Adding 80px extra to ensure the down arrow is visible
+                scrollViewRef.current.scrollTo({ y: y - 100, animated: true });
+              },
+              () => {}
+            );
+          }
+        }
+      }, 50);
+    }
+  };
+
   const renderGameplay = () => (
     <View style={styles.gameplayContainer}>
       <View style={styles.header}>
@@ -888,24 +1153,105 @@ const GameplayScreen = ({ navigation, route }) => {
         </View>
       </View>
 
-      <ScrollView style={styles.answersContainer}>
-        {selectedCategories.map(category => (
-          <Card key={category} style={styles.answerCard}>
-            <Card.Content>
-              <Text style={styles.categoryLabel}>{category}</Text>
-              <TextInput
-                value={answers[category] || ''}
-                onChangeText={(text) => handleAnswerChange(category, text)}
-                placeholder={`Enter ${category} starting with ${currentLetter}`}
-                style={styles.answerInput}
-                autoCapitalize="words"
-                editable={timeLeft > 0 && !isFrozen}
-              />
-              {(() => { const err = getAnswerError(answers[category] || ''); return err ? (<Text style={styles.errorText}>{err}</Text>) : null; })()}
-            </Card.Content>
-          </Card>
-        ))}
-      </ScrollView>
+      <View style={styles.hideAllContainer}>
+        <Button
+          mode="outlined"
+          onPress={toggleHideAll}
+          style={styles.hideAllButton}
+          icon={hideAllInputs ? 'eye-off' : 'eye'}
+          labelStyle={styles.hideAllLabel}
+        >
+          Hide All
+        </Button>
+      </View>
+
+      {(!selectedCategories || selectedCategories.length === 0) ? (
+        <View style={styles.stuckContainer}>
+          <Text style={styles.stuckText}>No questions loaded</Text>
+          <Text style={styles.stuckSubtext}>The game may be stuck. Try refreshing to sync.</Text>
+          {isRefreshingGameplay && (
+            <ActivityIndicator 
+              size="large" 
+              color={theme.colors.primary} 
+              style={{ marginTop: 20 }}
+            />
+          )}
+          {gameplayRefreshError && (
+            <Text style={styles.refreshErrorText}>{gameplayRefreshError}</Text>
+          )}
+          <Button 
+            mode="contained" 
+            onPress={handleRefreshGameplay} 
+            disabled={isRefreshingGameplay}
+            loading={isRefreshingGameplay}
+            style={[styles.refreshButton, isRefreshingGameplay && styles.refreshButtonDisabled]}
+          >
+            {isRefreshingGameplay ? 'Loading...' : 'Refresh'}
+          </Button>
+        </View>
+      ) : (
+        <ScrollView 
+          ref={scrollViewRef}
+          style={styles.answersContainer} 
+          keyboardShouldPersistTaps="handled"
+        >
+          {selectedCategories.map((category, index) => {
+            const isHidden = hideAllInputs || hiddenInputs[category];
+            const isLastInput = index === selectedCategories.length - 1;
+            const actualValue = answers[category] || '';
+            const displayValue = isHidden ? '*'.repeat(actualValue.length) : actualValue;
+            
+            return (
+              <View 
+                key={category}
+                ref={(ref) => { cardRefs.current[category] = ref; }}
+                collapsable={false}
+              >
+                <Card style={styles.answerCard}>
+                <Card.Content>
+                  <Text style={styles.categoryLabel}>{category}</Text>
+                  <View style={styles.inputRow}>
+                    <View style={styles.inputWrapper}>
+                      <TextInput
+                        ref={(ref) => { inputRefs.current[category] = ref; }}
+                        value={actualValue}
+                        onChangeText={(text) => handleAnswerChange(category, text)}
+                        placeholder={`Enter ${category} starting with ${currentLetter}`}
+                        style={[styles.answerInput, isHidden && styles.hiddenInput]}
+                        autoCapitalize="words"
+                        editable={timeLeft > 0 && !isFrozen}
+                      />
+                      {isHidden && (
+                        <View style={styles.maskOverlay} pointerEvents="none">
+                          <Text style={styles.maskText}>{displayValue || ''}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <IconButton
+                      icon={isHidden ? 'eye-off' : 'eye'}
+                      size={20}
+                      onPress={() => toggleInputVisibility(category)}
+                      style={styles.eyeIcon}
+                      iconColor={theme.colors.primary}
+                    />
+                  </View>
+                  {(() => { const err = getAnswerError(answers[category] || ''); return err ? (<Text style={styles.errorText}>{err}</Text>) : null; })()}
+                  {!isLastInput && (
+                    <IconButton
+                      icon="arrow-down"
+                      size={24}
+                      onPress={() => focusNextInput(index)}
+                      style={styles.downArrowButton}
+                      iconColor={theme.colors.primary}
+                    />
+                  )}
+                </Card.Content>
+              </Card>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
 
       <Button
         mode="contained"
@@ -1181,8 +1527,27 @@ const GameplayScreen = ({ navigation, route }) => {
       {phase === 'validation' && (
         <View style={styles.validationContainer}>
           <Text style={styles.validationText}>Validating answers...</Text>
-          <Button mode="text" onPress={handleValidation} style={{ marginTop: 12 }}>
-            Refresh
+          {isRefreshing && (
+            <ActivityIndicator 
+              size="large" 
+              color={theme.colors.primary} 
+              style={{ marginTop: 20 }}
+            />
+          )}
+          {retryAttempt > 0 && (
+            <Text style={styles.retryAttemptText}>Attempt {retryAttempt}</Text>
+          )}
+          {refreshError && (
+            <Text style={styles.refreshErrorText}>{refreshError}</Text>
+          )}
+          <Button 
+            mode="contained" 
+            onPress={() => handleRefreshValidation(false)} 
+            disabled={isRefreshing}
+            loading={isRefreshing}
+            style={[styles.refreshButton, isRefreshing && styles.refreshButtonDisabled]}
+          >
+            {isRefreshing ? 'Loading...' : 'Refresh'}
           </Button>
         </View>
       )}
@@ -1363,6 +1728,14 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     marginBottom: 5,
   },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inputWrapper: {
+    flex: 1,
+    position: 'relative',
+  },
   answerInput: {
     borderWidth: 1,
     borderColor: '#E0E0E0',
@@ -1370,6 +1743,47 @@ const styles = StyleSheet.create({
     padding: 10,
     fontSize: 16,
     backgroundColor: '#FFFFFF',
+  },
+  hiddenInput: {
+    color: 'transparent',
+  },
+  maskOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  maskText: {
+    fontSize: 16,
+    color: '#000000',
+    letterSpacing: 2,
+  },
+  eyeIcon: {
+    margin: 0,
+    marginLeft: 4,
+  },
+  downArrowButton: {
+    alignSelf: 'center',
+    margin: 0,
+    marginTop: 4,
+  },
+  hideAllContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  hideAllButton: {
+    borderColor: theme.colors.primary,
+  },
+  hideAllLabel: {
+    color: theme.colors.primary,
+    fontSize: 14,
   },
   errorText: {
     color: '#F44336',
@@ -1384,10 +1798,56 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   validationText: {
     fontSize: 18,
     color: '#757575',
+    marginBottom: 5,
+  },
+  autoRetryText: {
+    fontSize: 14,
+    color: theme.colors.primary,
+    marginBottom: 10,
+    fontStyle: 'italic',
+  },
+  retryAttemptText: {
+    fontSize: 13,
+    color: '#9E9E9E',
+    marginTop: 10,
+    marginBottom: 5,
+  },
+  stuckContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  stuckText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#424242',
+    marginBottom: 10,
+  },
+  stuckSubtext: {
+    fontSize: 14,
+    color: '#757575',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  refreshButton: {
+    marginTop: 20,
+    backgroundColor: theme.colors.primary,
+  },
+  refreshButtonDisabled: {
+    backgroundColor: '#9E9E9E',
+  },
+  refreshErrorText: {
+    fontSize: 14,
+    color: '#F44336',
+    marginTop: 15,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   scoresContainer: {
     marginVertical: 20,
