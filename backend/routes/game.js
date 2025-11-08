@@ -482,18 +482,25 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
       });
     } else {
       // Game finished, update user stats
+      console.log(`[GAME FINISH] Game ${gameId} has finished! Updating stats...`);
       const standings = game.getStandings();
+      console.log(`[GAME FINISH] Standings:`, standings.map(s => ({ user: s.user, score: s.score })));
       
       // Check if there's a tie (multiple players with the same highest score)
       const highestScore = standings[0]?.score || 0;
       const winners = standings.filter(s => s.score === highestScore);
       const isTie = winners.length > 1;
+      console.log(`[GAME FINISH] Highest score: ${highestScore}, Winners count: ${winners.length}, Is tie: ${isTie}`);
+      console.log(`[GAME FINISH] Game winner:`, game.winner);
       
       // Update stats for all players
       for (const standing of standings) {
         const userId = standing.user._id || standing.user;
+        console.log(`[GAME FINISH] Processing player ${userId}...`);
         const user = await User.findById(userId);
         if (user) {
+          console.log(`[GAME FINISH] Before update - ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
+          
           // All players get matchesPlayed incremented
           user.matchesPlayed += 1;
           
@@ -509,7 +516,9 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
           }
           
           await user.save();
-          console.log(`[GAME FINISH] Updated stats for ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
+          console.log(`[GAME FINISH] After save - ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
+        } else {
+          console.log(`[GAME FINISH] ERROR: User ${userId} not found in database!`);
         }
       }
 

@@ -250,10 +250,22 @@ export const AuthProvider = ({ children }) => {
 
   const refreshUser = async () => {
     try {
-      if (!user?._id) return { success: false, error: 'No user logged in' };
+      if (!user?._id) {
+        console.log('[AuthContext] refreshUser - No user logged in');
+        return { success: false, error: 'No user logged in' };
+      }
       
+      console.log(`[AuthContext] refreshUser - Fetching profile for user ${user._id}`);
       const response = await axios.get(`user/profile/${user._id}`);
+      console.log('[AuthContext] refreshUser - Response:', response.data);
+      
       const updatedUser = { ...user, ...response.data.user };
+      console.log('[AuthContext] refreshUser - Updated user:', {
+        _id: updatedUser._id,
+        username: updatedUser.username,
+        winPoints: updatedUser.winPoints,
+        matchesPlayed: updatedUser.matchesPlayed
+      });
       
       setUser(updatedUser);
       await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
@@ -261,6 +273,7 @@ export const AuthProvider = ({ children }) => {
       return { success: true, user: updatedUser };
     } catch (error) {
       console.error('[AuthContext] refreshUser error:', error);
+      console.error('[AuthContext] refreshUser error details:', error.response?.data);
       return {
         success: false,
         error: error.response?.data?.message || error.message || 'Failed to refresh user data'

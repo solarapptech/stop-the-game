@@ -1110,7 +1110,9 @@ module.exports = (io, socket) => {
       } else {
         // Update room status and user stats when game finishes
         try {
+          console.log(`[SOCKET GAME FINISH] Game ${gameIdStr} has finished! Updating stats...`);
           const standings = game.getStandings();
+          console.log(`[SOCKET GAME FINISH] Standings:`, standings.map(s => ({ user: s.user, score: s.score })));
           const User = require('../models/User');
           
           // Update stats for all players
@@ -1118,11 +1120,16 @@ module.exports = (io, socket) => {
           const highestScore = standings[0]?.score || 0;
           const winners = standings.filter(s => s.score === highestScore);
           const isTie = winners.length > 1;
+          console.log(`[SOCKET GAME FINISH] Highest score: ${highestScore}, Winners count: ${winners.length}, Is tie: ${isTie}`);
+          console.log(`[SOCKET GAME FINISH] Game winner:`, game.winner);
           
           for (const standing of standings) {
             const userId = standing.user._id || standing.user;
+            console.log(`[SOCKET GAME FINISH] Processing player ${userId}...`);
             const user = await User.findById(userId);
             if (user) {
+              console.log(`[SOCKET GAME FINISH] Before update - ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
+              
               // All players get matchesPlayed incremented
               user.matchesPlayed += 1;
               
@@ -1138,7 +1145,9 @@ module.exports = (io, socket) => {
               }
               
               await user.save();
-              console.log(`[SOCKET GAME FINISH] Updated stats for ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
+              console.log(`[SOCKET GAME FINISH] After save - ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
+            } else {
+              console.log(`[SOCKET GAME FINISH] ERROR: User ${userId} not found in database!`);
             }
           }
           

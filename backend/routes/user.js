@@ -15,7 +15,7 @@ router.get('/profile/:userId', async (req, res) => {
 
     res.json({
       user: {
-        id: user._id,
+        _id: user._id,
         username: user.username,
         displayName: user.displayName,
         winPoints: user.winPoints,
