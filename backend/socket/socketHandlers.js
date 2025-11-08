@@ -1111,6 +1111,37 @@ module.exports = (io, socket) => {
         // Update room status and user stats when game finishes
         try {
           const standings = game.getStandings();
+          const User = require('../models/User');
+          
+          // Update stats for all players
+          // Check if there's a tie (multiple players with the same highest score)
+          const highestScore = standings[0]?.score || 0;
+          const winners = standings.filter(s => s.score === highestScore);
+          const isTie = winners.length > 1;
+          
+          for (const standing of standings) {
+            const userId = standing.user._id || standing.user;
+            const user = await User.findById(userId);
+            if (user) {
+              // All players get matchesPlayed incremented
+              user.matchesPlayed += 1;
+              
+              // Winner gets their score added to winPoints (only if no tie)
+              if (!isTie && game.winner) {
+                const winnerId = game.winner._id || game.winner;
+                if (userId.toString() === winnerId.toString()) {
+                  user.winPoints += standing.score;
+                  console.log(`[SOCKET GAME FINISH] Winner ${user.displayName} (${userId}) earned ${standing.score} points. Total winPoints: ${user.winPoints}`);
+                }
+              } else if (isTie) {
+                console.log(`[SOCKET GAME FINISH] Draw detected - no winPoints awarded to ${user.displayName}`);
+              }
+              
+              await user.save();
+              console.log(`[SOCKET GAME FINISH] Updated stats for ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
+            }
+          }
+          
           const Room = require('../models/Room');
           const room = await Room.findById(game.room);
           if (room) {

@@ -484,6 +484,11 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
       // Game finished, update user stats
       const standings = game.getStandings();
       
+      // Check if there's a tie (multiple players with the same highest score)
+      const highestScore = standings[0]?.score || 0;
+      const winners = standings.filter(s => s.score === highestScore);
+      const isTie = winners.length > 1;
+      
       // Update stats for all players
       for (const standing of standings) {
         const userId = standing.user._id || standing.user;
@@ -492,11 +497,15 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
           // All players get matchesPlayed incremented
           user.matchesPlayed += 1;
           
-          // Winner gets their score added to winPoints
-          const winnerId = game.winner._id || game.winner;
-          if (userId.toString() === winnerId.toString()) {
-            user.winPoints += standing.score;
-            console.log(`[GAME FINISH] Winner ${user.displayName} (${userId}) earned ${standing.score} points. Total winPoints: ${user.winPoints}`);
+          // Winner gets their score added to winPoints (only if no tie)
+          if (!isTie && game.winner) {
+            const winnerId = game.winner._id || game.winner;
+            if (userId.toString() === winnerId.toString()) {
+              user.winPoints += standing.score;
+              console.log(`[GAME FINISH] Winner ${user.displayName} (${userId}) earned ${standing.score} points. Total winPoints: ${user.winPoints}`);
+            }
+          } else if (isTie) {
+            console.log(`[GAME FINISH] Draw detected - no winPoints awarded to ${user.displayName}`);
           }
           
           await user.save();

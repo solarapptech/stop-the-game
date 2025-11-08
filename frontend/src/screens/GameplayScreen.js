@@ -1,15 +1,159 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable } from 'react-native-paper';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
 import theme from '../theme';
 
+// Helper function to get icon for category
+const getCategoryIcon = (category) => {
+  const categoryLower = category.toLowerCase();
+  
+  // Exact matches
+  const iconMap = {
+    'fruit': 'fruit-cherries',
+    'fruits': 'fruit-cherries',
+    'name': 'account',
+    'names': 'account',
+    'animal': 'paw',
+    'animals': 'paw',
+    'country': 'earth',
+    'countries': 'earth',
+    'city': 'city',
+    'cities': 'city',
+    'color': 'palette',
+    'colors': 'palette',
+    'food': 'food',
+    'drink': 'cup',
+    'drinks': 'cup',
+    'sport': 'basketball',
+    'sports': 'basketball',
+    'car': 'car',
+    'cars': 'car',
+    'brand': 'tag',
+    'brands': 'tag',
+    'movie': 'movie',
+    'movies': 'movie',
+    'book': 'book',
+    'books': 'book',
+    'game': 'gamepad-variant',
+    'games': 'gamepad-variant',
+    'profession': 'briefcase',
+    'professions': 'briefcase',
+    'job': 'briefcase',
+    'jobs': 'briefcase',
+    'celebrity': 'star',
+    'celebrities': 'star',
+    'clothing': 'tshirt-crew',
+    'clothes': 'tshirt-crew',
+    'vegetable': 'carrot',
+    'vegetables': 'carrot',
+    'flower': 'flower',
+    'flowers': 'flower',
+    'tree': 'tree',
+    'trees': 'tree',
+    'instrument': 'guitar-acoustic',
+    'instruments': 'guitar-acoustic',
+    'music': 'music',
+    'band': 'music-box-multiple',
+    'bands': 'music-box-multiple',
+    'language': 'translate',
+    'languages': 'translate',
+    'company': 'office-building',
+    'companies': 'office-building',
+    'app': 'cellphone',
+    'apps': 'cellphone',
+    'website': 'web',
+    'websites': 'web',
+    'superhero': 'shield-star',
+    'superheroes': 'shield-star',
+    'cartoon': 'animation',
+    'cartoons': 'animation',
+    'toy': 'toy-brick',
+    'toys': 'toy-brick',
+    'dessert': 'cake',
+    'desserts': 'cake',
+    'candy': 'candy',
+    'candies': 'candy',
+    'restaurant': 'silverware-fork-knife',
+    'restaurants': 'silverware-fork-knife',
+    'hobby': 'puzzle',
+    'hobbies': 'puzzle',
+    'subject': 'school',
+    'subjects': 'school',
+    'planet': 'earth',
+    'planets': 'earth',
+    'ocean': 'waves',
+    'oceans': 'waves',
+    'river': 'waves',
+    'rivers': 'waves',
+    'mountain': 'image-filter-hdr',
+    'mountains': 'image-filter-hdr',
+    'bird': 'bird',
+    'birds': 'bird',
+    'fish': 'fish',
+    'fishes': 'fish',
+    'insect': 'bug',
+    'insects': 'bug',
+  };
+  
+  // Check for exact match
+  if (iconMap[categoryLower]) {
+    return iconMap[categoryLower];
+  }
+  
+  // Check for partial matches
+  if (categoryLower.includes('fruit')) return 'fruit-cherries';
+  if (categoryLower.includes('animal')) return 'paw';
+  if (categoryLower.includes('country') || categoryLower.includes('nation')) return 'earth';
+  if (categoryLower.includes('city') || categoryLower.includes('town')) return 'city';
+  if (categoryLower.includes('color') || categoryLower.includes('colour')) return 'palette';
+  if (categoryLower.includes('food')) return 'food';
+  if (categoryLower.includes('drink') || categoryLower.includes('beverage')) return 'cup';
+  if (categoryLower.includes('sport')) return 'basketball';
+  if (categoryLower.includes('car') || categoryLower.includes('vehicle')) return 'car';
+  if (categoryLower.includes('brand')) return 'tag';
+  if (categoryLower.includes('movie') || categoryLower.includes('film')) return 'movie';
+  if (categoryLower.includes('book')) return 'book';
+  if (categoryLower.includes('game')) return 'gamepad-variant';
+  if (categoryLower.includes('job') || categoryLower.includes('profession')) return 'briefcase';
+  if (categoryLower.includes('celebrity') || categoryLower.includes('famous')) return 'star';
+  if (categoryLower.includes('cloth') || categoryLower.includes('wear')) return 'tshirt-crew';
+  if (categoryLower.includes('vegetable') || categoryLower.includes('veggie')) return 'carrot';
+  if (categoryLower.includes('flower')) return 'flower';
+  if (categoryLower.includes('tree')) return 'tree';
+  if (categoryLower.includes('instrument') || categoryLower.includes('music')) return 'guitar-acoustic';
+  if (categoryLower.includes('language')) return 'translate';
+  if (categoryLower.includes('company') || categoryLower.includes('business')) return 'office-building';
+  if (categoryLower.includes('app') || categoryLower.includes('application')) return 'cellphone';
+  if (categoryLower.includes('website') || categoryLower.includes('web')) return 'web';
+  if (categoryLower.includes('hero')) return 'shield-star';
+  if (categoryLower.includes('cartoon')) return 'animation';
+  if (categoryLower.includes('toy')) return 'toy-brick';
+  if (categoryLower.includes('dessert') || categoryLower.includes('sweet')) return 'cake';
+  if (categoryLower.includes('candy')) return 'candy';
+  if (categoryLower.includes('restaurant')) return 'silverware-fork-knife';
+  if (categoryLower.includes('hobby')) return 'puzzle';
+  if (categoryLower.includes('subject') || categoryLower.includes('school')) return 'school';
+  if (categoryLower.includes('planet') || categoryLower.includes('space')) return 'earth';
+  if (categoryLower.includes('ocean') || categoryLower.includes('sea')) return 'waves';
+  if (categoryLower.includes('river')) return 'waves';
+  if (categoryLower.includes('mountain')) return 'image-filter-hdr';
+  if (categoryLower.includes('bird')) return 'bird';
+  if (categoryLower.includes('fish')) return 'fish';
+  if (categoryLower.includes('insect') || categoryLower.includes('bug')) return 'bug';
+  if (categoryLower.includes('name')) return 'account';
+  
+  // Default icon
+  return 'help-circle-outline';
+};
+
 const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound, playAgainReady } = useSocket();
   const userId = (user && (user.id || user._id)) || null;
   const { 
@@ -66,6 +210,9 @@ const GameplayScreen = ({ navigation, route }) => {
   const [isRefreshingGameplay, setIsRefreshingGameplay] = useState(false);
   const [gameplayRefreshError, setGameplayRefreshError] = useState(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
+  const [categoryStuckTimer, setCategoryStuckTimer] = useState(0);
+  const [showManualReload, setShowManualReload] = useState(false);
+  const [isReloadingCategories, setIsReloadingCategories] = useState(false);
   
   const timerRef = useRef(null);
   const inputRefs = useRef({});
@@ -74,6 +221,8 @@ const GameplayScreen = ({ navigation, route }) => {
   const selectTimerRef = useRef(null);
   const autoRetryTimerRef = useRef(null);
   const announcedReadyRef = useRef(false);
+  const categoryStuckTimerRef = useRef(null);
+  const categoryStuckCountRef = useRef(0);
   const letterTimerRef = useRef(null);
   const revealTimerRef = useRef(null);
   const confettiRef = useRef(null);
@@ -93,6 +242,7 @@ const GameplayScreen = ({ navigation, route }) => {
       if (letterTimerRef.current) clearInterval(letterTimerRef.current);
       if (revealTimerRef.current) clearInterval(revealTimerRef.current);
       if (autoRetryTimerRef.current) clearInterval(autoRetryTimerRef.current);
+      if (categoryStuckTimerRef.current) clearInterval(categoryStuckTimerRef.current);
     };
   }, []);
 
@@ -261,13 +411,20 @@ const GameplayScreen = ({ navigation, route }) => {
     const onNextRoundCountdown = (data) => {
       if (typeof data.seconds === 'number') setNextCountdown(data.seconds);
     };
-    const onGameFinished = (data) => {
+    const onGameFinished = async (data) => {
       setShowConfetti(true);
       setIsFinished(true);
       // derive totals if provided
       if (Array.isArray(data?.standings)) setPlayerScores(data.standings);
       if (Array.isArray(playerScores) && playerScores.length > 0) {
         setRematchTotal(playerScores.length);
+      }
+      // Refresh user stats after game finishes
+      try {
+        await refreshUser();
+        console.log('[GameplayScreen] User stats refreshed after game finish');
+      } catch (error) {
+        console.error('[GameplayScreen] Failed to refresh user stats:', error);
       }
     };
     const onRematchUpdate = (data) => {
@@ -370,6 +527,81 @@ const GameplayScreen = ({ navigation, route }) => {
       announcedReadyRef.current = true;
     }
   }, [phase, categoryPhaseReady, gameId]);
+
+  // Smart detection for stuck category selection
+  useEffect(() => {
+    if (phase === 'category-selection') {
+      // Start monitoring for stuck state
+      if (categoryStuckTimerRef.current) clearInterval(categoryStuckTimerRef.current);
+      categoryStuckCountRef.current = 0;
+      setCategoryStuckTimer(0);
+      setShowManualReload(false);
+      
+      categoryStuckTimerRef.current = setInterval(() => {
+        categoryStuckCountRef.current += 1;
+        setCategoryStuckTimer(categoryStuckCountRef.current);
+        
+        // If no deadline after 8 seconds, user is likely stuck
+        if (categoryStuckCountRef.current >= 8 && !selectionDeadline) {
+          console.log('[STUCK DETECTION] No deadline after 8s, showing manual reload');
+          setShowManualReload(true);
+        }
+        
+        // Auto-reload after 15 seconds if still no deadline
+        if (categoryStuckCountRef.current >= 15 && !selectionDeadline) {
+          console.log('[STUCK DETECTION] Auto-reloading after 15s without deadline');
+          clearInterval(categoryStuckTimerRef.current);
+          handleCategoryReload(true);
+        }
+      }, 1000);
+    } else {
+      // Clear timer when leaving category selection
+      if (categoryStuckTimerRef.current) {
+        clearInterval(categoryStuckTimerRef.current);
+        categoryStuckTimerRef.current = null;
+      }
+      categoryStuckCountRef.current = 0;
+      setCategoryStuckTimer(0);
+      setShowManualReload(false);
+    }
+    
+    return () => {
+      if (categoryStuckTimerRef.current) {
+        clearInterval(categoryStuckTimerRef.current);
+      }
+    };
+  }, [phase, selectionDeadline]);
+
+  const handleCategoryReload = async (isAuto = false) => {
+    console.log(`[CATEGORY RELOAD] ${isAuto ? 'Auto' : 'Manual'} reload triggered`);
+    setIsReloadingCategories(true);
+    
+    try {
+      // Re-announce ready to trigger deadline
+      if (categoryPhaseReady) {
+        announcedReadyRef.current = false;
+        categoryPhaseReady(gameId);
+        announcedReadyRef.current = true;
+      }
+      
+      // Reload game state
+      await loadGameState();
+      
+      // Reset stuck detection
+      if (categoryStuckTimerRef.current) {
+        clearInterval(categoryStuckTimerRef.current);
+      }
+      categoryStuckCountRef.current = 0;
+      setCategoryStuckTimer(0);
+      setShowManualReload(false);
+      
+      console.log('[CATEGORY RELOAD] Reload successful');
+    } catch (error) {
+      console.error('[CATEGORY RELOAD] Error:', error);
+    } finally {
+      setIsReloadingCategories(false);
+    }
+  };
 
   const loadGameState = async () => {
     const result = await getGameState(gameId);
@@ -1005,31 +1237,88 @@ const GameplayScreen = ({ navigation, route }) => {
   };
 
   const renderCategorySelection = () => (
-    <Card style={styles.card}>
-      <Card.Content>
-        <Text style={styles.phaseTitle}>Select Categories</Text>
-        {selectionDeadline ? (
-          <Text style={styles.instruction}>Pick 6-8 categories. Time left: {selectTimeLeft}s</Text>
-        ) : (
-          <Text style={styles.instruction}>Waiting for all players to enter this screen. Timer will start at 60s for everyone.</Text>
-        )}
-        {(totalPlayers > 0) && (
-          <Text style={styles.instruction}>{confirmedCount}/{totalPlayers} Players ready</Text>
-        )}
-        <View style={styles.categoriesGrid}>
-          {AVAILABLE_CATEGORIES.map(category => (
-            <Chip
-              key={category}
-              selected={selectedCategories.includes(category)}
-              disabled={!selectionDeadline || hasConfirmed || selectedCategories.includes(category) || selectedCategories.length >= 8 || selectTimeLeft <= 0}
-              onPress={() => handleCategorySelect(category)}
-              style={styles.categoryChip}
-              mode="outlined"
-            >
-              {category}
-            </Chip>
-          ))}
+    <View style={styles.categorySelectionContainer}>
+      <Card style={styles.card}>
+        <Card.Content>
+          <Text style={styles.phaseTitle}>Select Categories</Text>
+          {selectionDeadline ? (
+            <Text style={styles.instruction}>Pick 6-8 categories. Time left: {selectTimeLeft}s</Text>
+          ) : (
+            <Text style={styles.instruction}>Waiting for all players to enter this screen. Timer will start at 60s for everyone.</Text>
+          )}
+          {(totalPlayers > 0) && (
+            <Text style={styles.instruction}>{confirmedCount}/{totalPlayers} Players ready</Text>
+          )}
+          {showManualReload && !selectionDeadline && (
+            <View style={styles.stuckWarningContainer}>
+              <Text style={styles.stuckWarningText}>⚠️ Taking too long? Try reloading</Text>
+              <Button
+                mode="outlined"
+                onPress={() => handleCategoryReload(false)}
+                disabled={isReloadingCategories}
+                style={styles.manualReloadButton}
+                compact
+              >
+                {isReloadingCategories ? 'Reloading...' : 'Reload'}
+              </Button>
+            </View>
+          )}
+        </Card.Content>
+      </Card>
+      
+      <ScrollView 
+        style={styles.categoriesScrollView}
+        contentContainerStyle={styles.categoriesScrollContent}
+        showsVerticalScrollIndicator={true}
+      >
+        <View style={styles.categoriesGridNew}>
+          {AVAILABLE_CATEGORIES.map(category => {
+            const isSelected = selectedCategories.includes(category);
+            const isDisabled = !selectionDeadline || hasConfirmed || selectedCategories.includes(category) || selectedCategories.length >= 8 || selectTimeLeft <= 0;
+            const iconName = CATEGORY_ICONS[category] || 'help-circle';
+            
+            return (
+              <TouchableOpacity
+                key={category}
+                style={styles.categoryBoxWrapper}
+                onPress={() => handleCategorySelect(category)}
+                disabled={isDisabled}
+                activeOpacity={0.7}
+              >
+                <View style={[
+                  styles.categoryBox,
+                  isSelected && styles.categoryBoxSelected,
+                  isDisabled && !isSelected && styles.categoryBoxDisabled
+                ]}>
+                  <MaterialCommunityIcons
+                    name={iconName}
+                    size={44}
+                    color={isSelected ? '#9E9E9E' : theme.colors.primary}
+                    style={styles.categoryIcon}
+                  />
+                  {isSelected && (
+                    <View style={styles.checkmarkContainer}>
+                      <MaterialCommunityIcons
+                        name="check-circle"
+                        size={22}
+                        color="#4CAF50"
+                      />
+                    </View>
+                  )}
+                </View>
+                <Text style={[
+                  styles.categoryTitle,
+                  isSelected && styles.categoryTitleSelected
+                ]}>
+                  {category}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+      </ScrollView>
+      
+      <View style={styles.fixedBottomSection}>
         <Button
           mode="contained"
           onPress={handleConfirmCategories}
@@ -1038,11 +1327,21 @@ const GameplayScreen = ({ navigation, route }) => {
         >
           {hasConfirmed ? 'Ready' : `Confirm (${selectedCategories.length}/6-8)`}
         </Button>
+        
+        <View style={styles.selectedCategoriesContainer}>
+          <Text style={styles.selectedCategoriesLabel}>
+            Selected Categories: 
+            <Text style={styles.selectedCategoriesText}>
+              {selectedCategories.length > 0 ? selectedCategories.join(', ') : 'None'}
+            </Text>
+          </Text>
+        </View>
+        
         {selectionDeadline && selectTimeLeft <= 0 && (
           <Text style={styles.waitingText}>Time is up. Finalizing categories...</Text>
         )}
-      </Card.Content>
-    </Card>
+      </View>
+    </View>
   );
 
   const renderLetterSelection = () => (
@@ -1209,7 +1508,15 @@ const GameplayScreen = ({ navigation, route }) => {
               >
                 <Card style={styles.answerCard}>
                 <Card.Content>
-                  <Text style={styles.categoryLabel}>{category}</Text>
+                  <View style={styles.categoryLabelContainer}>
+                    <MaterialCommunityIcons 
+                      name={getCategoryIcon(category)} 
+                      size={20} 
+                      color={theme.colors.primary}
+                      style={styles.categoryIcon}
+                    />
+                    <Text style={styles.categoryLabel}>{category}</Text>
+                  </View>
                   <View style={styles.inputRow}>
                     <View style={styles.inputWrapper}>
                       <TextInput
@@ -1570,6 +1877,19 @@ const AVAILABLE_CATEGORIES = [
   'Sports'
 ];
 
+const CATEGORY_ICONS = {
+  'Name': 'account',
+  'Last Name': 'account-group',
+  'City/Country': 'city',
+  'Animal': 'paw',
+  'Fruit/Food': 'food-apple',
+  'Color': 'palette',
+  'Object': 'cube',
+  'Brand': 'tag',
+  'Profession': 'briefcase',
+  'Sports': 'basketball'
+};
+
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 const styles = StyleSheet.create({
@@ -1612,11 +1932,126 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 20,
   },
+  categorySelectionContainer: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  categoriesScrollView: {
+    flex: 1,
+  },
+  categoriesScrollContent: {
+    paddingHorizontal: 10,
+    paddingBottom: 20,
+  },
+  categoriesGridNew: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  categoryBoxWrapper: {
+    width: '31%',
+    marginBottom: 15,
+    alignItems: 'center',
+  },
+  fixedBottomSection: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingTop: 15,
+    paddingBottom: 20,
+    borderTopWidth: 2,
+    borderTopColor: '#E0E0E0',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  categoryBox: {
+    width: '100%',
+    aspectRatio: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    position: 'relative',
+  },
+  categoryBoxSelected: {
+    backgroundColor: '#F5F5F5',
+    borderColor: '#4CAF50',
+    opacity: 0.7,
+  },
+  categoryBoxDisabled: {
+    opacity: 0.5,
+  },
+  categoryIcon: {
+    marginBottom: 0,
+  },
+  checkmarkContainer: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+  },
+  stuckWarningContainer: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#FFB74D',
+  },
+  stuckWarningText: {
+    fontSize: 13,
+    color: '#E65100',
+    fontWeight: '600',
+    flex: 1,
+  },
+  manualReloadButton: {
+    marginLeft: 10,
+    borderColor: '#FF9800',
+  },
+  categoryTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#424242',
+    textAlign: 'center',
+    marginTop: 7,
+    paddingHorizontal: 2,
+  },
+  categoryTitleSelected: {
+    color: '#757575',
+  },
+  selectedCategoriesContainer: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 15,
+  },
+  selectedCategoriesLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#424242',
+  },
+  selectedCategoriesText: {
+    fontSize: 14,
+    fontWeight: 'normal',
+    color: theme.colors.primary,
+  },
   categoryChip: {
     margin: 5,
   },
   confirmButton: {
     backgroundColor: theme.colors.primary,
+    marginBottom: 0,
   },
   waitingText: {
     fontSize: 16,
@@ -1722,11 +2157,18 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     elevation: 2,
   },
+  categoryLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  categoryIcon: {
+    marginRight: 8,
+  },
   categoryLabel: {
     fontSize: 14,
     fontWeight: 'bold',
     color: theme.colors.primary,
-    marginBottom: 5,
   },
   inputRow: {
     flexDirection: 'row',

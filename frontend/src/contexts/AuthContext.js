@@ -248,6 +248,26 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const refreshUser = async () => {
+    try {
+      if (!user?._id) return { success: false, error: 'No user logged in' };
+      
+      const response = await axios.get(`user/profile/${user._id}`);
+      const updatedUser = { ...user, ...response.data.user };
+      
+      setUser(updatedUser);
+      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+      
+      return { success: true, user: updatedUser };
+    } catch (error) {
+      console.error('[AuthContext] refreshUser error:', error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message || 'Failed to refresh user data'
+      };
+    }
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -260,6 +280,7 @@ export const AuthProvider = ({ children }) => {
       resendVerificationCode,
       updateUser,
       updateDisplayName,
+      refreshUser,
       isAuthenticated: !!token
     }}>
       {children}

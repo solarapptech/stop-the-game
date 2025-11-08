@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Text, Button, Card, Avatar, IconButton, Badge, ActivityIndicator, TextInput, Portal, Dialog } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,7 +8,7 @@ import { useSocket } from '../contexts/SocketContext';
 import theme from '../theme';
 
 const MenuScreen = ({ navigation }) => {
-  const { user, logout, updateDisplayName } = useAuth();
+  const { user, logout, updateDisplayName, refreshUser } = useAuth();
   const { socket, connected } = useSocket();
   const [stats, setStats] = useState({
     winPoints: user?.winPoints || 0,
@@ -19,6 +20,32 @@ const MenuScreen = ({ navigation }) => {
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState(user?.displayName || user?.username || '');
   const [savingName, setSavingName] = useState(false);
+
+  // Update stats when user changes
+  useEffect(() => {
+    if (user) {
+      setStats({
+        winPoints: user.winPoints || 0,
+        matchesPlayed: user.matchesPlayed || 0,
+        friends: user.friends?.length || 0,
+      });
+    }
+  }, [user]);
+
+  // Refresh user stats when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      const refreshStats = async () => {
+        try {
+          await refreshUser();
+          console.log('[MenuScreen] User stats refreshed');
+        } catch (error) {
+          console.error('[MenuScreen] Failed to refresh user stats:', error);
+        }
+      };
+      refreshStats();
+    }, [refreshUser])
+  );
 
   useEffect(() => {
     if (!socket) return;
