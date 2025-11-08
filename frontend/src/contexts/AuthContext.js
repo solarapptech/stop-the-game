@@ -250,10 +250,12 @@ export const AuthProvider = ({ children }) => {
 
   const refreshUser = async () => {
     try {
-      if (!user?._id) return { success: false, error: 'No user logged in' };
-      
-      const response = await axios.get(`user/profile/${user._id}`);
-      const updatedUser = { ...user, ...response.data.user };
+      const id = (user && (user.id || user._id)) || null;
+      if (!id) return { success: false, error: 'No user logged in' };
+
+      const response = await axios.get(`user/profile/${id}`);
+      // Keep a stable id field for the app; backend returns `id`
+      const updatedUser = { ...user, ...response.data.user, id: (response.data.user.id || id) };
       
       setUser(updatedUser);
       await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
