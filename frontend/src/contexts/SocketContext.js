@@ -86,9 +86,20 @@ export const SocketProvider = ({ children }) => {
         }
       });
 
+      // Bridge server broadcast to server handler: re-emit to server
+      newSocket.on('advance-round-trigger', (payload) => {
+        try {
+          console.log('[SocketContext] Bridging advance-round-trigger', payload);
+          newSocket.emit('advance-round-trigger', payload);
+        } catch (e) {
+          console.error('[SocketContext] Bridge error', e);
+        }
+      });
+
       setSocket(newSocket);
 
       return () => {
+        try { newSocket.off('advance-round-trigger'); } catch (e) {}
         newSocket.close();
       };
     }

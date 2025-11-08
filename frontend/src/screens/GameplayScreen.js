@@ -416,9 +416,9 @@ const GameplayScreen = ({ navigation, route }) => {
       setShowConfetti(true);
       setIsFinished(true);
       // derive totals if provided
-      if (Array.isArray(data?.standings)) setPlayerScores(data.standings);
-      if (Array.isArray(playerScores) && playerScores.length > 0) {
-        setRematchTotal(playerScores.length);
+      if (Array.isArray(data?.standings)) {
+        setPlayerScores(data.standings);
+        setRematchTotal(data.standings.length);
       }
       // Refresh user stats after game finishes
       try {
@@ -1727,7 +1727,7 @@ const GameplayScreen = ({ navigation, route }) => {
               <>
                 <Button
                   mode="contained"
-                  onPress={() => setFinalConfirmed(true) || setIsFinished(true)}
+                  onPress={() => { readyNextRound(gameId); setFinalConfirmed(true); setIsFinished(true); }}
                   style={styles.nextButton}
                 >
                   Confirm Final Results

@@ -1134,12 +1134,18 @@ module.exports = (io, socket) => {
               console.log(`[SOCKET GAME FINISH] Before update - ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
               
               // All players get matchesPlayed incremented
+              if (typeof user.matchesPlayed !== 'number' || !Number.isFinite(user.matchesPlayed)) {
+                user.matchesPlayed = 0;
+              }
               user.matchesPlayed += 1;
               
               // Winner gets their score added to winPoints (only if no tie)
               if (!isTie && game.winner) {
                 const winnerId = game.winner._id || game.winner;
                 if (userId.toString() === winnerId.toString()) {
+                  if (typeof user.winPoints !== 'number' || !Number.isFinite(user.winPoints)) {
+                    user.winPoints = 0;
+                  }
                   user.winPoints += standing.score;
                   console.log(`[SOCKET GAME FINISH] Winner ${user.displayName} (${userId}) earned ${standing.score} points. Total winPoints: ${user.winPoints}`);
                 }

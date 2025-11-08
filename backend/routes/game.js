@@ -493,7 +493,7 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
       console.log(`[GAME FINISH] Highest score: ${highestScore}, Winners count: ${winners.length}, Is tie: ${isTie}`);
       console.log(`[GAME FINISH] Game winner:`, game.winner);
       
-      // Update stats for all players
+      // Update stats for all players (defensive init)
       for (const standing of standings) {
         const userId = standing.user._id || standing.user;
         console.log(`[GAME FINISH] Processing player ${userId}...`);
@@ -501,13 +501,17 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
         if (user) {
           console.log(`[GAME FINISH] Before update - ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
           
-          // All players get matchesPlayed incremented
+          if (typeof user.matchesPlayed !== 'number' || !Number.isFinite(user.matchesPlayed)) {
+            user.matchesPlayed = 0;
+          }
           user.matchesPlayed += 1;
           
-          // Winner gets their score added to winPoints (only if no tie)
           if (!isTie && game.winner) {
             const winnerId = game.winner._id || game.winner;
             if (userId.toString() === winnerId.toString()) {
+              if (typeof user.winPoints !== 'number' || !Number.isFinite(user.winPoints)) {
+                user.winPoints = 0;
+              }
               user.winPoints += standing.score;
               console.log(`[GAME FINISH] Winner ${user.displayName} (${userId}) earned ${standing.score} points. Total winPoints: ${user.winPoints}`);
             }
@@ -531,6 +535,19 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
       }
 
       await game.save();
+
+      // Also emit socket event so clients reliably receive finish notification
+      try {
+        const io = req.app.get('io');
+        if (io) {
+          io.to(`game-${gameId}`).emit('game-finished', {
+            winner: (game.winner || null),
+            standings
+          });
+        }
+      } catch (e) {
+        console.error('[HTTP NEXT-ROUND] Failed to emit game-finished:', e);
+      }
 
       res.json({
         message: 'Game finished',
