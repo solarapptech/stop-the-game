@@ -412,6 +412,7 @@ const GameplayScreen = ({ navigation, route }) => {
       if (typeof data.seconds === 'number') setNextCountdown(data.seconds);
     };
     const onGameFinished = async (data) => {
+      console.log('[GameplayScreen] onGameFinished called with data:', data);
       setShowConfetti(true);
       setIsFinished(true);
       // derive totals if provided
@@ -421,6 +422,7 @@ const GameplayScreen = ({ navigation, route }) => {
       }
       // Refresh user stats after game finishes
       try {
+        console.log('[GameplayScreen] Calling refreshUser...');
         await refreshUser();
         console.log('[GameplayScreen] User stats refreshed after game finish');
       } catch (error) {

@@ -1101,6 +1101,8 @@ module.exports = (io, socket) => {
       }
       
       const hasNext = game.nextRound();
+      console.log(`[ROUND ADVANCEMENT] game.nextRound() returned: ${hasNext} for game ${gameIdStr}`);
+      
       if (hasNext) {
         console.log(`[ROUND ADVANCEMENT] Advancing to round ${game.currentRound} for game ${gameIdStr}`);
         await game.save();
@@ -1109,6 +1111,7 @@ module.exports = (io, socket) => {
         await startLetterSelection(game);
       } else {
         // Update room status and user stats when game finishes
+        console.log(`[SOCKET GAME FINISH] ===== GAME ${gameIdStr} HAS FINISHED! =====`);
         try {
           console.log(`[SOCKET GAME FINISH] Game ${gameIdStr} has finished! Updating stats...`);
           const standings = game.getStandings();
@@ -1159,10 +1162,12 @@ module.exports = (io, socket) => {
             await room.save();
           }
           // Emit final standings and winner to all players in the current game
+          console.log(`[SOCKET GAME FINISH] Emitting game-finished event to game-${gameId}`);
           io.to(`game-${gameId}`).emit('game-finished', {
             winner: (game.winner || null),
             standings
           });
+          console.log(`[SOCKET GAME FINISH] game-finished event emitted successfully`);
         } catch (e) {
           console.error('Finalize game finish error:', e);
           io.to(`game-${gameId}`).emit('game-finished', {
