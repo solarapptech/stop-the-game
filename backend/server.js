@@ -66,7 +66,12 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(limiter);
+// Exempt lightweight profile reads from global limiter
+app.use((req, res, next) => {
+  const path = req.path || '';
+  if (path.startsWith('/api/user/profile')) return next();
+  return limiter(req, res, next);
+});
 
 // Session configuration
 app.use(session({

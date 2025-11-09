@@ -15,6 +15,7 @@ const MenuScreen = ({ navigation }) => {
     matchesPlayed: user?.matchesPlayed || 0,
     friends: user?.friends?.length || 0,
   });
+  const [statsRefreshing, setStatsRefreshing] = useState(false);
   const [quickPlayVisible, setQuickPlayVisible] = useState(false);
   const [matchmakingStatus, setMatchmakingStatus] = useState('searching'); // 'searching' | 'found'
   const [editNameVisible, setEditNameVisible] = useState(false);
@@ -36,7 +37,7 @@ const MenuScreen = ({ navigation }) => {
   useFocusEffect(
     React.useCallback(() => {
       let cancelled = false;
-      const refreshStats = async () => {
+      const timer = setTimeout(async () => {
         try {
           if (statsDirty) {
             const result = await refreshUser({ force: true });
@@ -53,11 +54,24 @@ const MenuScreen = ({ navigation }) => {
         } catch (error) {
           if (!cancelled) console.error('[MenuScreen] Failed to refresh user stats:', error);
         }
-      };
-      refreshStats();
-      return () => { cancelled = true; };
+      }, 300);
+      return () => { cancelled = true; clearTimeout(timer); };
     }, [refreshUser, statsDirty])
   );
+
+  const handleManualStatsRefresh = async () => {
+    try {
+      setStatsRefreshing(true);
+      const result = await refreshUser({ force: true });
+      if (!(result?.success)) {
+        console.log('[MenuScreen] Manual stats refresh failed:', result?.error || 'unknown');
+      }
+    } catch (e) {
+      console.error('[MenuScreen] Manual stats refresh error', e);
+    } finally {
+      setStatsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     if (!socket) return;
@@ -202,6 +216,17 @@ const MenuScreen = ({ navigation }) => {
           </View>
 
           {/* Stats */}
+          <View style={styles.statsHeaderRow}>
+            <Text style={styles.statsHeaderText}>Stats</Text>
+            <IconButton
+              icon={statsRefreshing ? 'reload' : 'refresh'}
+              size={18}
+              onPress={handleManualStatsRefresh}
+              disabled={statsRefreshing}
+              style={styles.refreshIcon}
+              iconColor={theme.colors.primary}
+            />
+          </View>
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.winPoints}</Text>
@@ -410,6 +435,20 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     padding: 15,
     marginBottom: 15,
+  },
+  statsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  statsHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#424242',
+  },
+  refreshIcon: {
+    margin: 0,
   },
   statItem: {
     alignItems: 'center',

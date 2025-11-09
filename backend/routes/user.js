@@ -13,6 +13,27 @@ router.get('/profile/:userId', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    // Generate a weak ETag based on fields relevant to dashboard stats & profile display
+    try {
+      const basis = [
+        String(user._id),
+        String(user.updatedAt?.getTime?.() || ''),
+        String(user.winPoints || 0),
+        String(user.matchesPlayed || 0),
+        String(user.subscribed || false),
+        String(user.displayName || ''),
+      ].join(':');
+      const crypto = require('crypto');
+      const etag = 'W/"' + crypto.createHash('sha1').update(basis).digest('hex') + '"';
+      const inm = req.headers['if-none-match'];
+      if (inm && inm === etag) {
+        return res.status(304).end();
+      }
+      res.set('ETag', etag);
+    } catch (e) {
+      // ignore ETag errors
+    }
+
     res.json({
       user: {
         _id: user._id,

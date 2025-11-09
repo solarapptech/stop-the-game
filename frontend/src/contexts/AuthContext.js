@@ -84,6 +84,8 @@ export const AuthProvider = ({ children }) => {
   const [statsDirty, setStatsDirty] = useState(false);
   const lastProfileFetchRef = useRef(0);
   const refreshInFlightRef = useRef(null);
+  const profileEtagRef = useRef(null);
+  const profileCacheRef = useRef(null);
 
   useEffect(() => {
     loadStoredAuth();
@@ -271,7 +273,38 @@ export const AuthProvider = ({ children }) => {
       }
       console.log(`[AuthContext] refreshUser - Fetching profile for user ${uid} (force=${force}, minAgeMs=${minAgeMs})`);
       const inflight = (async () => {
-        const response = await axios.get(`user/profile/${uid}`);
+        const fetchWithRetry = async () => {
+          const config = {
+            headers: {},
+            // Treat 200 and 304 as valid
+            validateStatus: (s) => s === 200 || s === 304
+          };
+          if (profileEtagRef.current) {
+            config.headers['If-None-Match'] = profileEtagRef.current;
+          }
+          try {
+            return await axios.get(`user/profile/${uid}`, config);
+          } catch (err) {
+            const retriable = err?.response?.status === 429 || err?.code === 'ECONNABORTED' || err?.message?.includes('timeout') || !err?.response;
+            if (retriable) {
+              const delayMs = 1200 + Math.floor(Math.random() * 400);
+              console.log(`[AuthContext] refreshUser retrying after ${delayMs}ms due to`, err?.response?.status || err?.code || 'network');
+              await new Promise(res => setTimeout(res, delayMs));
+              return await axios.get(`user/profile/${uid}`, config);
+            }
+            throw err;
+          }
+        };
+        const response = await fetchWithRetry();
+        if (response.status === 304 && profileCacheRef.current) {
+          console.log('[AuthContext] refreshUser - Not modified (304), using cached profile');
+          const updatedUser = { ...user, ...profileCacheRef.current };
+          setUser(updatedUser);
+          await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+          lastProfileFetchRef.current = Date.now();
+          setStatsDirty(false);
+          return { success: true, user: updatedUser, notModified: true };
+        }
         console.log('[AuthContext] refreshUser - Response:', response.data);
         const updatedUser = { ...user, ...response.data.user };
         console.log('[AuthContext] refreshUser - Updated user:', {
@@ -280,6 +313,8 @@ export const AuthProvider = ({ children }) => {
           winPoints: updatedUser.winPoints,
           matchesPlayed: updatedUser.matchesPlayed
         });
+        profileEtagRef.current = response.headers?.etag || null;
+        profileCacheRef.current = response.data.user;
         setUser(updatedUser);
         await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
         lastProfileFetchRef.current = Date.now();
