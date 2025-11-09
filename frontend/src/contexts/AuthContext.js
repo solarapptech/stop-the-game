@@ -250,13 +250,14 @@ export const AuthProvider = ({ children }) => {
 
   const refreshUser = async () => {
     try {
-      if (!user?._id) {
+      const uid = user?._id || user?.id;
+      if (!uid) {
         console.log('[AuthContext] refreshUser - No user logged in');
         return { success: false, error: 'No user logged in' };
       }
       
-      console.log(`[AuthContext] refreshUser - Fetching profile for user ${user._id}`);
-      const response = await axios.get(`user/profile/${user._id}`);
+      console.log(`[AuthContext] refreshUser - Fetching profile for user ${uid}`);
+      const response = await axios.get(`user/profile/${uid}`);
       console.log('[AuthContext] refreshUser - Response:', response.data);
       
       const updatedUser = { ...user, ...response.data.user };
