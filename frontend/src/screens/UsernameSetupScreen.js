@@ -12,8 +12,35 @@ const UsernameSetupScreen = ({ navigation }) => {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setUsername(user?.username || '');
-  }, [user]);
+    const init = async () => {
+      // Prefer a suggestion derived from the email local part
+      const email = user?.email || '';
+      const local = typeof email === 'string' ? (email.split('@')[0] || '') : '';
+      let base = local.replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase();
+      if (!base || base.length < 3) base = (user?.username || '').toLowerCase();
+      if (!base || base.length < 3) base = `player${Math.floor(Math.random() * 1000)}`;
+      if (base.length > 30) base = base.slice(0, 30);
+
+      // Find first available: base, base1, base2, ... up to 50 tries
+      let suggestion = base;
+      const maxTries = 50;
+      for (let i = 0; i <= maxTries; i++) {
+        const suffix = i === 0 ? '' : String(i);
+        const maxCoreLen = 30 - suffix.length;
+        const candidate = (base.length > maxCoreLen ? base.slice(0, maxCoreLen) : base) + suffix;
+        try {
+          const ok = await checkUsernameAvailable(candidate);
+          if (ok) { suggestion = candidate; break; }
+        } catch (_) {
+          // ignore availability errors and keep trying
+        }
+      }
+      setUsername(suggestion);
+      setAvailable(null);
+    };
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email]);
 
   const validateLocal = (name) => {
     if (!name) return 'Username is required';

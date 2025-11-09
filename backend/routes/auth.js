@@ -178,29 +178,29 @@ router.post('/verify', authMiddleware, [
   }
 });
 
-// Resend verification code endpoint is disabled for now
-// router.post('/resend-verification', authMiddleware, async (req, res) => {
-//   try {
-//     const user = req.user;
-//
-//     if (user.verified) {
-//       return res.status(400).json({ message: 'User already verified' });
-//     }
-//
-//     const verificationCode = user.generateVerificationCode();
-//     await user.save();
-//
-//     // Send verification email in background (non-blocking).
-//     sendVerificationEmail(user.getDecryptedEmail(), verificationCode)
-//       .then(() => console.log('Resent verification email to', user.getDecryptedEmail()))
-//       .catch(err => console.error('Failed to resend verification email (non-blocking):', err));
-//
-//     res.json({ message: 'Verification code sent' });
-//   } catch (error) {
-//     console.error('Resend verification error:', error);
-//     res.status(500).json({ message: 'Error sending verification code' });
-//   }
-// });
+// Resend verification code
+router.post('/resend-verification', authMiddleware, async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (user.verified) {
+      return res.status(400).json({ message: 'User already verified' });
+    }
+
+    const verificationCode = user.generateVerificationCode();
+    await user.save();
+
+    // Send verification email in background (non-blocking) and gracefully skip if email disabled
+    sendVerificationEmail(user.getDecryptedEmail(), verificationCode)
+      .then(() => console.log('Resent verification email to', user.getDecryptedEmail()))
+      .catch(err => console.error('Failed to resend verification email (non-blocking):', err));
+
+    res.json({ message: 'Verification code sent' });
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    res.status(500).json({ message: 'Error sending verification code' });
+  }
+});
 
 // Google OAuth
 router.get('/google',

@@ -39,6 +39,8 @@ router.get('/profile/:userId', async (req, res) => {
         _id: user._id,
         username: user.username,
         displayName: user.displayName,
+        email: user.getDecryptedEmail(),
+        verified: user.verified,
         winPoints: user.winPoints,
         matchesPlayed: user.matchesPlayed,
         subscribed: user.subscribed

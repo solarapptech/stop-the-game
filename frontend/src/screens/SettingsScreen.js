@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Text, Card, List, Switch, Button, TextInput, Dialog, Portal } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
@@ -6,7 +6,7 @@ import axios from 'axios';
 import theme from '../theme';
 
 const SettingsScreen = ({ navigation }) => {
-  const { user, updateUser, logout, updateDisplayName } = useAuth();
+  const { user, updateUser, logout, updateDisplayName, resendVerificationCode, refreshUser } = useAuth();
   const [soundEnabled, setSoundEnabled] = useState(user?.settings?.soundEnabled ?? true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(user?.settings?.notificationsEnabled ?? true);
   const [vibrationEnabled, setVibrationEnabled] = useState(user?.settings?.vibrationEnabled ?? true);
@@ -18,6 +18,12 @@ const SettingsScreen = ({ navigation }) => {
   const [editDisplayNameVisible, setEditDisplayNameVisible] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState(user?.displayName || user?.username || '');
   const [savingName, setSavingName] = useState(false);
+
+  useEffect(() => {
+    // Ensure we have the latest email/verified fields for display
+    refreshUser({ force: true, minAgeMs: 0 }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSaveSettings = async () => {
     setLoading(true);
@@ -127,6 +133,23 @@ const SettingsScreen = ({ navigation }) => {
               title="Email"
               description={user?.email || 'Not provided'}
               left={(props) => <List.Icon {...props} icon="email" />}
+              right={() => (
+                !user?.verified ? (
+                  <Button
+                    mode="text"
+                    onPress={async () => {
+                      try {
+                        await resendVerificationCode();
+                      } catch (e) {
+                        // ignore errors; Verify screen can retry
+                      }
+                      navigation.navigate('Verify');
+                    }}
+                  >
+                    Verify email
+                  </Button>
+                ) : null
+              )}
             />
             <List.Item
               title="Account Type"

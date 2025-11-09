@@ -1,9 +1,20 @@
 const { Resend } = require('resend');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const RESEND_KEY = process.env.RESEND_API_KEY;
+let resend = null;
+if (RESEND_KEY && RESEND_KEY.trim().length > 0) {
+  resend = new Resend(RESEND_KEY);
+} else {
+  console.log('[email] RESEND_API_KEY not set; email sending is disabled');
+}
 
 const sendVerificationEmail = async (email, code) => {
   try {
+    if (!resend) {
+      // No-op when email sending is disabled
+      console.log('[email] Skipping verification email send (email disabled)');
+      return { skipped: true };
+    }
     const { data, error } = await resend.emails.send({
       from: 'Stop! The Game <noreply@stopthegame.com>',
       to: email,
@@ -33,12 +44,22 @@ const sendVerificationEmail = async (email, code) => {
     });
 
     if (error) {
+      const invalidKey = error?.statusCode === 401 || /api key is invalid/i.test(String(error?.message || ''));
+      if (invalidKey) {
+        console.warn('[email] Invalid API key; skipping verification email');
+        return { skipped: true };
+      }
       console.error('Email send error:', error);
       throw error;
     }
 
     return data;
   } catch (error) {
+    const invalidKey = error?.statusCode === 401 || /api key is invalid/i.test(String(error?.message || ''));
+    if (invalidKey) {
+      console.warn('[email] Invalid API key on send; skipping verification email');
+      return { skipped: true };
+    }
     console.error('Failed to send verification email:', error);
     throw error;
   }
@@ -46,6 +67,10 @@ const sendVerificationEmail = async (email, code) => {
 
 const sendGameInviteEmail = async (email, inviterName, roomName, inviteCode) => {
   try {
+    if (!resend) {
+      console.log('[email] Skipping invite email send (email disabled)');
+      return { skipped: true };
+    }
     const { data, error } = await resend.emails.send({
       from: 'Stop! The Game <noreply@stopthegame.com>',
       to: email,
@@ -94,6 +119,11 @@ const sendGameInviteEmail = async (email, inviterName, roomName, inviteCode) => 
 
     return data;
   } catch (error) {
+    const invalidKey = error?.statusCode === 401 || /api key is invalid/i.test(String(error?.message || ''));
+    if (invalidKey) {
+      console.warn('[email] Invalid API key on send; skipping invite email');
+      return { skipped: true };
+    }
     console.error('Failed to send invite email:', error);
     throw error;
   }
