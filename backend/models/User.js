@@ -29,9 +29,9 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    lowercase: true,
     trim: true
     // No regex validator: email is encrypted before storage
+    // IMPORTANT: Do NOT use lowercase:true - it corrupts the base64 ciphertext
   },
   // Deterministic hash of the lowercase email for lookups (searchable while keeping encrypted email private)
   emailHash: {
