@@ -493,32 +493,35 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
       console.log(`[GAME FINISH] Highest score: ${highestScore}, Winners count: ${winners.length}, Is tie: ${isTie}`);
       console.log(`[GAME FINISH] Game winner:`, game.winner);
       
-      // Update stats for all players (defensive init)
-      for (const standing of standings) {
-        const userId = standing.user._id || standing.user;
+      // Update stats for all participants (defensive init)
+      const scoreByUserId = new Map(
+        standings.map(s => [String((s.user && (s.user._id || s.user)) || ''), Number(s.score) || 0])
+      );
+      const participants = Array.isArray(game.players) ? game.players : [];
+      for (const p of participants) {
+        const userId = (p.user && (p.user._id || p.user)) || p.user;
+        if (!userId) continue;
         console.log(`[GAME FINISH] Processing player ${userId}...`);
         const user = await User.findById(userId);
         if (user) {
           console.log(`[GAME FINISH] Before update - ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
-          
           if (typeof user.matchesPlayed !== 'number' || !Number.isFinite(user.matchesPlayed)) {
             user.matchesPlayed = 0;
           }
           user.matchesPlayed += 1;
-          
           if (!isTie && game.winner) {
             const winnerId = game.winner._id || game.winner;
-            if (userId.toString() === winnerId.toString()) {
+            if (String(userId) === String(winnerId)) {
               if (typeof user.winPoints !== 'number' || !Number.isFinite(user.winPoints)) {
                 user.winPoints = 0;
               }
-              user.winPoints += standing.score;
-              console.log(`[GAME FINISH] Winner ${user.displayName} (${userId}) earned ${standing.score} points. Total winPoints: ${user.winPoints}`);
+              const addScore = scoreByUserId.get(String(userId)) || 0;
+              user.winPoints += addScore;
+              console.log(`[GAME FINISH] Winner ${user.displayName} (${userId}) earned ${addScore} points. Total winPoints: ${user.winPoints}`);
             }
           } else if (isTie) {
             console.log(`[GAME FINISH] Draw detected - no winPoints awarded to ${user.displayName}`);
           }
-          
           await user.save();
           console.log(`[GAME FINISH] After save - ${user.displayName}: matchesPlayed=${user.matchesPlayed}, winPoints=${user.winPoints}`);
         } else {

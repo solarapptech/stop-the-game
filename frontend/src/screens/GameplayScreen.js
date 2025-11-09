@@ -153,7 +153,7 @@ const getCategoryIcon = (category) => {
 
 const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, updateUser, markStatsDirty } = useAuth();
   const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound, playAgainReady } = useSocket();
   const userId = (user && (user.id || user._id)) || null;
   const { 
@@ -420,10 +420,31 @@ const GameplayScreen = ({ navigation, route }) => {
         setPlayerScores(data.standings);
         setRematchTotal(data.standings.length);
       }
+      // Optimistically update local stats to avoid immediate API calls
+      try {
+        const myId = String((user && (user.id || user._id)) || '');
+        const myStanding = Array.isArray(data?.standings)
+          ? data.standings.find(s => String((s.user && (s.user._id || s.user)) || '') === myId)
+          : null;
+        const hasWinner = !!data?.winner;
+        const winnerId = hasWinner ? String((data.winner && (data.winner._id || data.winner)) || '') : null;
+        const iWon = hasWinner && winnerId === myId;
+        const currentWinPoints = Number(user?.winPoints) || 0;
+        const currentMatches = Number(user?.matchesPlayed) || 0;
+        const addPoints = iWon && myStanding && Number.isFinite(Number(myStanding.score)) ? Number(myStanding.score) : 0;
+        const optimistic = {
+          winPoints: currentWinPoints + addPoints,
+          matchesPlayed: currentMatches + 1,
+        };
+        await updateUser(optimistic);
+        if (typeof markStatsDirty === 'function') markStatsDirty();
+      } catch (e) {
+        // swallow optimistic update errors
+      }
       // Refresh user stats after game finishes
       try {
         console.log('[GameplayScreen] Calling refreshUser...');
-        await refreshUser();
+        await refreshUser({ force: true });
         console.log('[GameplayScreen] User stats refreshed after game finish');
       } catch (error) {
         console.error('[GameplayScreen] Failed to refresh user stats:', error);

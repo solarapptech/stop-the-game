@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import Constants from 'expo-constants';
@@ -81,6 +81,9 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [statsDirty, setStatsDirty] = useState(false);
+  const lastProfileFetchRef = useRef(0);
+  const refreshInFlightRef = useRef(null);
 
   useEffect(() => {
     loadStoredAuth();
@@ -102,6 +105,8 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
     }
   };
+
+  const markStatsDirty = () => setStatsDirty(true);
 
   const login = async (username, password) => {
     try {
@@ -248,30 +253,41 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const refreshUser = async () => {
+  const refreshUser = async (options = {}) => {
     try {
+      const force = !!options.force;
+      const minAgeMs = Number.isFinite(options.minAgeMs) ? options.minAgeMs : 30000;
+      const now = Date.now();
+      if (!force && user && now - lastProfileFetchRef.current < minAgeMs) {
+        return { success: true, user };
+      }
+      if (refreshInFlightRef.current) {
+        return await refreshInFlightRef.current;
+      }
       const uid = user?._id || user?.id;
       if (!uid) {
         console.log('[AuthContext] refreshUser - No user logged in');
         return { success: false, error: 'No user logged in' };
       }
-      
-      console.log(`[AuthContext] refreshUser - Fetching profile for user ${uid}`);
-      const response = await axios.get(`user/profile/${uid}`);
-      console.log('[AuthContext] refreshUser - Response:', response.data);
-      
-      const updatedUser = { ...user, ...response.data.user };
-      console.log('[AuthContext] refreshUser - Updated user:', {
-        _id: updatedUser._id,
-        username: updatedUser.username,
-        winPoints: updatedUser.winPoints,
-        matchesPlayed: updatedUser.matchesPlayed
-      });
-      
-      setUser(updatedUser);
-      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-      
-      return { success: true, user: updatedUser };
+      console.log(`[AuthContext] refreshUser - Fetching profile for user ${uid} (force=${force}, minAgeMs=${minAgeMs})`);
+      const inflight = (async () => {
+        const response = await axios.get(`user/profile/${uid}`);
+        console.log('[AuthContext] refreshUser - Response:', response.data);
+        const updatedUser = { ...user, ...response.data.user };
+        console.log('[AuthContext] refreshUser - Updated user:', {
+          _id: updatedUser._id,
+          username: updatedUser.username,
+          winPoints: updatedUser.winPoints,
+          matchesPlayed: updatedUser.matchesPlayed
+        });
+        setUser(updatedUser);
+        await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+        lastProfileFetchRef.current = Date.now();
+        setStatsDirty(false);
+        return { success: true, user: updatedUser };
+      })();
+      refreshInFlightRef.current = inflight.finally(() => { refreshInFlightRef.current = null; });
+      return await inflight;
     } catch (error) {
       console.error('[AuthContext] refreshUser error:', error);
       console.error('[AuthContext] refreshUser error details:', error.response?.data);
@@ -287,6 +303,7 @@ export const AuthProvider = ({ children }) => {
       user,
       token,
       loading,
+      statsDirty,
       login,
       register,
       logout,
@@ -295,6 +312,7 @@ export const AuthProvider = ({ children }) => {
       updateUser,
       updateDisplayName,
       refreshUser,
+      markStatsDirty,
       isAuthenticated: !!token
     }}>
       {children}

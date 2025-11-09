@@ -8,7 +8,7 @@ import { useSocket } from '../contexts/SocketContext';
 import theme from '../theme';
 
 const MenuScreen = ({ navigation }) => {
-  const { user, logout, updateDisplayName, refreshUser } = useAuth();
+  const { user, logout, updateDisplayName, refreshUser, statsDirty } = useAuth();
   const { socket, connected } = useSocket();
   const [stats, setStats] = useState({
     winPoints: user?.winPoints || 0,
@@ -32,19 +32,31 @@ const MenuScreen = ({ navigation }) => {
     }
   }, [user]);
 
-  // Refresh user stats when screen comes into focus
+  // Refresh user stats when screen comes into focus, but only if stats were marked dirty
   useFocusEffect(
     React.useCallback(() => {
+      let cancelled = false;
       const refreshStats = async () => {
         try {
-          await refreshUser();
-          console.log('[MenuScreen] User stats refreshed');
+          if (statsDirty) {
+            const result = await refreshUser({ force: true });
+            if (!cancelled) {
+              if (result?.success) {
+                console.log('[MenuScreen] User stats refreshed (dirty)');
+              } else {
+                console.log('[MenuScreen] Failed to refresh dirty stats:', result?.error || 'unknown');
+              }
+            }
+          } else {
+            console.log('[MenuScreen] Skipping refresh (stats not dirty)');
+          }
         } catch (error) {
-          console.error('[MenuScreen] Failed to refresh user stats:', error);
+          if (!cancelled) console.error('[MenuScreen] Failed to refresh user stats:', error);
         }
       };
       refreshStats();
-    }, [refreshUser])
+      return () => { cancelled = true; };
+    }, [refreshUser, statsDirty])
   );
 
   useEffect(() => {
