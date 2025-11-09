@@ -306,7 +306,8 @@ export const AuthProvider = ({ children }) => {
             // Treat 200 and 304 as valid
             validateStatus: (s) => s === 200 || s === 304
           };
-          if (profileEtagRef.current) {
+          // Only send ETag if not forcing a refresh; force should bypass cache
+          if (!force && profileEtagRef.current) {
             config.headers['If-None-Match'] = profileEtagRef.current;
           }
           try {

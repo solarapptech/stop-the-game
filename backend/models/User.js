@@ -149,8 +149,21 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 // Method to decrypt email
 userSchema.methods.getDecryptedEmail = function() {
   const encryptionKey = process.env.ENCRYPTION_KEY || 'default-encryption-key-32-chars!!';
-  const bytes = CryptoJS.AES.decrypt(this.email, encryptionKey);
-  return bytes.toString(CryptoJS.enc.Utf8);
+  const val = this.email;
+  if (!val) return null;
+  const looksEncrypted = typeof val === 'string' && val.startsWith('U2FsdGVkX1');
+  try {
+    const bytes = CryptoJS.AES.decrypt(val, encryptionKey);
+    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+    if (decrypted && decrypted.length > 0) {
+      return decrypted;
+    }
+    // If it looked encrypted but we couldn't decrypt into valid UTF-8, return null
+    // Otherwise assume it was plaintext and return as-is
+    return looksEncrypted ? null : val;
+  } catch (e) {
+    return looksEncrypted ? null : val;
+  }
 };
 
 // Method to generate verification code
