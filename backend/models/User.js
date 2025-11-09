@@ -151,18 +151,24 @@ userSchema.methods.getDecryptedEmail = function() {
   const encryptionKey = process.env.ENCRYPTION_KEY || 'default-encryption-key-32-chars!!';
   const val = this.email;
   if (!val) return null;
-  const looksEncrypted = typeof val === 'string' && val.startsWith('U2FsdGVkX1');
+  // Check if it looks encrypted (case-insensitive check for U2FsdGVkX1 prefix)
+  const looksEncrypted = typeof val === 'string' && val.toLowerCase().startsWith('u2fsdgvkx1');
+  if (!looksEncrypted) {
+    // If it doesn't look encrypted, assume it's plaintext and return as-is
+    return val;
+  }
+  // Try to decrypt
   try {
     const bytes = CryptoJS.AES.decrypt(val, encryptionKey);
     const decrypted = bytes.toString(CryptoJS.enc.Utf8);
     if (decrypted && decrypted.length > 0) {
       return decrypted;
     }
-    // If it looked encrypted but we couldn't decrypt into valid UTF-8, return null
-    // Otherwise assume it was plaintext and return as-is
-    return looksEncrypted ? null : val;
+    // Decryption failed, return null to avoid showing ciphertext
+    return null;
   } catch (e) {
-    return looksEncrypted ? null : val;
+    // Decryption error, return null to avoid showing ciphertext
+    return null;
   }
 };
 
@@ -198,20 +204,24 @@ userSchema.methods.toJSON = function() {
   // Decrypt email for response
   if (user.email) {
     const encryptionKey = process.env.ENCRYPTION_KEY || 'default-encryption-key-32-chars!!';
-    const looksEncrypted = typeof user.email === 'string' && user.email.startsWith('U2FsdGVkX1');
-    try {
-      const bytes = CryptoJS.AES.decrypt(user.email, encryptionKey);
-      const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-      if (decrypted && decrypted.length > 0) {
-        user.email = decrypted;
-      } else if (looksEncrypted) {
-        // ciphertext present but could not decrypt to valid UTF-8
+    // Case-insensitive check for encrypted prefix
+    const looksEncrypted = typeof user.email === 'string' && user.email.toLowerCase().startsWith('u2fsdgvkx1');
+    if (!looksEncrypted) {
+      // Not encrypted, leave as-is
+    } else {
+      try {
+        const bytes = CryptoJS.AES.decrypt(user.email, encryptionKey);
+        const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+        if (decrypted && decrypted.length > 0) {
+          user.email = decrypted;
+        } else {
+          // ciphertext present but could not decrypt to valid UTF-8
+          user.email = null;
+        }
+      } catch (e) {
+        // On any error, avoid throwing during JSON serialization
         user.email = null;
       }
-      // if not encrypted, leave as-is (plaintext)
-    } catch (e) {
-      // On any error, avoid throwing during JSON serialization
-      user.email = looksEncrypted ? null : user.email;
     }
   }
   // Remove internal hash from public JSON

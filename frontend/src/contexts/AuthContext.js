@@ -100,6 +100,17 @@ export const AuthProvider = ({ children }) => {
         setToken(storedToken);
         setUser(JSON.parse(storedUser));
         axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+        // Ensure we have decrypted email/verified by fetching current user
+        try {
+          const me = await axios.get('auth/me');
+          if (me?.data?.user) {
+            const merged = { ...JSON.parse(storedUser), ...me.data.user };
+            setUser(merged);
+            await AsyncStorage.setItem('user', JSON.stringify(merged));
+          }
+        } catch (e) {
+          // ignore network/me errors at startup
+        }
       }
     } catch (error) {
       console.error('Error loading stored auth:', error);
@@ -131,6 +142,17 @@ export const AuthProvider = ({ children }) => {
       setToken(token);
       setUser(user);
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      // Refresh user from /auth/me to ensure decrypted email
+      try {
+        const me = await axios.get('auth/me');
+        if (me?.data?.user) {
+          const merged = { ...user, ...me.data.user };
+          setUser(merged);
+          await AsyncStorage.setItem('user', JSON.stringify(merged));
+        }
+      } catch (e) {
+        // ignore if fails; UI can refresh later
+      }
       
       return { success: true, user };
     } catch (error) {
@@ -171,6 +193,17 @@ export const AuthProvider = ({ children }) => {
       setToken(token);
       setUser(user);
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      // Refresh user from /auth/me to ensure decrypted email
+      try {
+        const me = await axios.get('auth/me');
+        if (me?.data?.user) {
+          const merged = { ...user, ...me.data.user };
+          setUser(merged);
+          await AsyncStorage.setItem('user', JSON.stringify(merged));
+        }
+      } catch (e) {
+        // ignore if fails; UI can refresh later
+      }
       
       return { success: true, user };
     } catch (error) {

@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import theme from '../theme';
 
 const UsernameSetupScreen = ({ navigation }) => {
-  const { user, updateUsername, checkUsernameAvailable } = useAuth();
+  const { user, updateUsername, checkUsernameAvailable, refreshUser } = useAuth();
   const [username, setUsername] = useState(user?.username || '');
   const [checking, setChecking] = useState(false);
   const [available, setAvailable] = useState(null); // null | true | false
@@ -13,6 +13,8 @@ const UsernameSetupScreen = ({ navigation }) => {
 
   useEffect(() => {
     const init = async () => {
+      // Ensure user profile is fresh so email is decrypted
+      try { await refreshUser({ force: true, minAgeMs: 0 }); } catch (e) {}
       // Prefer a suggestion derived from the email local part
       const email = user?.email || '';
       const local = typeof email === 'string' ? (email.split('@')[0] || '') : '';
