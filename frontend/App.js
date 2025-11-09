@@ -12,6 +12,7 @@ import LoadingScreen from './src/screens/LoadingScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import VerifyScreen from './src/screens/VerifyScreen';
+import UsernameSetupScreen from './src/screens/UsernameSetupScreen';
 import MenuScreen from './src/screens/MenuScreen';
 import CreateRoomScreen from './src/screens/CreateRoomScreen';
 import JoinRoomScreen from './src/screens/JoinRoomScreen';
@@ -105,6 +106,14 @@ export default function App() {
                   component={RegisterScreen} 
                   options={{ 
                     title: 'Create Account',
+                    headerLeft: null 
+                  }}
+                />
+                <Stack.Screen 
+                  name="UsernameSetup" 
+                  component={UsernameSetupScreen} 
+                  options={{ 
+                    title: 'Set Username',
                     headerLeft: null 
                   }}
                 />

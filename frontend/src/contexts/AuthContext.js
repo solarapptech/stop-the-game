@@ -255,6 +255,33 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const checkUsernameAvailable = async (username) => {
+    try {
+      const response = await axios.get('auth/username-available', { params: { username } });
+      return !!response.data?.available;
+    } catch (error) {
+      console.error('[AuthContext] checkUsernameAvailable error:', error);
+      return false;
+    }
+  };
+
+  const updateUsername = async (username) => {
+    try {
+      const response = await axios.put('auth/username', { username });
+      const serverUser = response.data?.user || {};
+      const updatedUser = { ...user, username: serverUser.username, displayName: serverUser.displayName };
+      setUser(updatedUser);
+      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+      return { success: true, user: updatedUser };
+    } catch (error) {
+      console.error('[AuthContext] updateUsername error:', error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message || 'Failed to update username'
+      };
+    }
+  };
+
   const refreshUser = async (options = {}) => {
     try {
       const force = !!options.force;
@@ -346,6 +373,8 @@ export const AuthProvider = ({ children }) => {
       resendVerificationCode,
       updateUser,
       updateDisplayName,
+      checkUsernameAvailable,
+      updateUsername,
       refreshUser,
       markStatsDirty,
       isAuthenticated: !!token

@@ -40,11 +40,7 @@ const LoginScreen = ({ navigation }) => {
     setLoading(false);
 
     if (result.success) {
-      if (!result.user.verified) {
-        navigation.navigate('Verify');
-      } else {
-        navigation.replace('Menu');
-      }
+      navigation.replace('Menu');
     } else {
       Alert.alert('Login Failed', result.error);
     }

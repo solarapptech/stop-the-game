@@ -217,7 +217,7 @@ const MenuScreen = ({ navigation }) => {
 
           {/* Stats */}
           <View style={styles.statsHeaderRow}>
-            <Text style={styles.statsHeaderText}>Stats</Text>
+            
             <IconButton
               icon={statsRefreshing ? 'reload' : 'refresh'}
               size={18}

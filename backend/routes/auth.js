@@ -278,4 +278,69 @@ router.put('/displayname', authMiddleware, [
   }
 });
 
+// Check if a username is available
+router.get('/username-available', async (req, res) => {
+  try {
+    const username = (req.query.username || '').trim();
+    if (!username || username.length < 3 || username.length > 30) {
+      return res.json({ available: false });
+    }
+
+    const existing = await User.findOne({ username });
+    return res.json({ available: !existing });
+  } catch (error) {
+    console.error('Username availability error:', error);
+    return res.status(500).json({ message: 'Error checking username availability' });
+  }
+});
+
+// Update username (and sync display name to match)
+router.put('/username', authMiddleware, [
+  body('username').isLength({ min: 3, max: 30 }).trim()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { username } = req.body;
+    const user = req.user;
+
+    // No-op if unchanged
+    if (user.username === username) {
+      return res.json({
+        message: 'Username unchanged',
+        user: {
+          id: user._id,
+          username: user.username,
+          displayName: user.displayName
+        }
+      });
+    }
+
+    // Ensure uniqueness
+    const conflict = await User.findOne({ username, _id: { $ne: user._id } });
+    if (conflict) {
+      return res.status(400).json({ message: 'Username already taken' });
+    }
+
+    user.username = username;
+    user.displayName = username; // keep display name in sync
+    await user.save();
+
+    res.json({
+      message: 'Username updated successfully',
+      user: {
+        id: user._id,
+        username: user.username,
+        displayName: user.displayName
+      }
+    });
+  } catch (error) {
+    console.error('Update username error:', error);
+    res.status(500).json({ message: 'Error updating username' });
+  }
+});
+
 module.exports = router;

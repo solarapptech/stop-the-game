@@ -6,22 +6,51 @@ import theme from '../theme';
 
 const RegisterScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { register } = useAuth();
+  const { register, checkUsernameAvailable } = useAuth();
 
   const validateEmail = (email) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return re.test(email);
   };
 
+  const generateBaseFromEmail = (em) => {
+    try {
+      const local = (em || '').split('@')[0] || '';
+      let base = local.replace(/[^a-zA-Z0-9_\.\-]/g, '').toLowerCase();
+      if (base.length < 3) base = `player${Math.floor(Math.random() * 1000)}`;
+      if (base.length > 30) base = base.slice(0, 30);
+      return base;
+    } catch {
+      return `player${Math.floor(Math.random() * 1000)}`;
+    }
+  };
+
+  const pickAvailableUsername = async (base) => {
+    // ensure base within 3..30
+    let core = base;
+    if (core.length < 3) core = `${core}123`.slice(0, 3);
+    if (core.length > 30) core = core.slice(0, 30);
+
+    // try base, then base1, base2, ... up to reasonable limit
+    const maxTries = 50;
+    for (let i = 0; i <= maxTries; i++) {
+      const suffix = i === 0 ? '' : String(i);
+      const maxCoreLen = 30 - suffix.length;
+      const candidate = (core.length > maxCoreLen ? core.slice(0, maxCoreLen) : core) + suffix;
+      const available = await checkUsernameAvailable(candidate);
+      if (available) return candidate;
+    }
+    // fallback
+    return `${core.slice(0, 27)}${Math.floor(Math.random() * 900 + 100)}`;
+  };
+
   const handleRegister = async () => {
     // Validation
-    if (!email || !username || !password || !confirmPassword) {
+    if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
@@ -31,18 +60,8 @@ const RegisterScreen = ({ navigation }) => {
       return;
     }
 
-    if (username.length < 3) {
-      Alert.alert('Error', 'Username must be at least 3 characters');
-      return;
-    }
-
     if (password.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
       return;
     }
 
@@ -52,13 +71,19 @@ const RegisterScreen = ({ navigation }) => {
     }
 
     setLoading(true);
-    const result = await register(email, username, password);
-    setLoading(false);
-
-    if (result.success) {
-      navigation.navigate('Verify');
-    } else {
-      Alert.alert('Registration Failed', result.error);
+    try {
+      const base = generateBaseFromEmail(email);
+      const autoUsername = await pickAvailableUsername(base);
+      const result = await register(email, autoUsername, password);
+      if (result.success) {
+        navigation.replace('UsernameSetup');
+      } else {
+        Alert.alert('Registration Failed', result.error);
+      }
+    } catch (e) {
+      Alert.alert('Registration Failed', e?.message || 'Unknown error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -80,16 +105,6 @@ const RegisterScreen = ({ navigation }) => {
         />
 
         <TextInput
-          label="Username"
-          value={username}
-          onChangeText={setUsername}
-          style={styles.input}
-          mode="outlined"
-          autoCapitalize="none"
-          left={<TextInput.Icon icon="account" />}
-        />
-
-        <TextInput
           label="Password"
           value={password}
           onChangeText={setPassword}
@@ -103,16 +118,6 @@ const RegisterScreen = ({ navigation }) => {
               onPress={() => setShowPassword(!showPassword)}
             />
           }
-        />
-
-        <TextInput
-          label="Confirm Password"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          style={styles.input}
-          mode="outlined"
-          secureTextEntry={!showPassword}
-          left={<TextInput.Icon icon="lock-check" />}
         />
 
         <View style={styles.checkboxContainer}>
