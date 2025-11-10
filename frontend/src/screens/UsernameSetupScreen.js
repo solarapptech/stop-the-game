@@ -7,15 +7,14 @@ import theme from '../theme';
 const UsernameSetupScreen = ({ navigation }) => {
   const { user, updateUsername, checkUsernameAvailable, refreshUser } = useAuth();
   const [username, setUsername] = useState(user?.username || '');
-  const [checking, setChecking] = useState(false);
-  const [available, setAvailable] = useState(null); // null | true | false
+  const [errorMessage, setErrorMessage] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const init = async () => {
       // Ensure user profile is fresh so email is decrypted
       try { await refreshUser({ force: true, minAgeMs: 0 }); } catch (e) {}
-      // Prefer a suggestion derived from the email local part
+      // Prefer a suggestion derived from the email local part (no suffix)
       const email = user?.email || '';
       const local = typeof email === 'string' ? (email.split('@')[0] || '') : '';
       let base = local.replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase();
@@ -23,22 +22,9 @@ const UsernameSetupScreen = ({ navigation }) => {
       if (!base || base.length < 3) base = `player${Math.floor(Math.random() * 1000)}`;
       if (base.length > 30) base = base.slice(0, 30);
 
-      // Find first available: base, base1, base2, ... up to 50 tries
-      let suggestion = base;
-      const maxTries = 50;
-      for (let i = 0; i <= maxTries; i++) {
-        const suffix = i === 0 ? '' : String(i);
-        const maxCoreLen = 30 - suffix.length;
-        const candidate = (base.length > maxCoreLen ? base.slice(0, maxCoreLen) : base) + suffix;
-        try {
-          const ok = await checkUsernameAvailable(candidate);
-          if (ok) { suggestion = candidate; break; }
-        } catch (_) {
-          // ignore availability errors and keep trying
-        }
-      }
-      setUsername(suggestion);
-      setAvailable(null);
+      // Just use the base username without checking availability
+      setUsername(base);
+      setErrorMessage('');
     };
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,50 +38,47 @@ const UsernameSetupScreen = ({ navigation }) => {
     return null;
   };
 
-  const handleCheck = async () => {
-    const err = validateLocal(username);
-    if (err) {
-      setAvailable(false);
-      return;
-    }
-    setChecking(true);
-    try {
-      const ok = await checkUsernameAvailable(username);
-      setAvailable(!!ok);
-    } catch (e) {
-      setAvailable(null);
-    } finally {
-      setChecking(false);
-    }
-  };
-
   const handleContinue = async () => {
+    // Clear previous error
+    setErrorMessage('');
+
+    // Validate format
     const err = validateLocal(username);
     if (err) {
-      Alert.alert('Invalid username', err);
+      setErrorMessage(err);
       return;
     }
 
+    // If username hasn't changed, just proceed
     if (username === (user?.username || '')) {
       navigation.replace('Menu');
       return;
     }
 
+    // Check availability first
     setSaving(true);
+    try {
+      const available = await checkUsernameAvailable(username);
+      if (!available) {
+        setErrorMessage('Username already taken');
+        setSaving(false);
+        return;
+      }
+    } catch (e) {
+      setErrorMessage('Error checking username availability');
+      setSaving(false);
+      return;
+    }
+
+    // Update username
     const result = await updateUsername(username);
     setSaving(false);
 
     if (result.success) {
       navigation.replace('Menu');
     } else {
-      Alert.alert('Username Update Failed', result.error || 'Please try a different username');
+      setErrorMessage(result.error || 'Failed to update username');
     }
-  };
-
-  const helperText = () => {
-    if (available === true) return 'Username is available';
-    if (available === false) return 'Username is taken';
-    return '';
   };
 
   return (
@@ -107,36 +90,27 @@ const UsernameSetupScreen = ({ navigation }) => {
         <TextInput
           label="Username"
           value={username}
-          onChangeText={(t) => { setUsername(t); setAvailable(null); }}
+          onChangeText={(t) => { setUsername(t); setErrorMessage(''); }}
           style={styles.input}
           mode="outlined"
           autoCapitalize="none"
           left={<TextInput.Icon icon="account" />}
+          error={!!errorMessage}
         />
-        <HelperText type={available ? 'info' : 'error'} visible={available !== null}>
-          {helperText()}
+        <HelperText type="error" visible={!!errorMessage}>
+          {errorMessage}
         </HelperText>
 
-        <View style={styles.row}>
-          <Button
-            mode="outlined"
-            onPress={handleCheck}
-            disabled={checking || saving}
-            style={styles.checkButton}
-          >
-            {checking ? 'Checking...' : 'Check availability'}
-          </Button>
-          <Button
-            mode="contained"
-            onPress={handleContinue}
-            loading={saving}
-            disabled={saving}
-            contentStyle={styles.buttonContent}
-            style={styles.continueButton}
-          >
-            Continue
-          </Button>
-        </View>
+        <Button
+          mode="contained"
+          onPress={handleContinue}
+          loading={saving}
+          disabled={saving}
+          contentStyle={styles.buttonContent}
+          style={styles.continueButton}
+        >
+          Let's Play!
+        </Button>
       </View>
     </View>
   );
@@ -172,18 +146,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: '#FFFFFF'
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
-  },
-  checkButton: {
-    flex: 1,
-    marginRight: 10,
-    borderColor: theme.colors.primary
-  },
   continueButton: {
-    flex: 1,
+    marginTop: 8,
     backgroundColor: theme.colors.primary
   },
   buttonContent: {

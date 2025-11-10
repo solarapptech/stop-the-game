@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator, TouchableOpacity, Dimensions } from 'react-native';
+import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable, Portal, Modal } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
 import theme from '../theme';
+import SettingsScreen from './SettingsScreen';
 
 // Helper function to get icon for category
 const getCategoryIcon = (category) => {
@@ -154,7 +155,7 @@ const getCategoryIcon = (category) => {
 const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
   const { user, refreshUser, updateUser, markStatsDirty } = useAuth();
-  const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound, playAgainReady } = useSocket();
+  const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound, playAgainReady, leaveRoom: socketLeaveRoom } = useSocket();
   const userId = (user && (user.id || user._id)) || null;
   const { 
     gameState, 
@@ -213,6 +214,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const [categoryStuckTimer, setCategoryStuckTimer] = useState(0);
   const [showManualReload, setShowManualReload] = useState(false);
   const [isReloadingCategories, setIsReloadingCategories] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
   
   const timerRef = useRef(null);
   const inputRefs = useRef({});
@@ -231,6 +233,10 @@ const GameplayScreen = ({ navigation, route }) => {
   const stopShownRef = useRef(false);
   const phaseRef = useRef(phase);
   const userIdRef = useRef(userId);
+  const isLeavingRef = useRef(false);
+  const { height: winH, width: winW } = Dimensions.get('window');
+  const HEADER_HEIGHT = Math.max(56, Math.round(winH * 0.07));
+  const CIRCLE_SIZE = Math.max(28, Math.min(64, Math.round(HEADER_HEIGHT * 0.70)));
 
   useEffect(() => {
     loadGameState();
@@ -245,6 +251,28 @@ const GameplayScreen = ({ navigation, route }) => {
       if (categoryStuckTimerRef.current) clearInterval(categoryStuckTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleLeaveGame();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (isLeavingRef.current) return;
+      // Allow internal Gameplay replace (e.g., rematch or gameId change)
+      const targetRoute = e?.data?.action?.payload?.name;
+      if (targetRoute === 'Gameplay') {
+        return;
+      }
+      e.preventDefault();
+      handleLeaveGame();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -594,6 +622,86 @@ const GameplayScreen = ({ navigation, route }) => {
       }
     };
   }, [phase, selectionDeadline]);
+
+  const playersForHeader = React.useMemo(() => {
+    const fromGame = Array.isArray(gameState?.players) ? gameState.players : [];
+    if (fromGame.length > 0) {
+      return fromGame.map((p, idx) => {
+        const u = p.user || {};
+        const id = (u && (u._id || u)) || idx.toString();
+        const name = (u && (u.displayName || u.username)) || p.displayName || p.username || 'Player';
+        return { id: String(id), name: String(name) };
+      });
+    }
+    if (Array.isArray(playerScores) && playerScores.length > 0) {
+      return playerScores.map((s, idx) => {
+        const u = s.user || {};
+        const id = (u && (u._id || u)) || idx.toString();
+        const name = (u && (u.displayName || u.username)) || s.displayName || s.username || 'Player';
+        return { id: String(id), name: String(name) };
+      });
+    }
+    const meName = user?.displayName || user?.username || 'You';
+    const meId = String(user?.id || user?._id || 'me');
+    return [{ id: meId, name: meName }];
+  }, [gameState, playerScores, user]);
+
+  const pointsById = React.useMemo(() => {
+    const map = {};
+    const src = Array.isArray(playerScores) && playerScores.length > 0
+      ? playerScores
+      : (Array.isArray(gameState?.standings) ? gameState.standings : []);
+    src.forEach((s, idx) => {
+      const u = s.user || {};
+      const id = (u && (u._id || u)) || idx.toString();
+      const pid = String(id);
+      const score = Number(s.score) || 0;
+      map[pid] = score;
+    });
+    return map;
+  }, [playerScores, gameState]);
+
+  // Determine the player with the highest score (only if not tied)
+  const leaderPlayerId = React.useMemo(() => {
+    const scores = Object.entries(pointsById);
+    if (scores.length === 0) return null;
+    
+    // Find max score
+    const maxScore = Math.max(...scores.map(([_, score]) => score));
+    
+    // If max score is 0, no leader yet
+    if (maxScore === 0) return null;
+    
+    // Count how many players have the max score
+    const playersWithMaxScore = scores.filter(([_, score]) => score === maxScore);
+    
+    // Only return leader if there's exactly one player with max score (no tie)
+    if (playersWithMaxScore.length === 1) {
+      return playersWithMaxScore[0][0];
+    }
+    
+    return null; // Tie or no clear leader
+  }, [pointsById]);
+
+  const handleLeaveGame = () => {
+    if (isLeavingRef.current) return;
+    Alert.alert(
+      'Leave Game',
+      'Are you sure you want to leave the current game?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes',
+          style: 'destructive',
+          onPress: () => {
+            isLeavingRef.current = true;
+            try { if (socket && connected && isAuthenticated && typeof socketLeaveRoom === 'function') socketLeaveRoom(); } catch (e) {}
+            navigation.navigate('Menu');
+          }
+        }
+      ]
+    );
+  };
 
   const handleCategoryReload = async (isAuto = false) => {
     console.log(`[CATEGORY RELOAD] ${isAuto ? 'Auto' : 'Manual'} reload triggered`);
@@ -1827,7 +1935,64 @@ const GameplayScreen = ({ navigation, route }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: HEADER_HEIGHT }]}>
+      <View style={[styles.gameHeader, { height: HEADER_HEIGHT }]}>
+        <TouchableOpacity onPress={handleLeaveGame} style={styles.headerIconBtn} activeOpacity={0.7}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#424242" />
+        </TouchableOpacity>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.headerScroll} contentContainerStyle={styles.headerCenter}>
+          {playersForHeader.map((p) => {
+            const isLeader = leaderPlayerId && p.id === leaderPlayerId;
+            return (
+              <View key={p.id} style={[styles.playerItem, { width: CIRCLE_SIZE + 28 }]}> 
+                <View style={[styles.playerCircle, { width: CIRCLE_SIZE, height: CIRCLE_SIZE, borderRadius: CIRCLE_SIZE / 2 }]}> 
+                  <MaterialCommunityIcons name="account" size={Math.round(CIRCLE_SIZE * 0.55)} color={theme.colors.primary} /> 
+                  {isLeader && (
+                    <View style={[styles.crownContainer, {
+                      top: -CIRCLE_SIZE * 0.08,
+                      right: -CIRCLE_SIZE * 0.08,
+                    }]}>
+                      <MaterialCommunityIcons 
+                        name="crown" 
+                        size={Math.round(CIRCLE_SIZE * 0.45)} 
+                        color="#FFD700" 
+                        style={{ transform: [{ rotate: '45deg' }] }}
+                      />
+                    </View>
+                  )}
+                  <View style={[styles.scorePill, { 
+                    width: (CIRCLE_SIZE + 28) * 0.7, // Reduced by 10% (was 0.8, now 0.7)
+                    left: '50%', 
+                    transform: [
+                      { translateX: -((CIRCLE_SIZE + 28) * 0.35) } // Adjusted for new width (0.35 = 0.7/2)
+                    ]
+                  }]}> 
+                    <Text style={styles.scorePillText}>{(pointsById && pointsById[p.id]) != null ? pointsById[p.id] : 0}</Text> 
+                  </View> 
+                </View> 
+                <Text style={[styles.playerName, { maxWidth: CIRCLE_SIZE + 20, fontSize: 7 }]} numberOfLines={1}>{p.name}</Text> 
+              </View>
+            );
+          })}
+        </ScrollView>
+        <TouchableOpacity onPress={() => setSettingsVisible(true)} style={styles.headerIconBtn} activeOpacity={0.7}>
+          <MaterialCommunityIcons name="cog" size={22} color="#424242" />
+        </TouchableOpacity>
+      </View>
+      <Portal>
+        <Modal
+          visible={settingsVisible}
+          onDismiss={() => setSettingsVisible(false)}
+          contentContainerStyle={[
+            styles.settingsModal,
+            { maxHeight: Math.round(winH * 0.9), width: Math.round(winW * 0.94) }
+          ]}
+        >
+          <View style={{ height: Math.round(winH * 0.88) }}>
+            <SettingsScreen navigation={navigation} onClose={() => setSettingsVisible(false)} inGame />
+          </View>
+        </Modal>
+      </Portal>
       {showStopOverlay && (
         <View style={styles.revealOverlay} pointerEvents="none">
           <Animated.View style={[styles.revealBox]}>
@@ -2137,6 +2302,90 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: theme.colors.primary,
+  },
+  gameHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    zIndex: 20,
+    elevation: 12,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerIconBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerScroll: {
+    flex: 1,
+    height: '100%',
+  },
+  headerCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playerItem: {
+    width: 68,
+    alignItems: 'center',
+    marginHorizontal: 6,
+  },
+  playerCircle: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F5F5',
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+  },
+  crownContainer: {
+    position: 'absolute',
+    zIndex: 10,
+  },
+  playerName: {
+    marginTop: 4,
+    fontSize: 9,
+    color: '#424242',
+    maxWidth: 68,
+    textAlign: 'center',
+  },
+  scorePill: {
+    position: 'absolute',
+    bottom: 0,
+    paddingHorizontal: 4, // Slightly more horizontal padding
+    paddingVertical: 0,
+    height: 14, // Increased height to ensure text fits
+    minWidth: 25, // Slightly wider minimum width
+    borderRadius: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scorePillText: {
+    fontSize: 10, // Increased font size for better visibility
+    fontWeight: 'bold',
+    color: theme.colors.primary,
+    lineHeight: 12, // Adjusted line height
+    textAlign: 'center',
+    paddingHorizontal: 1,
+    includeFontPadding: false, // Remove any default font padding
+    textAlignVertical: 'center', // Better vertical alignment
+  },
+  settingsModal: {
+    margin: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 0,
+    maxHeight: '90%',
+    alignSelf: 'center',
+    overflow: 'hidden',
   },
   header: {
     backgroundColor: '#FFFFFF',

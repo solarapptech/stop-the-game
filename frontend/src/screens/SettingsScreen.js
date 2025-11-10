@@ -1,12 +1,42 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Text, Card, List, Switch, Button, TextInput, Dialog, Portal } from 'react-native-paper';
+import { Text, Card, List, Switch, Button, TextInput, Dialog, Portal, IconButton } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import theme from '../theme';
 
-const SettingsScreen = ({ navigation }) => {
-  const { user, updateUser, logout, updateDisplayName, resendVerificationCode, refreshUser } = useAuth();
+const SettingsScreen = ({ navigation, onClose, inGame }) => {
+  const { user, updateUser, logout, updateDisplayName, resendVerificationCode, refreshUser } = useAuth() || {};
+  const refreshUserSafe = async (opts = {}) => {
+    if (typeof refreshUser === 'function') {
+      return await refreshUser(opts);
+    }
+    return { success: false, noContext: true };
+  };
+  const updateUserSafe = async (updates = {}) => {
+    if (typeof updateUser === 'function') {
+      return await updateUser(updates);
+    }
+    return { success: false, noContext: true };
+  };
+  const updateDisplayNameSafe = async (name) => {
+    if (typeof updateDisplayName === 'function') {
+      return await updateDisplayName(name);
+    }
+    return { success: false, noContext: true };
+  };
+  const logoutSafe = async () => {
+    if (typeof logout === 'function') {
+      return await logout();
+    }
+    return { success: false, noContext: true };
+  };
+  const resendVerificationCodeSafe = async () => {
+    if (typeof resendVerificationCode === 'function') {
+      return await resendVerificationCode();
+    }
+    return { success: false, noContext: true };
+  };
   const [soundEnabled, setSoundEnabled] = useState(user?.settings?.soundEnabled ?? true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(user?.settings?.notificationsEnabled ?? true);
   const [vibrationEnabled, setVibrationEnabled] = useState(user?.settings?.vibrationEnabled ?? true);
@@ -21,7 +51,7 @@ const SettingsScreen = ({ navigation }) => {
 
   useEffect(() => {
     // Ensure we have the latest email/verified fields for display
-    refreshUser({ force: true, minAgeMs: 0 }).catch(() => {});
+    refreshUserSafe({ force: true, minAgeMs: 0 }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -33,9 +63,8 @@ const SettingsScreen = ({ navigation }) => {
         notificationsEnabled,
         vibrationEnabled
       };
-      
-  await axios.put(`/user/settings`, { settings });
-      await updateUser({ settings });
+      await axios.put(`/user/settings`, { settings });
+      await updateUserSafe({ settings });
       Alert.alert('Success', 'Settings saved successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to save settings');
@@ -101,13 +130,30 @@ const SettingsScreen = ({ navigation }) => {
     );
   };
 
+  const handleClose = () => {
+    if (typeof onClose === 'function') {
+      onClose();
+      return;
+    }
+    if (navigation && typeof navigation.goBack === 'function') {
+      navigation.goBack();
+    }
+  };
+
   return (
     <View style={styles.container}>
+      <View style={styles.settingsHeader}>
+        <IconButton 
+          icon="close" 
+          onPress={handleClose}
+          accessibilityLabel="Close settings"
+        />
+      </View>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Account Info */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>Account Information</Text>
+        {!inGame && (
+          <Card style={styles.card}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>Account Information</Text>
             <List.Item
               title="Username"
               description={user?.username}
@@ -139,7 +185,7 @@ const SettingsScreen = ({ navigation }) => {
                     mode="text"
                     onPress={async () => {
                       try {
-                        await resendVerificationCode();
+                        await resendVerificationCodeSafe();
                       } catch (e) {
                         // ignore errors; Verify screen can retry
                       }
@@ -165,8 +211,9 @@ const SettingsScreen = ({ navigation }) => {
                 </Button>
               )}
             />
-          </Card.Content>
-        </Card>
+            </Card.Content>
+          </Card>
+        )}
 
         {/* Game Settings */}
         <Card style={styles.card}>
@@ -208,32 +255,36 @@ const SettingsScreen = ({ navigation }) => {
           </Card.Content>
         </Card>
 
-        {/* Security */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>Security</Text>
-            <List.Item
-              title="Change Password"
-              description="Update your account password"
-              left={(props) => <List.Icon {...props} icon="lock-reset" />}
-              onPress={() => setChangePasswordDialog(true)}
-            />
-          </Card.Content>
-        </Card>
+        {!inGame && (
+          <>
+            {/* Security */}
+            <Card style={styles.card}>
+              <Card.Content>
+                <Text style={styles.sectionTitle}>Security</Text>
+                <List.Item
+                  title="Change Password"
+                  description="Update your account password"
+                  left={(props) => <List.Icon {...props} icon="lock-reset" />}
+                  onPress={() => setChangePasswordDialog(true)}
+                />
+              </Card.Content>
+            </Card>
 
-        {/* Danger Zone */}
-        <Card style={[styles.card, styles.dangerCard]}>
-          <Card.Content>
-            <Text style={[styles.sectionTitle, styles.dangerTitle]}>Danger Zone</Text>
-            <List.Item
-              title="Delete Account"
-              description="Permanently delete your account and data"
-              titleStyle={styles.dangerText}
-              left={(props) => <List.Icon {...props} icon="delete-forever" color="#F44336" />}
-              onPress={handleDeleteAccount}
-            />
-          </Card.Content>
-        </Card>
+            {/* Danger Zone */}
+            <Card style={[styles.card, styles.dangerCard]}>
+              <Card.Content>
+                <Text style={[styles.sectionTitle, styles.dangerTitle]}>Danger Zone</Text>
+                <List.Item
+                  title="Delete Account"
+                  description="Permanently delete your account and data"
+                  titleStyle={styles.dangerText}
+                  left={(props) => <List.Icon {...props} icon="delete-forever" color="#F44336" />}
+                  onPress={handleDeleteAccount}
+                />
+              </Card.Content>
+            </Card>
+          </>
+        )}
 
         {/* Save Button */}
         <Button
@@ -327,7 +378,7 @@ const SettingsScreen = ({ navigation }) => {
                   return;
                 }
                 setSavingName(true);
-                const result = await updateDisplayName(name);
+                const result = await updateDisplayNameSafe(name);
                 setSavingName(false);
                 if (result?.success) {
                   setEditDisplayNameVisible(false);
@@ -356,6 +407,12 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
     paddingBottom: 30,
+  },
+  settingsHeader: {
+    alignItems: 'flex-end',
+    paddingTop: 8,
+    paddingRight: 8,
+    backgroundColor: '#FFFFFF',
   },
   card: {
     marginBottom: 20,

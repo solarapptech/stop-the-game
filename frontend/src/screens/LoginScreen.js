@@ -76,7 +76,7 @@ const LoginScreen = ({ navigation }) => {
 
         <View style={styles.formContainer}>
           <TextInput
-            label="Username"
+            label="Username or Email"
             value={username}
             onChangeText={setUsername}
             style={styles.input}
