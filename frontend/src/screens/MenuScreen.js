@@ -5,11 +5,13 @@ import { Text, Button, Card, Avatar, IconButton, Badge, ActivityIndicator, TextI
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const MenuScreen = ({ navigation }) => {
   const { user, logout, updateDisplayName, refreshUser, statsDirty } = useAuth();
   const { socket, connected } = useSocket();
+  const { t } = useLanguage();
   const [stats, setStats] = useState({
     winPoints: user?.winPoints || 0,
     matchesPlayed: user?.matchesPlayed || 0,
@@ -90,7 +92,7 @@ const MenuScreen = ({ navigation }) => {
     const handleQuickPlayError = (data) => {
       setQuickPlayVisible(false);
       setMatchmakingStatus('searching');
-      Alert.alert('Error', data.message || 'Failed to find a match');
+      Alert.alert(t('common.error'), data.message || t('menu.quickPlayError'));
     };
 
     socket.on('quickplay-matched', handleQuickPlayMatched);
@@ -104,7 +106,7 @@ const MenuScreen = ({ navigation }) => {
 
   const handleQuickPlay = () => {
     if (!connected) {
-      Alert.alert('Error', 'Not connected to server');
+      Alert.alert(t('common.error'), t('menu.notConnected'));
       return;
     }
     setQuickPlayVisible(true);
@@ -124,12 +126,12 @@ const MenuScreen = ({ navigation }) => {
 
   const handleLogout = () => {
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      t('menu.logout'),
+      t('menu.logoutConfirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         { 
-          text: 'Logout', 
+          text: t('menu.logout'), 
           onPress: async () => {
             await logout();
             navigation.replace('Login');
@@ -142,29 +144,29 @@ const MenuScreen = ({ navigation }) => {
 
   const menuItems = [
     {
-      title: 'Create Room',
-      subtitle: 'Start a new game room',
+      title: t('menu.createRoom'),
+      subtitle: t('menu.createRoomDesc'),
       icon: 'plus-circle',
       color: '#4CAF50',
       onPress: () => navigation.navigate('CreateRoom'),
     },
     {
-      title: 'Join Room',
-      subtitle: 'Enter an existing room',
+      title: t('menu.joinRoom'),
+      subtitle: t('menu.joinRoomDesc'),
       icon: 'login',
       color: '#2196F3',
       onPress: () => navigation.navigate('JoinRoom'),
     },
     {
-      title: 'Leaderboard',
-      subtitle: 'View top players',
+      title: t('menu.leaderboard'),
+      subtitle: t('menu.leaderboardDesc'),
       icon: 'trophy',
       color: '#FFC107',
       onPress: () => navigation.navigate('Leaderboard'),
     },
     {
-      title: 'Settings',
-      subtitle: 'Customize your experience',
+      title: t('menu.settings'),
+      subtitle: t('menu.settingsDesc'),
       icon: 'cog',
       color: '#9C27B0',
       onPress: () => navigation.navigate('Settings'),
@@ -202,7 +204,7 @@ const MenuScreen = ({ navigation }) => {
               <View style={styles.connectionStatus}>
                 <View style={[styles.statusDot, { backgroundColor: connected ? '#4CAF50' : '#F44336' }]} />
                 <Text style={styles.statusText}>
-                  {connected ? 'Connected' : 'Disconnected'}
+                  {connected ? t('menu.connected') : t('menu.disconnected')}
                 </Text>
               </View>
             </View>
@@ -230,17 +232,17 @@ const MenuScreen = ({ navigation }) => {
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.winPoints}</Text>
-              <Text style={styles.statLabel}>Points</Text>
+              <Text style={styles.statLabel}>{t('menu.points')}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.matchesPlayed}</Text>
-              <Text style={styles.statLabel}>Games</Text>
+              <Text style={styles.statLabel}>{t('menu.games')}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.friends}</Text>
-              <Text style={styles.statLabel}>Friends</Text>
+              <Text style={styles.statLabel}>{t('menu.friends')}</Text>
             </View>
           </View>
 
@@ -252,7 +254,7 @@ const MenuScreen = ({ navigation }) => {
             contentStyle={styles.quickPlayContent}
             icon="play-circle"
           >
-            Quick Play
+            {t('menu.quickPlay')}
           </Button>
         </View>
 
@@ -292,7 +294,7 @@ const MenuScreen = ({ navigation }) => {
             style={styles.subscriptionBanner}
             onPress={() => navigation.navigate('Payment')}
           >
-            <Text style={styles.subscriptionText}>🎮 Go Premium - Remove Ads!</Text>
+            <Text style={styles.subscriptionText}>{t('menu.goPremium')}</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -308,7 +310,7 @@ const MenuScreen = ({ navigation }) => {
           <View style={styles.modalContainer}>
             <ActivityIndicator size="large" color={theme.colors.primary} style={styles.spinner} />
             <Text style={styles.modalTitle}>
-              {matchmakingStatus === 'searching' ? 'Searching for games...' : 'Game found!'}
+              {matchmakingStatus === 'searching' ? t('menu.searchingGames') : t('menu.gameFound')}
             </Text>
             {matchmakingStatus === 'searching' && (
               <Button
@@ -317,7 +319,7 @@ const MenuScreen = ({ navigation }) => {
                 style={styles.cancelButton}
                 textColor="#FFFFFF"
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
             )}
           </View>
@@ -327,10 +329,10 @@ const MenuScreen = ({ navigation }) => {
       {/* Edit Display Name Dialog */}
       <Portal>
         <Dialog visible={editNameVisible} onDismiss={() => !savingName && setEditNameVisible(false)}>
-          <Dialog.Title>Edit Display Name</Dialog.Title>
+          <Dialog.Title>{t('menu.editDisplayName')}</Dialog.Title>
           <Dialog.Content>
             <TextInput
-              label="Display Name"
+              label={t('menu.displayName')}
               value={newDisplayName}
               onChangeText={setNewDisplayName}
               mode="outlined"
@@ -339,21 +341,21 @@ const MenuScreen = ({ navigation }) => {
               autoFocus
             />
             <Text style={styles.helperText}>
-              This is the name other players will see (3-30 characters)
+              {t('menu.displayNameHelper')}
             </Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setEditNameVisible(false)} disabled={savingName}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button 
               onPress={async () => {
                 if (!newDisplayName || newDisplayName.trim().length < 3) {
-                  Alert.alert('Invalid Name', 'Display name must be at least 3 characters');
+                  Alert.alert(t('menu.invalidName'), t('menu.displayNameMin'));
                   return;
                 }
                 if (newDisplayName.trim().length > 30) {
-                  Alert.alert('Invalid Name', 'Display name must be at most 30 characters');
+                  Alert.alert(t('menu.invalidName'), t('menu.displayNameMax'));
                   return;
                 }
                 setSavingName(true);
@@ -361,15 +363,15 @@ const MenuScreen = ({ navigation }) => {
                 setSavingName(false);
                 if (result.success) {
                   setEditNameVisible(false);
-                  Alert.alert('Success', 'Display name updated successfully');
+                  Alert.alert(t('common.success'), t('menu.displayNameUpdated'));
                 } else {
-                  Alert.alert('Error', result.error || 'Failed to update display name');
+                  Alert.alert(t('common.error'), result.error || t('menu.displayNameUpdateFailed'));
                 }
               }}
               loading={savingName}
               disabled={savingName}
             >
-              Save
+              {t('common.save')}
             </Button>
           </Dialog.Actions>
         </Dialog>

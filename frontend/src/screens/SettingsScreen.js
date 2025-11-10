@@ -67,9 +67,9 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
       };
       await axios.put(`/user/settings`, { settings });
       await updateUserSafe({ settings });
-      Alert.alert('Success', 'Settings saved successfully');
+      Alert.alert(t('common.success'), t('settings.settingsSaved'));
     } catch (error) {
-      Alert.alert('Error', 'Failed to save settings');
+      Alert.alert(t('common.error'), t('settings.failedToSave'));
     } finally {
       setLoading(false);
     }
@@ -77,17 +77,17 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
 
   const handleChangePassword = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert(t('common.error'), t('auth.fillAllFields'));
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'New passwords do not match');
+      Alert.alert(t('common.error'), t('settings.passwordsDoNotMatch'));
       return;
     }
 
     if (newPassword.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      Alert.alert(t('common.error'), t('auth.passwordMinLength'));
       return;
     }
 
@@ -97,13 +97,13 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
         oldPassword,
         newPassword
       });
-      Alert.alert('Success', 'Password changed successfully');
+      Alert.alert(t('common.success'), t('settings.passwordChanged'));
       setChangePasswordDialog(false);
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (error) {
-      Alert.alert('Error', error.response?.data?.message || 'Failed to change password');
+      Alert.alert(t('common.error'), error.response?.data?.message || t('settings.failedToChangePassword'));
     } finally {
       setLoading(false);
     }
@@ -111,12 +111,12 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
 
   const handleDeleteAccount = () => {
     Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone.',
+      t('settings.deleteAccount'),
+      t('settings.deleteAccountConfirm'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('settings.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -124,7 +124,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
               await logout();
               navigation.replace('Login');
             } catch (error) {
-              Alert.alert('Error', 'Failed to delete account');
+              Alert.alert(t('common.error'), t('settings.failedToDelete'));
             }
           }
         }
@@ -155,14 +155,14 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
         {!inGame && (
           <Card style={styles.card}>
             <Card.Content>
-              <Text style={styles.sectionTitle}>Account Information</Text>
+              <Text style={styles.sectionTitle}>{t('settings.accountInfo')}</Text>
             <List.Item
-              title="Username"
+              title={t('settings.username')}
               description={user?.username}
               left={(props) => <List.Icon {...props} icon="account" />}
             />
             <List.Item
-              title="Display Name"
+              title={t('settings.displayName')}
               description={user?.displayName || user?.username}
               left={(props) => <List.Icon {...props} icon="card-account-details" />}
               right={() => (
@@ -173,13 +173,13 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
                     setEditDisplayNameVisible(true);
                   }}
                 >
-                  Edit
+                  {t('settings.edit')}
                 </Button>
               )}
             />
             <List.Item
-              title="Email"
-              description={user?.email || 'Not provided'}
+              title={t('settings.email')}
+              description={user?.email || t('settings.notProvided')}
               left={(props) => <List.Icon {...props} icon="email" />}
               right={() => (
                 !user?.verified ? (
@@ -194,14 +194,14 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
                       navigation.navigate('Verify');
                     }}
                   >
-                    Verify email
+                    {t('settings.verifyEmail')}
                   </Button>
                 ) : null
               )}
             />
             <List.Item
-              title="Account Type"
-              description={user?.isSubscribed ? 'Premium' : 'Free'}
+              title={t('settings.accountType')}
+              description={user?.isSubscribed ? t('settings.premium') : t('settings.free')}
               left={(props) => <List.Icon {...props} icon="crown" />}
               right={() => !user?.isSubscribed && (
                 <Button
@@ -209,7 +209,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
                   onPress={() => navigation.navigate('Payment')}
                   compact
                 >
-                  Upgrade
+                  {t('settings.upgrade')}
                 </Button>
               )}
             />
@@ -220,9 +220,9 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
         {/* Game Settings */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.sectionTitle}>Game Settings</Text>
+            <Text style={styles.sectionTitle}>{t('settings.gameSettings')}</Text>
             <List.Item
-              title="Sound Effects"
+              title={t('settings.soundEffects')}
               left={(props) => <List.Icon {...props} icon="volume-high" />}
               right={() => (
                 <Switch
@@ -233,7 +233,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
               )}
             />
             <List.Item
-              title="Notifications"
+              title={t('settings.notifications')}
               left={(props) => <List.Icon {...props} icon="bell" />}
               right={() => (
                 <Switch
@@ -244,7 +244,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
               )}
             />
             <List.Item
-              title="Vibration"
+              title={t('settings.vibration')}
               left={(props) => <List.Icon {...props} icon="vibrate" />}
               right={() => (
                 <Switch
@@ -262,7 +262,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
             {/* Language Settings */}
             <Card style={styles.card}>
               <Card.Content>
-                <Text style={styles.sectionTitle}>Language</Text>
+                <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
                 <RadioButton.Group 
                   onValueChange={async (value) => {
                     await changeLanguage(value);
@@ -295,10 +295,10 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
             {/* Security */}
             <Card style={styles.card}>
               <Card.Content>
-                <Text style={styles.sectionTitle}>Security</Text>
+                <Text style={styles.sectionTitle}>{t('settings.security')}</Text>
                 <List.Item
-                  title="Change Password"
-                  description="Update your account password"
+                  title={t('settings.changePassword')}
+                  description={t('settings.changePasswordDesc')}
                   left={(props) => <List.Icon {...props} icon="lock-reset" />}
                   onPress={() => setChangePasswordDialog(true)}
                 />
@@ -308,10 +308,10 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
             {/* Danger Zone */}
             <Card style={[styles.card, styles.dangerCard]}>
               <Card.Content>
-                <Text style={[styles.sectionTitle, styles.dangerTitle]}>Danger Zone</Text>
+                <Text style={[styles.sectionTitle, styles.dangerTitle]}>{t('settings.dangerZone')}</Text>
                 <List.Item
-                  title="Delete Account"
-                  description="Permanently delete your account and data"
+                  title={t('settings.deleteAccount')}
+                  description={t('settings.deleteAccountDesc')}
                   titleStyle={styles.dangerText}
                   left={(props) => <List.Icon {...props} icon="delete-forever" color="#F44336" />}
                   onPress={handleDeleteAccount}
@@ -329,7 +329,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
           loading={loading}
           disabled={loading}
         >
-          Save Settings
+          {t('settings.saveSettings')}
         </Button>
       </ScrollView>
 
@@ -337,10 +337,10 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
       <Portal>
         {/* Change Password Dialog */}
         <Dialog visible={changePasswordDialog} onDismiss={() => setChangePasswordDialog(false)}>
-          <Dialog.Title>Change Password</Dialog.Title>
+          <Dialog.Title>{t('settings.changePassword')}</Dialog.Title>
           <Dialog.Content>
             <TextInput
-              label="Current Password"
+              label={t('settings.currentPassword')}
               value={oldPassword}
               onChangeText={setOldPassword}
               secureTextEntry
@@ -348,7 +348,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
               mode="outlined"
             />
             <TextInput
-              label="New Password"
+              label={t('settings.newPassword')}
               value={newPassword}
               onChangeText={setNewPassword}
               secureTextEntry
@@ -356,7 +356,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
               mode="outlined"
             />
             <TextInput
-              label="Confirm New Password"
+              label={t('settings.confirmNewPassword')}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               secureTextEntry
@@ -371,20 +371,20 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
               setNewPassword('');
               setConfirmPassword('');
             }}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onPress={handleChangePassword} loading={loading}>
-              Change
+              {t('settings.change')}
             </Button>
           </Dialog.Actions>
         </Dialog>
 
         {/* Edit Display Name Dialog */}
         <Dialog visible={editDisplayNameVisible} onDismiss={() => !savingName && setEditDisplayNameVisible(false)}>
-          <Dialog.Title>Edit Display Name</Dialog.Title>
+          <Dialog.Title>{t('settings.editDisplayName')}</Dialog.Title>
           <Dialog.Content>
             <TextInput
-              label="Display Name"
+              label={t('settings.displayName')}
               value={newDisplayName}
               onChangeText={setNewDisplayName}
               mode="outlined"
@@ -394,22 +394,22 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
               style={styles.dialogInput}
             />
             <Text style={{ fontSize: 12, color: '#757575' }}>
-              This is the name other players will see (3-30 characters)
+              {t('settings.displayNameHelper')}
             </Text>
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setEditDisplayNameVisible(false)} disabled={savingName}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               onPress={async () => {
                 const name = (newDisplayName || '').trim();
                 if (name.length < 3) {
-                  Alert.alert('Invalid Name', 'Display name must be at least 3 characters');
+                  Alert.alert(t('settings.invalidName'), t('settings.displayNameMin'));
                   return;
                 }
                 if (name.length > 30) {
-                  Alert.alert('Invalid Name', 'Display name must be at most 30 characters');
+                  Alert.alert(t('settings.invalidName'), t('settings.displayNameMax'));
                   return;
                 }
                 setSavingName(true);
@@ -417,15 +417,15 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
                 setSavingName(false);
                 if (result?.success) {
                   setEditDisplayNameVisible(false);
-                  Alert.alert('Success', 'Display name updated successfully');
+                  Alert.alert(t('common.success'), t('settings.displayNameUpdated'));
                 } else {
-                  Alert.alert('Error', result?.error || 'Failed to update display name');
+                  Alert.alert(t('common.error'), result?.error || t('settings.displayNameUpdateFailed'));
                 }
               }}
               loading={savingName}
               disabled={savingName}
             >
-              Save
+              {t('common.save')}
             </Button>
           </Dialog.Actions>
         </Dialog>

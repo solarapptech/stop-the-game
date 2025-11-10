@@ -2,12 +2,14 @@ import React, { useState, useRef } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const VerifyScreen = ({ navigation }) => {
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const { verifyEmail, resendVerificationCode } = useAuth();
+  const { t } = useLanguage();
   const inputRefs = useRef([]);
 
   const handleCodeChange = (value, index) => {
@@ -39,7 +41,7 @@ const VerifyScreen = ({ navigation }) => {
     const codeToVerify = verificationCode || code.join('');
     
     if (codeToVerify.length !== 6) {
-      Alert.alert('Error', 'Please enter the complete 6-digit code');
+      Alert.alert(t('common.error'), t('verify.enterCompleteCode'));
       return;
     }
 
@@ -48,11 +50,11 @@ const VerifyScreen = ({ navigation }) => {
     setLoading(false);
 
     if (result.success) {
-      Alert.alert('Success', 'Email verified successfully!', [
-        { text: 'OK', onPress: () => navigation.replace('Menu') }
+      Alert.alert(t('common.success'), t('verify.emailVerifiedSuccess'), [
+        { text: t('common.ok'), onPress: () => navigation.replace('Menu') }
       ]);
     } else {
-      Alert.alert('Verification Failed', result.error);
+      Alert.alert(t('verify.verificationFailed'), result.error);
     }
   };
 
@@ -62,20 +64,20 @@ const VerifyScreen = ({ navigation }) => {
     setLoading(false);
 
     if (result.success) {
-      Alert.alert('Success', 'Verification code sent to your email');
+      Alert.alert(t('common.success'), t('verify.codeSentToEmail'));
       setCode(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } else {
-      Alert.alert('Error', result.error);
+      Alert.alert(t('common.error'), result.error);
     }
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>Verify Your Email</Text>
+        <Text style={styles.title}>{t('verify.title')}</Text>
         <Text style={styles.subtitle}>
-          We've sent a 6-digit verification code to your email address
+          {t('verify.subtitle')}
         </Text>
 
         <View style={styles.codeContainer}>
@@ -106,18 +108,18 @@ const VerifyScreen = ({ navigation }) => {
           disabled={loading}
           contentStyle={styles.buttonContent}
         >
-          Verify Email
+          {t('verify.verifyEmail')}
         </Button>
 
         <View style={styles.resendContainer}>
-          <Text style={styles.resendText}>Didn't receive the code?</Text>
+          <Text style={styles.resendText}>{t('verify.didntReceive')}</Text>
           <Button
             mode="text"
             onPress={handleResend}
             disabled={loading}
             style={styles.resendButton}
           >
-            Resend Code
+            {t('verify.resendCode')}
           </Button>
         </View>
 
@@ -127,7 +129,7 @@ const VerifyScreen = ({ navigation }) => {
           style={styles.backButton}
           disabled={loading}
         >
-          Back to Login
+          {t('verify.backToLogin')}
         </Button>
       </View>
     </View>

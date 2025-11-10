@@ -4,11 +4,13 @@ import { Text, Button, Card, List, Avatar, Chip, IconButton, TextInput } from 'r
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const RoomScreen = ({ navigation, route }) => {
   const { roomId } = route.params;
   const { user } = useAuth();
+  const { t } = useLanguage();
   const { socket, connected, isAuthenticated, setPlayerReady, startGame, sendMessage, joinRoom, deleteRoom, leaveRoom: socketLeaveRoom } = useSocket();
   const { currentRoom, leaveRoom } = useGame();
   const [players, setPlayers] = useState([]);
@@ -87,7 +89,7 @@ const RoomScreen = ({ navigation, route }) => {
         setPlayers(playersData);
         setMessages(prev => [...prev, {
           type: 'system',
-          text: `${data.displayName || data.username || 'A player'} joined the room`
+          text: `${data.displayName || data.username || 'A player'} ${t('room.playerJoined')}`
         }]);
       });
 
@@ -107,7 +109,7 @@ const RoomScreen = ({ navigation, route }) => {
         setPlayers(playersData);
         setMessages(prev => [...prev, {
           type: 'system',
-          text: `${data.displayName || data.username} left the room`
+          text: `${data.displayName || data.username} ${t('room.playerLeft')}`
         }]);
       });
 
@@ -153,23 +155,23 @@ const RoomScreen = ({ navigation, route }) => {
           
           setMessages(prev => [...prev, {
             type: 'system',
-            text: 'You are now the room owner!'
+            text: t('room.youAreOwner')
           }]);
         } else {
           setMessages(prev => [...prev, {
             type: 'system',
-            text: `${data.displayName || data.username} is now the room owner`
+            text: `${data.displayName || data.username} ${t('room.isNowOwner')}`
           }]);
         }
       });
 
       socket.on('room-deleted', (data) => {
         Alert.alert(
-          'Room Deleted',
-          data.message || 'Host terminated the session',
+          t('room.roomDeleted'),
+          data.message || t('room.hostTerminated'),
           [
             {
-              text: 'OK',
+              text: t('common.ok'),
               onPress: () => navigation.navigate('Menu')
             }
           ],
@@ -233,11 +235,11 @@ const RoomScreen = ({ navigation, route }) => {
 
   const handleStartGame = () => {
     if (players.length < 2) {
-      Alert.alert('Cannot Start', 'At least 2 players must be in the room');
+      Alert.alert(t('room.cannotStart'), t('room.needTwoPlayers'));
       return;
     }
     if (players.filter(p => p.isReady).length < 2) {
-      Alert.alert('Cannot Start', 'At least 2 players must be ready');
+      Alert.alert(t('room.cannotStart'), t('room.needTwoReady'));
       return;
     }
     startGame(roomId);
@@ -245,12 +247,12 @@ const RoomScreen = ({ navigation, route }) => {
 
   const handleLeaveRoom = () => {
     Alert.alert(
-      'Leave Room',
-      'Are you sure you want to leave the game room?',
+      t('room.leaveRoom'),
+      t('room.leaveRoomMessage'),
       [
-        { text: 'No', style: 'cancel' },
+        { text: t('common.no'), style: 'cancel' },
         {
-          text: 'Yes',
+          text: t('common.yes'),
           onPress: async () => {
             isLeavingRef.current = true;
             try {
@@ -271,12 +273,12 @@ const RoomScreen = ({ navigation, route }) => {
 
   const handleDeleteRoom = () => {
     Alert.alert(
-      'Delete Room',
-      'Are you sure you want to delete this room? All players will be kicked out.',
+      t('room.deleteRoom'),
+      t('room.deleteRoomMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('common.delete'),
           onPress: async () => {
             deleteRoom(roomId);
             // Navigation will be handled by the room-deleted socket event
@@ -304,7 +306,7 @@ const RoomScreen = ({ navigation, route }) => {
   const copyInviteCode = () => {
     if (inviteCode) {
       Clipboard.setString(inviteCode);
-      Alert.alert('Copied', 'Invite code copied to clipboard');
+      Alert.alert(t('common.success'), t('room.codeCopied'));
     }
   };
 
@@ -341,11 +343,11 @@ const RoomScreen = ({ navigation, route }) => {
           <Card.Content>
             <View style={styles.roomHeader}>
               <View style={styles.roomInfo}>
-                <Text style={styles.roomName}>{currentRoom?.name || 'Game Room'}</Text>
+                <Text style={styles.roomName}>{currentRoom?.name || t('room.title')}</Text>
                 <View style={styles.roomDetails}>
-                  <Chip style={styles.chip}>{currentRoom?.rounds || 3} rounds</Chip>
+                  <Chip style={styles.chip}>{currentRoom?.rounds || 3} {t('joinRoom.rounds')}</Chip>
                   <Chip style={styles.chip}>
-                    {players.length}/{currentRoom?.maxPlayers || 8} players
+                    {players.length}/{currentRoom?.maxPlayers || 8} {t('joinRoom.players')}
                   </Chip>
                 </View>
               </View>
@@ -369,7 +371,7 @@ const RoomScreen = ({ navigation, route }) => {
             </View>
             {showInviteCode && (
               <View style={styles.inviteContainer}>
-                <Text style={styles.inviteLabel}>Invite Code:</Text>
+                <Text style={styles.inviteLabel}>{t('room.inviteCode')}:</Text>
                 <Text style={styles.inviteCode}>{inviteCode || 'XXXXXX'}</Text>
               </View>
             )}
@@ -379,13 +381,13 @@ const RoomScreen = ({ navigation, route }) => {
         {/* Players */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.sectionTitle}>Players</Text>
+            <Text style={styles.sectionTitle}>{t('room.players')}</Text>
             <List.Section>
               {players.map((player, index) => (
                 <List.Item
                   key={player.id}
                   title={player.displayName}
-                  description={player.isOwner ? 'Room Owner' : player.isReady ? 'Ready' : 'Not Ready'}
+                  description={player.isOwner ? t('room.owner') : player.isReady ? t('room.ready') : t('room.notReady')}
                   left={() => (
                     <Avatar.Text
                       size={40}
@@ -415,7 +417,7 @@ const RoomScreen = ({ navigation, route }) => {
         <Card style={styles.card}>
           <Card.Content>
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-              <Text style={styles.sectionTitle}>Chat</Text>
+              <Text style={styles.sectionTitle}>{t('room.chat')}</Text>
             </TouchableWithoutFeedback>
             <View 
               style={[styles.chatContainer, isChatActive && styles.chatContainerActive]}
@@ -453,7 +455,7 @@ const RoomScreen = ({ navigation, route }) => {
                     onChangeText={setMessageInput}
                     onFocus={() => setInputFocused(true)}
                     onBlur={() => setInputFocused(false)}
-                    placeholder="Type a message..."
+                    placeholder={t('room.typeMessage')}
                     style={styles.messageInput}
                     mode="outlined"
                     dense
@@ -482,7 +484,7 @@ const RoomScreen = ({ navigation, route }) => {
           style={styles.leaveButton}
           icon={'exit-to-app'}
         >
-          Leave Room
+          {t('room.leaveRoom')}
         </Button>
         {isOwner ? (
           <Button
@@ -493,7 +495,7 @@ const RoomScreen = ({ navigation, route }) => {
             loading={loading}
             icon="play"
           >
-            {startGameCooldown ? 'Wait...' : 'Start Game'}
+            {startGameCooldown ? t('common.waiting') : t('room.startGame')}
           </Button>
         ) : (
           <Button
@@ -502,7 +504,7 @@ const RoomScreen = ({ navigation, route }) => {
             style={isReady ? styles.notReadyButton : styles.readyButton}
             icon={isReady ? 'close' : 'check'}
           >
-            {isReady ? 'Not Ready' : 'Ready'}
+            {isReady ? t('room.notReady') : t('room.ready')}
           </Button>
         )}
       </View>

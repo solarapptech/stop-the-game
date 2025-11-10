@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Image, Animated } from 'react-native';
 import { Text, ProgressBar } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const LoadingScreen = ({ navigation }) => {
   const [progress, setProgress] = useState(0);
   const fadeAnim = new Animated.Value(0);
+  const { t } = useLanguage();
 
   useEffect(() => {
     // Fade in animation
@@ -45,7 +47,7 @@ const LoadingScreen = ({ navigation }) => {
           resizeMode="contain"
         />
         <Text style={styles.title}>Stop! The Game</Text>
-        <Text style={styles.subtitle}>Loading assets...</Text>
+        <Text style={styles.subtitle}>{t('loading.loadingAssets')}</Text>
         <View style={styles.progressContainer}>
           <ProgressBar 
             progress={progress} 

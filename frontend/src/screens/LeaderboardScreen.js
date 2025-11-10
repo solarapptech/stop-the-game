@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { Text, Card, List, Avatar, Chip, SegmentedButtons, ActivityIndicator } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import axios from 'axios';
 import theme from '../theme';
 
 const LeaderboardScreen = ({ navigation }) => {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const [selectedTab, setSelectedTab] = useState('global');
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -76,9 +78,9 @@ const LeaderboardScreen = ({ navigation }) => {
           value={selectedTab}
           onValueChange={setSelectedTab}
           buttons={[
-            { value: 'global', label: 'Global', icon: 'earth' },
-            { value: 'weekly', label: 'Weekly', icon: 'calendar-week' },
-            { value: 'friends', label: 'Friends', icon: 'account-group' },
+            { value: 'global', label: t('leaderboard.global'), icon: 'earth' },
+            { value: 'weekly', label: t('leaderboard.weekly'), icon: 'calendar-week' },
+            { value: 'friends', label: t('leaderboard.friends'), icon: 'account-group' },
           ]}
           style={styles.segmentedButtons}
         />
@@ -95,11 +97,11 @@ const LeaderboardScreen = ({ navigation }) => {
                 style={{ backgroundColor: theme.colors.primary }}
               />
               <View style={styles.userRankInfo}>
-                <Text style={styles.userRankName}>Your Rank</Text>
+                <Text style={styles.userRankName}>{t('leaderboard.yourRank')}</Text>
                 <View style={styles.userRankStats}>
                   <Chip style={styles.rankChip}>#{userRank.rank}</Chip>
-                  <Chip style={styles.pointsChip}>{userRank.winPoints} pts</Chip>
-                  <Chip style={styles.percentileChip}>Top {userRank.percentile}%</Chip>
+                  <Chip style={styles.pointsChip}>{userRank.winPoints} {t('leaderboard.pts')}</Chip>
+                  <Chip style={styles.percentileChip}>{t('leaderboard.top')} {userRank.percentile}%</Chip>
                 </View>
               </View>
             </View>
@@ -122,7 +124,7 @@ const LeaderboardScreen = ({ navigation }) => {
         {loading ? (
           <ActivityIndicator size="large" style={styles.loader} />
         ) : leaderboardData.length === 0 ? (
-          <Text style={styles.emptyText}>No data available</Text>
+          <Text style={styles.emptyText}>{t('leaderboard.noData')}</Text>
         ) : (
           <Card style={styles.leaderboardCard}>
             <List.Section>
@@ -130,7 +132,7 @@ const LeaderboardScreen = ({ navigation }) => {
                 <List.Item
                   key={index}
                   title={player.displayName || player.username}
-                  description={`${player.winPoints || player.weeklyPoints || 0} points • ${player.matchesPlayed || player.gamesPlayed || 0} games`}
+                  description={`${player.winPoints || player.weeklyPoints || 0} ${t('leaderboard.points')} • ${player.matchesPlayed || player.gamesPlayed || 0} ${t('leaderboard.games')}`}
                   left={() => (
                     <View style={styles.rankContainer}>
                       {player.rank <= 3 && getRankIcon(player.rank) ? (
@@ -151,10 +153,10 @@ const LeaderboardScreen = ({ navigation }) => {
                   right={() => (
                     <View style={styles.playerStats}>
                       <Text style={styles.avgPoints}>
-                        {player.avgPoints} avg
+                        {player.avgPoints} {t('leaderboard.avg')}
                       </Text>
                       {player.isYou && (
-                        <Chip style={styles.youChip}>You</Chip>
+                        <Chip style={styles.youChip}>{t('leaderboard.you')}</Chip>
                       )}
                     </View>
                   )}

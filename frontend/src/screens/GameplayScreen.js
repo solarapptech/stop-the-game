@@ -6,6 +6,7 @@ import ConfettiCannon from 'react-native-confetti-cannon';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 import SettingsScreen from './SettingsScreen';
 
@@ -155,6 +156,7 @@ const getCategoryIcon = (category) => {
 const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
   const { user, refreshUser, updateUser, markStatsDirty } = useAuth();
+  const { t } = useLanguage();
   const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound, playAgainReady, leaveRoom: socketLeaveRoom } = useSocket();
   const userId = (user && (user.id || user._id)) || null;
   const { 
@@ -686,12 +688,12 @@ const GameplayScreen = ({ navigation, route }) => {
   const handleLeaveGame = () => {
     if (isLeavingRef.current) return;
     Alert.alert(
-      'Leave Game',
-      'Are you sure you want to leave the current game?',
+      t('gameplay.leaveGame'),
+      t('gameplay.leaveGameMessage'),
       [
-        { text: 'No', style: 'cancel' },
+        { text: t('common.no'), style: 'cancel' },
         {
-          text: 'Yes',
+          text: t('common.yes'),
           style: 'destructive',
           onPress: () => {
             isLeavingRef.current = true;
@@ -913,11 +915,11 @@ const GameplayScreen = ({ navigation, route }) => {
         setShowConfetti(true);
         setTimeout(() => {
           Alert.alert(
-            'Game Over!',
-            `Winner: ${data.winner.username}\nFinal Score: ${data.winner.score}`,
+            t('gameplay.gameOver'),
+            `${t('gameplay.winner')}: ${data.winner.username}\n${t('gameplay.score')}: ${data.winner.score}`,
             [
-              { text: 'View Leaderboard', onPress: () => navigation.replace('Leaderboard') },
-              { text: 'Back to Menu', onPress: () => navigation.replace('Menu') }
+              { text: t('leaderboard.title'), onPress: () => navigation.replace('Leaderboard') },
+              { text: t('gameplay.backToMenu'), onPress: () => navigation.replace('Menu') }
             ]
           );
         }, 3000);
@@ -980,7 +982,7 @@ const GameplayScreen = ({ navigation, route }) => {
     const v = (value || '').trim();
     if (v.length === 0) return '';
     if (currentLetter && v.charAt(0).toUpperCase() !== (currentLetter || '').toUpperCase()) {
-      return `It doesn't start with letter '${currentLetter}'`;
+      return `${t('common.error')}: ${currentLetter}`;
     }
     return '';
   };
@@ -1318,12 +1320,12 @@ const GameplayScreen = ({ navigation, route }) => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
       // Show confirmation dialog
       Alert.alert(
-        'Quit Game',
-        'Are you sure you want to quit the game?',
+        t('gameplay.leaveGame'),
+        t('gameplay.leaveGameMessage'),
         [
-          { text: 'No', style: 'cancel' },
+          { text: t('common.no'), style: 'cancel' },
           {
-            text: 'Yes',
+            text: t('common.yes'),
             onPress: () => {
               // Clean up timers
               if (timerRef.current) clearInterval(timerRef.current);
@@ -1371,18 +1373,18 @@ const GameplayScreen = ({ navigation, route }) => {
     <View style={styles.categorySelectionContainer}>
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.phaseTitle}>Select Categories</Text>
+          <Text style={styles.phaseTitle}>{t('gameplay.selectCategories')}</Text>
           {selectionDeadline ? (
-            <Text style={styles.instruction}>Pick 6-8 categories. Time left: {selectTimeLeft}s</Text>
+            <Text style={styles.instruction}>{t('gameplay.selectExactly')} 6-8 {t('gameplay.categories')}. {t('gameplay.timeLeft')}: {selectTimeLeft}s</Text>
           ) : (
-            <Text style={styles.instruction}>Waiting for all players to enter this screen. Timer will start at 60s for everyone.</Text>
+            <Text style={styles.instruction}>{t('gameplay.waitingForPlayers')}</Text>
           )}
           {(totalPlayers > 0) && (
-            <Text style={styles.instruction}>{confirmedCount}/{totalPlayers} Players ready</Text>
+            <Text style={styles.instruction}>{confirmedCount}/{totalPlayers} {t('gameplay.confirmed')}</Text>
           )}
           {showManualReload && !selectionDeadline && (
             <View style={styles.stuckWarningContainer}>
-              <Text style={styles.stuckWarningText}>⚠️ Taking too long? Try reloading</Text>
+              <Text style={styles.stuckWarningText}>⚠️ {t('common.loading')}</Text>
               <Button
                 mode="outlined"
                 onPress={() => handleCategoryReload(false)}
@@ -1390,7 +1392,7 @@ const GameplayScreen = ({ navigation, route }) => {
                 style={styles.manualReloadButton}
                 compact
               >
-                {isReloadingCategories ? 'Reloading...' : 'Reload'}
+                {isReloadingCategories ? t('common.loading') : t('common.refresh')}
               </Button>
             </View>
           )}
@@ -1456,20 +1458,20 @@ const GameplayScreen = ({ navigation, route }) => {
           disabled={!selectionDeadline || hasConfirmed || selectedCategories.length < 6}
           style={styles.confirmButton}
         >
-          {hasConfirmed ? 'Ready' : `Confirm (${selectedCategories.length}/6-8)`}
+          {hasConfirmed ? t('gameplay.confirmed') : `${t('gameplay.confirmSelection')} (${selectedCategories.length}/6-8)`}
         </Button>
         
         <View style={styles.selectedCategoriesContainer}>
           <Text style={styles.selectedCategoriesLabel}>
-            Selected Categories: 
+            {t('gameplay.selectCategories')}: 
             <Text style={styles.selectedCategoriesText}>
-              {selectedCategories.length > 0 ? selectedCategories.join(', ') : 'None'}
+              {selectedCategories.length > 0 ? selectedCategories.join(', ') : t('common.no')}
             </Text>
           </Text>
         </View>
         
         {selectionDeadline && selectTimeLeft <= 0 && (
-          <Text style={styles.waitingText}>Time is up. Finalizing categories...</Text>
+          <Text style={styles.waitingText}>{t('common.loading')}</Text>
         )}
       </View>
     </View>
@@ -1478,14 +1480,14 @@ const GameplayScreen = ({ navigation, route }) => {
   const renderLetterSelection = () => (
     <Card style={styles.card}>
       <Card.Content>
-        <Text style={styles.phaseTitle}>Letter Selection</Text>
+        <Text style={styles.phaseTitle}>{t('gameplay.letterSelection')}</Text>
         {isPlayerTurn ? (
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <Text style={styles.instruction}>You have {letterTimeLeft}s to choose a letter</Text>
+            <Text style={styles.instruction}>{t('gameplay.yourTurn')} {letterTimeLeft}s</Text>
             <TextInput
               value={letterInput}
               onChangeText={(t) => setLetterInput((t || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0,1))}
-              placeholder="Enter a letter (A-Z)"
+              placeholder={t('gameplay.enterLetter')}
               style={styles.letterInput}
               autoCapitalize="characters"
               maxLength={1}
@@ -1497,7 +1499,7 @@ const GameplayScreen = ({ navigation, route }) => {
               style={styles.acceptButton}
               disabled={!letterInput || letterTimeLeft <= 0}
             >
-              Accept Letter
+              {t('gameplay.chooseLetter')}
             </Button>
             <Button
               mode="outlined"
@@ -1505,7 +1507,7 @@ const GameplayScreen = ({ navigation, route }) => {
               style={styles.letterButton}
               icon="dice-3"
             >
-              Pick Random
+              {t('common.random')}
             </Button>
             <View style={styles.quickLettersContainer}>
               {ALPHABET.map((L) => (
@@ -1524,7 +1526,7 @@ const GameplayScreen = ({ navigation, route }) => {
             </View>
           </KeyboardAvoidingView>
         ) : (
-          <Text style={styles.waitingText}>Waiting for {letterSelectorName || 'player'} to select a letter... {letterDeadline ? `${letterTimeLeft}s` : ''}</Text>
+          <Text style={styles.waitingText}>{t('common.waiting')} {letterSelectorName || t('gameplay.player')} {t('gameplay.isSelecting')} {letterDeadline ? `${letterTimeLeft}s` : ''}</Text>
         )}
       </Card.Content>
     </Card>
@@ -1570,8 +1572,8 @@ const GameplayScreen = ({ navigation, route }) => {
     <View style={styles.gameplayContainer}>
       <View style={styles.header}>
         <View style={styles.roundInfo}>
-          <Text style={styles.roundText}>Round {currentRound}/{totalRounds}</Text>
-          <Text style={styles.letterText}>Letter: {currentLetter}</Text>
+          <Text style={styles.roundText}>{t('gameplay.round')} {currentRound}/{totalRounds}</Text>
+          <Text style={styles.letterText}>{t('gameplay.letterIs')}: {currentLetter}</Text>
         </View>
         <View style={styles.timerContainer}>
           <Text style={styles.timerText}>{timeLeft}s</Text>
@@ -1591,14 +1593,14 @@ const GameplayScreen = ({ navigation, route }) => {
           icon={hideAllInputs ? 'eye-off' : 'eye'}
           labelStyle={styles.hideAllLabel}
         >
-          Hide All
+          {t('common.hide')}
         </Button>
       </View>
 
       {(!selectedCategories || selectedCategories.length === 0) ? (
         <View style={styles.stuckContainer}>
-          <Text style={styles.stuckText}>No questions loaded</Text>
-          <Text style={styles.stuckSubtext}>The game may be stuck. Try refreshing to sync.</Text>
+          <Text style={styles.stuckText}>{t('common.loading')}</Text>
+          <Text style={styles.stuckSubtext}>{t('common.error')}</Text>
           {isRefreshingGameplay && (
             <ActivityIndicator 
               size="large" 
@@ -1616,7 +1618,7 @@ const GameplayScreen = ({ navigation, route }) => {
             loading={isRefreshingGameplay}
             style={[styles.refreshButton, isRefreshingGameplay && styles.refreshButtonDisabled]}
           >
-            {isRefreshingGameplay ? 'Loading...' : 'Refresh'}
+            {isRefreshingGameplay ? t('common.loading') : t('common.refresh')}
           </Button>
         </View>
       ) : (
@@ -1654,7 +1656,7 @@ const GameplayScreen = ({ navigation, route }) => {
                         ref={(ref) => { inputRefs.current[category] = ref; }}
                         value={actualValue}
                         onChangeText={(text) => handleAnswerChange(category, text)}
-                        placeholder={`Enter ${category} starting with ${currentLetter}`}
+                        placeholder={`${category} - ${currentLetter}`}
                         style={[styles.answerInput, isHidden && styles.hiddenInput]}
                         autoCapitalize="words"
                         editable={timeLeft > 0 && !isFrozen}
@@ -1697,7 +1699,7 @@ const GameplayScreen = ({ navigation, route }) => {
         style={[styles.stopButton, { backgroundColor: canFinish ? '#4CAF50' : '#9E9E9E' }]}
         disabled={timeLeft === 0 || hasStoppedFirst || !canFinish || isFrozen}
       >
-        STOP!
+        {t('gameplay.stop')}
       </Button>
     </View>
   );
@@ -1718,10 +1720,10 @@ const GameplayScreen = ({ navigation, route }) => {
     
     // Get player name
     const getPlayerName = (playerUser) => {
-      if (!playerUser) return 'Unknown';
+      if (!playerUser) return t('gameplay.player');
       const pid = (playerUser._id) ? playerUser._id : playerUser;
       const pidStr = typeof pid === 'string' ? pid : String(pid || '');
-      if (pidStr === String(userId || '')) return 'You';
+      if (pidStr === String(userId || '')) return t('leaderboard.you');
       return playerUser.displayName || playerUser.username || `Player ${pidStr.substring(0, 5)}`;
     };
 
@@ -1734,7 +1736,7 @@ const GameplayScreen = ({ navigation, route }) => {
       <ScrollView style={styles.container}>
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.phaseTitle}>Round {currentRound} Results</Text>
+            <Text style={styles.phaseTitle}>{t('gameplay.round')} {currentRound} {t('gameplay.roundResults')}</Text>
             
             {/* Player Navigation */}
             <View style={styles.playerNavigationContainer}>
@@ -1765,13 +1767,13 @@ const GameplayScreen = ({ navigation, route }) => {
             {/* Answer Details Table */}
             {viewingAnswers && viewingAnswers.categoryAnswers && viewingAnswers.categoryAnswers.length > 0 ? (
               <View style={styles.answerDetailsContainer}>
-                <Text style={styles.answerDetailsTitle}>{getPlayerName(viewingPlayer)}'s Answers</Text>
+                <Text style={styles.answerDetailsTitle}>{getPlayerName(viewingPlayer)}</Text>
                 
                 <DataTable style={styles.dataTable}>
                   <DataTable.Header>
-                    <DataTable.Title style={styles.tableHeaderCategory}>Category</DataTable.Title>
-                    <DataTable.Title style={styles.tableHeaderAnswer}>Answer</DataTable.Title>
-                    <DataTable.Title style={styles.tableHeaderPoints} numeric>Pts</DataTable.Title>
+                    <DataTable.Title style={styles.tableHeaderCategory}>{t('gameplay.category')}</DataTable.Title>
+                    <DataTable.Title style={styles.tableHeaderAnswer}>{t('gameplay.answer')}</DataTable.Title>
+                    <DataTable.Title style={styles.tableHeaderPoints} numeric>{t('leaderboard.pts')}</DataTable.Title>
                     <DataTable.Title style={styles.tableHeaderStatus}></DataTable.Title>
                   </DataTable.Header>
 
@@ -1804,23 +1806,23 @@ const GameplayScreen = ({ navigation, route }) => {
                 <View style={styles.roundSummary}>
                   {viewingAnswers.stoppedFirst && (
                     <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>Stop Bonus:</Text>
-                      <Text style={styles.summaryValue}>+5 pts</Text>
+                      <Text style={styles.summaryLabel}>{t('gameplay.stopBonus')}:</Text>
+                      <Text style={styles.summaryValue}>+5 {t('leaderboard.pts')}</Text>
                     </View>
                   )}
                   <View style={[styles.summaryRow, styles.summaryTotal]}>
-                    <Text style={styles.summaryTotalLabel}>Round Total:</Text>
-                    <Text style={styles.summaryTotalValue}>{totalRoundPoints} pts</Text>
+                    <Text style={styles.summaryTotalLabel}>{t('gameplay.roundTotal')}:</Text>
+                    <Text style={styles.summaryTotalValue}>{totalRoundPoints} {t('leaderboard.pts')}</Text>
                   </View>
                 </View>
               </View>
             ) : (
-              <Text style={styles.noAnswersText}>{getPlayerName(viewingPlayer)} didn't submit answers</Text>
+              <Text style={styles.noAnswersText}>{getPlayerName(viewingPlayer)}</Text>
             )}
 
             {/* Overall Standings */}
             <View style={styles.standingsContainer}>
-              <Text style={styles.standingsTitle}>Overall Standings</Text>
+              <Text style={styles.standingsTitle}>{t('gameplay.overallStandings')}</Text>
               <View style={styles.scoresContainer}>
                 {Array.isArray(playerScores) && playerScores.map((s, idx) => {
                   const pid = (s.user && s.user._id) ? s.user._id : s.user;
@@ -1829,7 +1831,7 @@ const GameplayScreen = ({ navigation, route }) => {
                   return (
                     <View key={pidStr || String(idx)} style={styles.scoreItem}>
                       <Text style={styles.playerName}>{name}</Text>
-                      <Text style={styles.playerScore}>{s.score} pts</Text>
+                      <Text style={styles.playerScore}>{s.score} {t('leaderboard.pts')}</Text>
                     </View>
                   );
                 })}
@@ -1839,16 +1841,16 @@ const GameplayScreen = ({ navigation, route }) => {
             {/* Continue Button */}
             {currentRound < totalRounds && (
               <>
-                <Text style={styles.instruction}>{`(${readyCount}/${readyTotal}) players ready...`}</Text>
+                <Text style={styles.instruction}>{`(${readyCount}/${readyTotal}) ${t('common.ready')}`}</Text>
                 {typeof nextCountdown === 'number' && nextCountdown >= 0 && (
-                  <Text style={styles.instruction}>Next round in {nextCountdown}s</Text>
+                  <Text style={styles.instruction}>{t('gameplay.nextRound')} {nextCountdown}s</Text>
                 )}
                 <Button
                   mode="contained"
                   onPress={() => readyNextRound(gameId)}
                   style={styles.nextButton}
                 >
-                  Continue
+                  {t('common.next')}
                 </Button>
               </>
             )}
@@ -1859,7 +1861,7 @@ const GameplayScreen = ({ navigation, route }) => {
                   onPress={() => { readyNextRound(gameId); setFinalConfirmed(true); setIsFinished(true); }}
                   style={styles.nextButton}
                 >
-                  Confirm Final Results
+                  {t('gameplay.confirmSelection')}
                 </Button>
               </>
             )}
@@ -1877,21 +1879,21 @@ const GameplayScreen = ({ navigation, route }) => {
     const winnerNames = winners.map((s) => {
       const pid = (s.user && s.user._id) ? s.user._id : s.user;
       const pidStr = typeof pid === 'string' ? pid : String(pid || '');
-      return pidStr === userId ? 'You' : `Player ${pidStr.substring(0,5)}`;
+      return pidStr === userId ? t('leaderboard.you') : `${t('gameplay.player')} ${pidStr.substring(0,5)}`;
     });
     return (
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.phaseTitle}>Final Results</Text>
+          <Text style={styles.phaseTitle}>{t('gameplay.finalScores')}</Text>
           <View style={styles.scoresContainer}>
             {scores.map((s, idx) => {
               const pid = (s.user && s.user._id) ? s.user._id : s.user;
               const pidStr = typeof pid === 'string' ? pid : String(pid || '');
-              const name = pidStr === userId ? 'You' : `Player ${pidStr.substring(0, 5)}`;
+              const name = pidStr === userId ? t('leaderboard.you') : `${t('gameplay.player')} ${pidStr.substring(0, 5)}`;
               return (
                 <View key={pidStr || String(idx)} style={styles.scoreItem}>
                   <Text style={styles.playerName}>{name}</Text>
-                  <Text style={styles.playerScore}>{s.score} pts</Text>
+                  <Text style={styles.playerScore}>{s.score} {t('leaderboard.pts')}</Text>
                 </View>
               );
             })}
@@ -1899,9 +1901,9 @@ const GameplayScreen = ({ navigation, route }) => {
           {finalConfirmed ? (
             <>
               <Text style={styles.instruction}>
-                {isDraw ? `It's a draw between ${winnerNames.join(', ')}` : `Winner: ${winnerNames[0]}`}
+                {isDraw ? `${winnerNames.join(', ')}` : `${t('gameplay.winner')}: ${winnerNames[0]}`}
               </Text>
-              <Text style={styles.instruction}>{`(${rematchReady}/${rematchTotal}) players selected Play Again`}</Text>
+              <Text style={styles.instruction}>{`(${rematchReady}/${rematchTotal}) ${t('gameplay.playAgain')}`}</Text>
               <Button
                 mode="contained"
                 onPress={() => { if (!hasVotedRematch && !rematchAborted) { setHasVotedRematch(true); playAgainReady(gameId); } }}
@@ -1909,7 +1911,7 @@ const GameplayScreen = ({ navigation, route }) => {
                 disabled={hasVotedRematch || rematchAborted}
                 labelStyle={{ color: '#FFFFFF' }}
               >
-                {rematchAborted ? 'A user left' : (typeof rematchCountdown === 'number') ? `Starting in ${rematchCountdown}s...` : hasVotedRematch ? 'Waiting for others...' : 'Play Again'}
+                {rematchAborted ? t('common.error') : (typeof rematchCountdown === 'number') ? `${t('common.start')} ${rematchCountdown}s...` : hasVotedRematch ? t('gameplay.waitingForPlayers') : t('gameplay.playAgain')}
               </Button>
               <Button
                 mode="outlined"
@@ -1917,7 +1919,7 @@ const GameplayScreen = ({ navigation, route }) => {
                 style={styles.nextButton}
                 labelStyle={{ color: theme.colors.primary }}
               >
-                Return to lobby
+                {t('gameplay.backToMenu')}
               </Button>
             </>
           ) : (

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Alert, RefreshControl } from 'react-native';
 import { Text, TextInput, Button, Card, List, Chip, Dialog, Portal, ActivityIndicator } from 'react-native-paper';
 import { useGame } from '../contexts/GameContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const JoinRoomScreen = ({ navigation }) => {
@@ -13,6 +14,7 @@ const JoinRoomScreen = ({ navigation }) => {
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [roomPassword, setRoomPassword] = useState('');
   const { joinRoom, joinRoomByCode, getPublicRooms } = useGame();
+  const { t } = useLanguage();
 
   useEffect(() => {
     loadPublicRooms();
@@ -35,7 +37,7 @@ const JoinRoomScreen = ({ navigation }) => {
 
   const handleJoinByCode = async () => {
     if (!inviteCode.trim()) {
-      Alert.alert('Error', 'Please enter an invite code');
+      Alert.alert(t('common.error'), t('joinRoom.enterInviteCode'));
       return;
     }
 
@@ -49,7 +51,7 @@ const JoinRoomScreen = ({ navigation }) => {
       setSelectedRoom({ inviteCode: inviteCode.toUpperCase(), name: result.roomName });
       setPasswordDialog(true);
     } else {
-      Alert.alert('Error', result.error);
+      Alert.alert(t('common.error'), result.error);
     }
   };
 
@@ -64,13 +66,13 @@ const JoinRoomScreen = ({ navigation }) => {
       setSelectedRoom(room);
       setPasswordDialog(true);
     } else {
-      Alert.alert('Error', result.error);
+      Alert.alert(t('common.error'), result.error);
     }
   };
 
   const handlePasswordSubmit = async () => {
     if (!roomPassword.trim()) {
-      Alert.alert('Error', 'Please enter the room password');
+      Alert.alert(t('common.error'), t('joinRoom.enterPassword'));
       return;
     }
 
@@ -91,7 +93,7 @@ const JoinRoomScreen = ({ navigation }) => {
     if (result.success) {
       navigation.replace('Room', { roomId: result.room.id });
     } else {
-      Alert.alert('Error', result.error);
+      Alert.alert(t('common.error'), result.error);
     }
   };
 
@@ -110,15 +112,15 @@ const JoinRoomScreen = ({ navigation }) => {
         {/* Join by Code */}
         <Card style={styles.card}>
           <Card.Content>
-            <Text style={styles.sectionTitle}>Join with Invite Code</Text>
+            <Text style={styles.sectionTitle}>{t('joinRoom.joinWithCode')}</Text>
             <View style={styles.codeInputContainer}>
               <TextInput
-                label="Invite Code"
+                label={t('joinRoom.inviteCode')}
                 value={inviteCode}
                 onChangeText={setInviteCode}
                 style={styles.codeInput}
                 mode="outlined"
-                placeholder="Enter 6-digit code"
+                placeholder={t('joinRoom.codePlaceholder')}
                 maxLength={6}
                 autoCapitalize="characters"
                 left={<TextInput.Icon icon="key" />}
@@ -130,7 +132,7 @@ const JoinRoomScreen = ({ navigation }) => {
                 loading={loading}
                 disabled={loading || inviteCode.length !== 6}
               >
-                Join
+                {t('joinRoom.join')}
               </Button>
             </View>
           </Card.Content>
@@ -140,7 +142,7 @@ const JoinRoomScreen = ({ navigation }) => {
         <Card style={styles.card}>
           <Card.Content>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Public Rooms</Text>
+              <Text style={styles.sectionTitle}>{t('joinRoom.publicRooms')}</Text>
               <Button
                 mode="outlined"
                 icon="refresh"
@@ -150,13 +152,13 @@ const JoinRoomScreen = ({ navigation }) => {
                 compact
                 style={styles.refreshButton}
               >
-                Refresh
+                {t('joinRoom.refresh')}
               </Button>
             </View>
             {loading && publicRooms.length === 0 ? (
               <ActivityIndicator style={styles.loader} />
             ) : publicRooms.length === 0 ? (
-              <Text style={styles.emptyText}>No public rooms available</Text>
+              <Text style={styles.emptyText}>{t('joinRoom.noRooms')}</Text>
             ) : (
               <View>
                 {publicRooms.map((room) => (
@@ -170,22 +172,22 @@ const JoinRoomScreen = ({ navigation }) => {
                           disabled={room.status !== 'waiting' || loading}
                           style={styles.roomJoinButton}
                         >
-                          Join
+                          {t('joinRoom.join')}
                         </Button>
                       </View>
                       <View style={styles.roomMeta}>
-                        <Text style={styles.roomHost}>Host: {room.owner?.displayName || room.owner?.username || 'Unknown'}</Text>
+                        <Text style={styles.roomHost}>{t('joinRoom.host')}: {room.owner?.displayName || room.owner?.username || 'Unknown'}</Text>
                         <Chip style={styles.playersChip} icon="account-group">
-                          {room.players.length}/{room.maxPlayers} players
+                          {room.players.length}/{room.maxPlayers} {t('joinRoom.players')}
                         </Chip>
                       </View>
                       <View style={styles.roomChipsWrap}>
-                        <Chip style={styles.roundChip} icon="timer-outline">{room.rounds} rounds</Chip>
+                        <Chip style={styles.roundChip} icon="timer-outline">{room.rounds} {t('joinRoom.rounds')}</Chip>
                         <Chip style={[styles.statusChip, room.status === 'in_progress' ? styles.playingChip : null]}>
-                          {room.status === 'in_progress' ? 'In Game' : 'Waiting'}
+                          {room.status === 'in_progress' ? t('joinRoom.inGame') : t('joinRoom.waiting')}
                         </Chip>
                         {room.hasPassword && (
-                          <Chip style={styles.lockChip} icon="lock">Private</Chip>
+                          <Chip style={styles.lockChip} icon="lock">{t('joinRoom.private')}</Chip>
                         )}
                       </View>
                     </View>
@@ -200,13 +202,13 @@ const JoinRoomScreen = ({ navigation }) => {
       {/* Password Dialog */}
       <Portal>
         <Dialog visible={passwordDialog} onDismiss={() => setPasswordDialog(false)}>
-          <Dialog.Title>Room Password Required</Dialog.Title>
+          <Dialog.Title>{t('joinRoom.passwordRequired')}</Dialog.Title>
           <Dialog.Content>
             <Text style={styles.dialogText}>
-              {selectedRoom?.name ? `"${selectedRoom.name}"` : 'This room'} requires a password
+              {`"${selectedRoom?.name || t('joinRoom.thisRoom')}" ${t('joinRoom.requiresPassword')}`}
             </Text>
             <TextInput
-              label="Password"
+              label={t('joinRoom.password')}
               value={roomPassword}
               onChangeText={setRoomPassword}
               style={styles.passwordInput}
@@ -221,10 +223,10 @@ const JoinRoomScreen = ({ navigation }) => {
               setRoomPassword('');
               setSelectedRoom(null);
             }}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onPress={handlePasswordSubmit}>
-              Join
+              {t('joinRoom.join')}
             </Button>
           </Dialog.Actions>
         </Dialog>

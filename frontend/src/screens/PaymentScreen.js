@@ -3,24 +3,26 @@ import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Text, Card, Button, List, Chip } from 'react-native-paper';
 import { WebView } from 'react-native-webview';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import axios from 'axios';
 import theme from '../theme';
 
 const PaymentScreen = ({ navigation }) => {
   const { user, updateUser } = useAuth();
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState(null);
   const [showWebView, setShowWebView] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState('');
 
   const SUBSCRIPTION_PRICE = 9.99;
-  const FEATURES = [
-    { icon: 'close-circle', text: 'No Ads', description: 'Enjoy uninterrupted gameplay' },
-    { icon: 'crown', text: 'Premium Badge', description: 'Show off your premium status' },
-    { icon: 'rocket', text: 'Early Access', description: 'Get new features first' },
-    { icon: 'palette', text: 'Custom Themes', description: 'Personalize your experience' },
-    { icon: 'infinity', text: 'Unlimited Rooms', description: 'Create as many rooms as you want' },
-    { icon: 'star', text: 'Priority Support', description: 'Get help faster' },
+  const getFeatures = () => [
+    { icon: 'close-circle', text: t('payment.noAds'), description: t('payment.noAdsDesc') },
+    { icon: 'crown', text: t('payment.premiumBadge'), description: t('payment.premiumBadgeDesc') },
+    { icon: 'rocket', text: t('payment.earlyAccess'), description: t('payment.earlyAccessDesc') },
+    { icon: 'palette', text: t('payment.customThemes'), description: t('payment.customThemesDesc') },
+    { icon: 'infinity', text: t('payment.unlimitedRooms'), description: t('payment.unlimitedRoomsDesc') },
+    { icon: 'star', text: t('payment.prioritySupport'), description: t('payment.prioritySupportDesc') },
   ];
 
   const handleStripePayment = async () => {
@@ -34,7 +36,7 @@ const PaymentScreen = ({ navigation }) => {
       setPaymentUrl(response.data.url);
       setShowWebView(true);
     } catch (error) {
-      Alert.alert('Error', 'Failed to initiate payment');
+      Alert.alert(t('common.error'), t('payment.failedToInitiate'));
     } finally {
       setLoading(false);
     }
@@ -50,7 +52,7 @@ const PaymentScreen = ({ navigation }) => {
       setPaymentUrl(response.data.approvalUrl);
       setShowWebView(true);
     } catch (error) {
-      Alert.alert('Error', 'Failed to initiate PayPal payment');
+      Alert.alert(t('common.error'), t('payment.failedToInitiatePayPal'));
     } finally {
       setLoading(false);
     }
@@ -73,13 +75,13 @@ const PaymentScreen = ({ navigation }) => {
         if (response.data.isSubscribed) {
           await updateUser({ isSubscribed: true });
           Alert.alert(
-            'Success!',
-            'Welcome to Premium! Enjoy your ad-free experience.',
-            [{ text: 'OK', onPress: () => navigation.goBack() }]
+            t('common.success'),
+            t('payment.welcomePremium'),
+            [{ text: t('common.ok'), onPress: () => navigation.goBack() }]
           );
         }
       } catch (error) {
-        Alert.alert('Error', 'Failed to verify payment');
+        Alert.alert(t('common.error'), t('payment.failedToVerify'));
       } finally {
         setLoading(false);
       }
@@ -88,7 +90,7 @@ const PaymentScreen = ({ navigation }) => {
     // Check for cancel URL
     if (url.includes('payment-cancel')) {
       setShowWebView(false);
-      Alert.alert('Payment Cancelled', 'Your payment was cancelled');
+      Alert.alert(t('payment.paymentCancelled'), t('payment.paymentCancelledDesc'));
     }
   };
 
@@ -105,7 +107,7 @@ const PaymentScreen = ({ navigation }) => {
           onPress={() => setShowWebView(false)}
           style={styles.cancelWebView}
         >
-          Cancel Payment
+          {t('payment.cancelPayment')}
         </Button>
       </View>
     );
@@ -116,23 +118,23 @@ const PaymentScreen = ({ navigation }) => {
       {/* Premium Banner */}
       <Card style={styles.premiumCard}>
         <Card.Content>
-          <Text style={styles.premiumTitle}>Go Premium!</Text>
-          <Text style={styles.premiumSubtitle}>One-time payment, lifetime access</Text>
+          <Text style={styles.premiumTitle}>{t('payment.goPremium')}</Text>
+          <Text style={styles.premiumSubtitle}>{t('payment.oneTimePayment')}</Text>
           <View style={styles.priceContainer}>
             <Text style={styles.priceSymbol}>$</Text>
             <Text style={styles.priceAmount}>{SUBSCRIPTION_PRICE}</Text>
             <Text style={styles.priceLabel}>USD</Text>
           </View>
-          <Chip style={styles.lifetimeChip} icon="infinity">Lifetime Access</Chip>
+          <Chip style={styles.lifetimeChip} icon="infinity">{t('payment.lifetimeAccess')}</Chip>
         </Card.Content>
       </Card>
 
       {/* Features */}
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.sectionTitle}>Premium Features</Text>
+          <Text style={styles.sectionTitle}>{t('payment.premiumFeatures')}</Text>
           <List.Section>
-            {FEATURES.map((feature, index) => (
+            {getFeatures().map((feature, index) => (
               <List.Item
                 key={index}
                 title={feature.text}
@@ -151,7 +153,7 @@ const PaymentScreen = ({ navigation }) => {
       {/* Payment Methods */}
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.sectionTitle}>Choose Payment Method</Text>
+          <Text style={styles.sectionTitle}>{t('payment.choosePaymentMethod')}</Text>
           
           <Button
             mode="contained"
@@ -161,7 +163,7 @@ const PaymentScreen = ({ navigation }) => {
             disabled={loading}
             icon="credit-card"
           >
-            Pay with Card (Stripe)
+            {t('payment.payWithCard')}
           </Button>
 
           <Button
@@ -172,7 +174,7 @@ const PaymentScreen = ({ navigation }) => {
             disabled={loading}
             icon="paypal"
           >
-            Pay with PayPal
+            {t('payment.payWithPayPal')}
           </Button>
         </Card.Content>
       </Card>
@@ -180,13 +182,9 @@ const PaymentScreen = ({ navigation }) => {
       {/* Terms */}
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.termsTitle}>Terms & Conditions</Text>
+          <Text style={styles.termsTitle}>{t('payment.termsTitle')}</Text>
           <Text style={styles.termsText}>
-            • One-time payment for lifetime access{'\n'}
-            • No recurring charges{'\n'}
-            • Instant activation after payment{'\n'}
-            • 30-day money-back guarantee{'\n'}
-            • Non-transferable license
+            {t('payment.termsText')}
           </Text>
         </Card.Content>
       </Card>
@@ -195,9 +193,9 @@ const PaymentScreen = ({ navigation }) => {
       {user?.isSubscribed && (
         <Card style={[styles.card, styles.subscribedCard]}>
           <Card.Content>
-            <Text style={styles.subscribedTitle}>✨ You're Already Premium!</Text>
+            <Text style={styles.subscribedTitle}>{t('payment.alreadyPremium')}</Text>
             <Text style={styles.subscribedText}>
-              Thank you for supporting Stop! The Game
+              {t('payment.thankYou')}
             </Text>
           </Card.Content>
         </Card>

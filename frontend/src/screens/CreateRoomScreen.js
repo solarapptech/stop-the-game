@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Alert, Clipboard } from 'react-native';
 import { Text, TextInput, Button, Switch, RadioButton, Card, Chip } from 'react-native-paper';
 import { useGame } from '../contexts/GameContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const CreateRoomScreen = ({ navigation }) => {
@@ -11,6 +12,7 @@ const CreateRoomScreen = ({ navigation }) => {
   const [rounds, setRounds] = useState('3');
   const [loading, setLoading] = useState(false);
   const { createRoom, getPublicRooms } = useGame();
+  const { t } = useLanguage();
 
   // Auto-generate room name on mount
   useEffect(() => {
@@ -28,12 +30,12 @@ const CreateRoomScreen = ({ navigation }) => {
 
   const handleCreateRoom = async () => {
     if (!roomName.trim()) {
-      Alert.alert('Error', 'Please enter a room name');
+      Alert.alert(t('common.error'), t('createRoom.enterRoomName'));
       return;
     }
 
     if (!isPublic && !password.trim()) {
-      Alert.alert('Error', 'Private rooms require a password');
+      Alert.alert(t('common.error'), t('createRoom.privatePasswordRequired'));
       return;
     }
 
@@ -50,7 +52,7 @@ const CreateRoomScreen = ({ navigation }) => {
       // Navigate directly to the room without showing popup
       navigation.replace('Room', { roomId: result.room.id });
     } else {
-      Alert.alert('Error', result.error);
+      Alert.alert(t('common.error'), result.error);
     }
   };
 
@@ -58,20 +60,20 @@ const CreateRoomScreen = ({ navigation }) => {
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.sectionTitle}>Room Details</Text>
+          <Text style={styles.sectionTitle}>{t('createRoom.roomDetails')}</Text>
           
           <TextInput
-            label="Room Name"
+            label={t('createRoom.roomName')}
             value={roomName}
             onChangeText={setRoomName}
             style={styles.input}
             mode="outlined"
-            placeholder="Enter a creative room name"
+            placeholder={t('createRoom.roomNamePlaceholder')}
             left={<TextInput.Icon icon="home" />}
           />
 
           <View style={styles.switchContainer}>
-            <Text style={styles.switchLabel}>Public Room</Text>
+            <Text style={styles.switchLabel}>{t('createRoom.publicRoom')}</Text>
             <Switch
               value={isPublic}
               onValueChange={setIsPublic}
@@ -81,13 +83,13 @@ const CreateRoomScreen = ({ navigation }) => {
 
           {!isPublic && (
             <TextInput
-              label="Room Password"
+              label={t('createRoom.roomPassword')}
               value={password}
               onChangeText={setPassword}
               style={styles.input}
               mode="outlined"
               secureTextEntry
-              placeholder="Set a password for private room"
+              placeholder={t('createRoom.passwordPlaceholder')}
               left={<TextInput.Icon icon="lock" />}
             />
           )}
@@ -96,26 +98,26 @@ const CreateRoomScreen = ({ navigation }) => {
 
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.sectionTitle}>Game Settings</Text>
-          <Text style={styles.label}>Number of Rounds</Text>
+          <Text style={styles.sectionTitle}>{t('createRoom.gameSettings')}</Text>
+          <Text style={styles.label}>{t('createRoom.numberOfRounds')}</Text>
           
           <RadioButton.Group onValueChange={setRounds} value={rounds}>
             <View style={styles.radioContainer}>
               <View style={styles.radioItem}>
                 <RadioButton value="1" color={theme.colors.primary} />
-                <Text>1 Round (Quick)</Text>
+                <Text>{t('createRoom.roundQuick')}</Text>
               </View>
               <View style={styles.radioItem}>
                 <RadioButton value="3" color={theme.colors.primary} />
-                <Text>3 Rounds (Normal)</Text>
+                <Text>{t('createRoom.roundNormal')}</Text>
               </View>
               <View style={styles.radioItem}>
                 <RadioButton value="6" color={theme.colors.primary} />
-                <Text>6 Rounds (Extended)</Text>
+                <Text>{t('createRoom.roundExtended')}</Text>
               </View>
               <View style={styles.radioItem}>
                 <RadioButton value="9" color={theme.colors.primary} />
-                <Text>9 Rounds (Marathon)</Text>
+                <Text>{t('createRoom.roundMarathon')}</Text>
               </View>
             </View>
           </RadioButton.Group>
@@ -124,12 +126,12 @@ const CreateRoomScreen = ({ navigation }) => {
 
       <Card style={styles.card}>
         <Card.Content>
-          <Text style={styles.sectionTitle}>Room Features</Text>
+          <Text style={styles.sectionTitle}>{t('createRoom.roomFeatures')}</Text>
           <View style={styles.featuresContainer}>
-            <Chip icon="timer" style={styles.chip}>60s per round</Chip>
-            <Chip icon="account-group" style={styles.chip}>2-8 players</Chip>
-            <Chip icon="robot" style={styles.chip}>AI validation</Chip>
-            <Chip icon="trophy" style={styles.chip}>Leaderboard</Chip>
+            <Chip icon="timer" style={styles.chip}>{t('createRoom.timePerRound')}</Chip>
+            <Chip icon="account-group" style={styles.chip}>{t('createRoom.playersRange')}</Chip>
+            <Chip icon="robot" style={styles.chip}>{t('createRoom.aiValidation')}</Chip>
+            <Chip icon="trophy" style={styles.chip}>{t('createRoom.leaderboard')}</Chip>
           </View>
         </Card.Content>
       </Card>
@@ -143,7 +145,7 @@ const CreateRoomScreen = ({ navigation }) => {
         contentStyle={styles.buttonContent}
         icon="plus"
       >
-        Create Room
+        {t('createRoom.createRoom')}
       </Button>
     </ScrollView>
   );
