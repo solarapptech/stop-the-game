@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
-import { Text, TextInput, Button, HelperText } from 'react-native-paper';
+import { Text, TextInput, Button, HelperText, RadioButton, List } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const UsernameSetupScreen = ({ navigation }) => {
-  const { user, updateUsername, checkUsernameAvailable, refreshUser } = useAuth();
+  const { user, updateUsername, updateLanguage: updateUserLanguage, checkUsernameAvailable, refreshUser } = useAuth();
+  const { language, changeLanguage, t } = useLanguage();
   const [username, setUsername] = useState(user?.username || '');
   const [errorMessage, setErrorMessage] = useState('');
   const [saving, setSaving] = useState(false);
@@ -31,10 +33,10 @@ const UsernameSetupScreen = ({ navigation }) => {
   }, [user?.email]);
 
   const validateLocal = (name) => {
-    if (!name) return 'Username is required';
-    if (name.length < 3) return 'Must be at least 3 characters';
-    if (name.length > 30) return 'Must be at most 30 characters';
-    if (!/^[a-zA-Z0-9_.-]+$/.test(name)) return 'Only letters, numbers, dot, underscore, hyphen';
+    if (!name) return t('usernameSetup.required');
+    if (name.length < 3) return t('usernameSetup.minLength');
+    if (name.length > 30) return t('usernameSetup.maxLength');
+    if (!/^[a-zA-Z0-9_.-]+$/.test(name)) return t('usernameSetup.invalidChars');
     return null;
   };
 
@@ -60,12 +62,12 @@ const UsernameSetupScreen = ({ navigation }) => {
     try {
       const available = await checkUsernameAvailable(username);
       if (!available) {
-        setErrorMessage('Username already taken');
+        setErrorMessage(t('usernameSetup.alreadyTaken'));
         setSaving(false);
         return;
       }
     } catch (e) {
-      setErrorMessage('Error checking username availability');
+      setErrorMessage(t('usernameSetup.errorChecking'));
       setSaving(false);
       return;
     }
@@ -77,20 +79,20 @@ const UsernameSetupScreen = ({ navigation }) => {
     if (result.success) {
       navigation.replace('Menu');
     } else {
-      setErrorMessage(result.error || 'Failed to update username');
+      setErrorMessage(result.error || t('usernameSetup.updateFailed'));
     }
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.title}>Your Account has been Created!</Text>
-        <Text style={styles.subtitle}>What's Your Username?</Text>
+        <Text style={styles.title}>{t('usernameSetup.title')}</Text>
+        <Text style={styles.subtitle}>{t('usernameSetup.subtitle')}</Text>
 
         <TextInput
-          label="Username"
+          label={t('usernameSetup.username')}
           value={username}
-          onChangeText={(t) => { setUsername(t); setErrorMessage(''); }}
+          onChangeText={(text) => { setUsername(text); setErrorMessage(''); }}
           style={styles.input}
           mode="outlined"
           autoCapitalize="none"
@@ -101,6 +103,30 @@ const UsernameSetupScreen = ({ navigation }) => {
           {errorMessage}
         </HelperText>
 
+        <View style={styles.languageContainer}>
+          <Text style={styles.languageLabel}>{t('usernameSetup.selectLanguage')}</Text>
+          <RadioButton.Group 
+            onValueChange={async (value) => {
+              await changeLanguage(value);
+              if (updateUserLanguage) {
+                await updateUserLanguage(value);
+              }
+            }} 
+            value={language}
+          >
+            <View style={styles.languageOptions}>
+              <View style={styles.languageOption}>
+                <RadioButton value="en" color={theme.colors.primary} />
+                <Text style={styles.languageOptionText}>English</Text>
+              </View>
+              <View style={styles.languageOption}>
+                <RadioButton value="es" color={theme.colors.primary} />
+                <Text style={styles.languageOptionText}>Español</Text>
+              </View>
+            </View>
+          </RadioButton.Group>
+        </View>
+
         <Button
           mode="contained"
           onPress={handleContinue}
@@ -109,7 +135,7 @@ const UsernameSetupScreen = ({ navigation }) => {
           contentStyle={styles.buttonContent}
           style={styles.continueButton}
         >
-          Let's Play!
+          {t('usernameSetup.letsPlay')}
         </Button>
       </View>
     </View>
@@ -146,8 +172,32 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: '#FFFFFF'
   },
-  continueButton: {
+  languageContainer: {
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  languageLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#424242',
+    marginBottom: 8,
+  },
+  languageOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
     marginTop: 8,
+  },
+  languageOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  languageOptionText: {
+    fontSize: 16,
+    color: '#424242',
+    marginLeft: -8,
+  },
+  continueButton: {
+    marginTop: 16,
     backgroundColor: theme.colors.primary
   },
   buttonContent: {

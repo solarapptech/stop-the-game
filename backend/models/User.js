@@ -75,6 +75,11 @@ const userSchema = new mongoose.Schema({
       default: true
     }
   },
+  language: {
+    type: String,
+    enum: ['en', 'es'],
+    default: 'en'
+  },
   winPoints: {
     type: Number,
     default: 0

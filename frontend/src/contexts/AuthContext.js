@@ -315,6 +315,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const updateLanguage = async (language) => {
+    try {
+      const response = await axios.put('user/language', { language });
+      const updatedUser = { ...user, language: response.data.language };
+      setUser(updatedUser);
+      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+      return { success: true, language: response.data.language };
+    } catch (error) {
+      console.error('[AuthContext] updateLanguage error:', error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message || 'Failed to update language'
+      };
+    }
+  };
+
   const refreshUser = async (options = {}) => {
     try {
       const force = !!options.force;
@@ -409,6 +425,7 @@ export const AuthProvider = ({ children }) => {
       updateDisplayName,
       checkUsernameAvailable,
       updateUsername,
+      updateLanguage,
       refreshUser,
       markStatsDirty,
       isAuthenticated: !!token

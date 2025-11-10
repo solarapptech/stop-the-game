@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Text, Card, List, Switch, Button, TextInput, Dialog, Portal, IconButton } from 'react-native-paper';
+import { Text, Card, List, Switch, Button, TextInput, Dialog, Portal, IconButton, RadioButton } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import axios from 'axios';
 import theme from '../theme';
 
 const SettingsScreen = ({ navigation, onClose, inGame }) => {
-  const { user, updateUser, logout, updateDisplayName, resendVerificationCode, refreshUser } = useAuth() || {};
+  const { user, updateUser, updateLanguage: updateUserLanguage, logout, updateDisplayName, resendVerificationCode, refreshUser } = useAuth() || {};
+  const { language, changeLanguage, t } = useLanguage();
   const refreshUserSafe = async (opts = {}) => {
     if (typeof refreshUser === 'function') {
       return await refreshUser(opts);
@@ -257,6 +259,39 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
 
         {!inGame && (
           <>
+            {/* Language Settings */}
+            <Card style={styles.card}>
+              <Card.Content>
+                <Text style={styles.sectionTitle}>Language</Text>
+                <RadioButton.Group 
+                  onValueChange={async (value) => {
+                    await changeLanguage(value);
+                    if (updateUserLanguage) {
+                      await updateUserLanguage(value);
+                    }
+                  }} 
+                  value={language}
+                >
+                  <List.Item
+                    title="English"
+                    left={() => <RadioButton value="en" color={theme.colors.primary} />}
+                    onPress={() => {
+                      changeLanguage('en');
+                      if (updateUserLanguage) updateUserLanguage('en');
+                    }}
+                  />
+                  <List.Item
+                    title="Español"
+                    left={() => <RadioButton value="es" color={theme.colors.primary} />}
+                    onPress={() => {
+                      changeLanguage('es');
+                      if (updateUserLanguage) updateUserLanguage('es');
+                    }}
+                  />
+                </RadioButton.Group>
+              </Card.Content>
+            </Card>
+
             {/* Security */}
             <Card style={styles.card}>
               <Card.Content>

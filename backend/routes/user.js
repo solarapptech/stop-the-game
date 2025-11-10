@@ -78,6 +78,33 @@ router.put('/settings', authMiddleware, async (req, res) => {
   }
 });
 
+// Update language preference
+router.put('/language', authMiddleware, async (req, res) => {
+  try {
+    const { language } = req.body;
+
+    if (!language || !['en', 'es'].includes(language)) {
+      return res.status(400).json({ message: 'Invalid language. Must be "en" or "es"' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.language = language;
+    await user.save();
+
+    res.json({
+      message: 'Language updated',
+      language: user.language
+    });
+  } catch (error) {
+    console.error('Update language error:', error);
+    res.status(500).json({ message: 'Error updating language' });
+  }
+});
+
 // Add friend
 router.post('/friends/add', authMiddleware, async (req, res) => {
   try {

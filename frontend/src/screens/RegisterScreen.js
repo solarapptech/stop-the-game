@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { TextInput, Button, Text, Checkbox } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const RegisterScreen = ({ navigation }) => {
@@ -11,6 +12,7 @@ const RegisterScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { register, checkUsernameAvailable } = useAuth();
+  const { t } = useLanguage();
 
   const validateEmail = (email) => {
     const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -51,22 +53,22 @@ const RegisterScreen = ({ navigation }) => {
   const handleRegister = async () => {
     // Validation
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert(t('common.error'), t('auth.fillAllFields'));
       return;
     }
 
     if (!validateEmail(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
+      Alert.alert(t('common.error'), t('auth.invalidEmail'));
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      Alert.alert(t('common.error'), t('auth.passwordMinLength'));
       return;
     }
 
     if (!agreeTerms) {
-      Alert.alert('Error', 'You must agree to the terms and conditions');
+      Alert.alert(t('common.error'), t('auth.mustAgreeTerms'));
       return;
     }
 
@@ -78,10 +80,10 @@ const RegisterScreen = ({ navigation }) => {
       if (result.success) {
         navigation.replace('UsernameSetup');
       } else {
-        Alert.alert('Registration Failed', result.error);
+        Alert.alert(t('auth.registrationFailed'), result.error);
       }
     } catch (e) {
-      Alert.alert('Registration Failed', e?.message || 'Unknown error');
+      Alert.alert(t('auth.registrationFailed'), e?.message || 'Unknown error');
     } finally {
       setLoading(false);
     }
@@ -90,11 +92,11 @@ const RegisterScreen = ({ navigation }) => {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <View style={styles.formContainer}>
-        <Text style={styles.title}>Create Account</Text>
+        <Text style={styles.title}>{t('auth.createAccount')}</Text>
         <Text style={styles.subtitle}>Join the fun!</Text>
 
         <TextInput
-          label="Email"
+          label={t('auth.email')}
           value={email}
           onChangeText={setEmail}
           style={styles.input}
@@ -105,7 +107,7 @@ const RegisterScreen = ({ navigation }) => {
         />
 
         <TextInput
-          label="Password"
+          label={t('auth.password')}
           value={password}
           onChangeText={setPassword}
           style={styles.input}
@@ -127,7 +129,7 @@ const RegisterScreen = ({ navigation }) => {
             color={theme.colors.primary}
           />
           <Text style={styles.checkboxText}>
-            I agree to the Terms and Conditions
+            {t('auth.agreeTerms')}
           </Text>
         </View>
 
@@ -139,7 +141,7 @@ const RegisterScreen = ({ navigation }) => {
           disabled={loading}
           contentStyle={styles.buttonContent}
         >
-          Create Account
+          {t('auth.createAccount')}
         </Button>
 
         <Button
@@ -148,7 +150,7 @@ const RegisterScreen = ({ navigation }) => {
           style={styles.backButton}
           disabled={loading}
         >
-          Already have an account? Login
+          {t('auth.alreadyHaveAccount')}
         </Button>
       </View>
     </ScrollView>

@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
 import { useAuth } from '../contexts/AuthContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 import axios from 'axios';
 
@@ -16,6 +17,7 @@ const LoginScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
+  const { t } = useLanguage();
 
   // Google OAuth configuration
   const [request, response, promptAsync] = Google.useAuthRequest({
@@ -31,7 +33,7 @@ const LoginScreen = ({ navigation }) => {
 
   const handleLogin = async () => {
     if (!username || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert(t('common.error'), t('auth.fillAllFields'));
       return;
     }
 
@@ -42,7 +44,7 @@ const LoginScreen = ({ navigation }) => {
     if (result.success) {
       navigation.replace('Menu');
     } else {
-      Alert.alert('Login Failed', result.error);
+      Alert.alert(t('auth.loginFailed'), result.error);
     }
   };
 
@@ -54,10 +56,10 @@ const LoginScreen = ({ navigation }) => {
       if (data.success) {
         navigation.replace('Menu');
       } else {
-        Alert.alert('Error', 'Google login failed');
+        Alert.alert(t('common.error'), 'Google login failed');
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to connect with Google');
+      Alert.alert(t('common.error'), 'Failed to connect with Google');
     } finally {
       setLoading(false);
     }
@@ -76,7 +78,7 @@ const LoginScreen = ({ navigation }) => {
 
         <View style={styles.formContainer}>
           <TextInput
-            label="Username or Email"
+            label={t('auth.usernameOrEmail')}
             value={username}
             onChangeText={setUsername}
             style={styles.input}
@@ -86,7 +88,7 @@ const LoginScreen = ({ navigation }) => {
           />
 
           <TextInput
-            label="Password"
+            label={t('auth.password')}
             value={password}
             onChangeText={setPassword}
             style={styles.input}
@@ -109,12 +111,12 @@ const LoginScreen = ({ navigation }) => {
             disabled={loading}
             contentStyle={styles.buttonContent}
           >
-            Login
+            {t('auth.login')}
           </Button>
 
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
+            <Text style={styles.dividerText}>{t('common.or')}</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -126,13 +128,13 @@ const LoginScreen = ({ navigation }) => {
             icon="google"
             contentStyle={styles.buttonContent}
           >
-            Continue with Google
+            {t('auth.continueWithGoogle')}
           </Button>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Don't have an account?</Text>
+            <Text style={styles.footerText}>{t('auth.dontHaveAccount')}</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.linkText}>Sign Up</Text>
+              <Text style={styles.linkText}>{t('auth.signUp')}</Text>
             </TouchableOpacity>
           </View>
         </View>

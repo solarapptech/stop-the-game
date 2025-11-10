@@ -26,6 +26,7 @@ import PaymentScreen from './src/screens/PaymentScreen';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { SocketProvider } from './src/contexts/SocketContext';
 import { GameProvider } from './src/contexts/GameContext';
+import { LanguageProvider } from './src/contexts/LanguageContext';
 
 // Theme
 import theme from './src/theme';
@@ -75,10 +76,11 @@ export default function App() {
 
   return (
     <PaperProvider theme={theme}>
-      <AuthProvider>
-        <SocketProvider>
-          <GameProvider>
-            <NavigationContainer>
+      <LanguageProvider>
+        <AuthProvider>
+          <SocketProvider>
+            <GameProvider>
+              <NavigationContainer>
               <Stack.Navigator 
                 initialRouteName={initialRoute}
                 screenOptions={{
@@ -176,6 +178,7 @@ export default function App() {
           </GameProvider>
         </SocketProvider>
       </AuthProvider>
+      </LanguageProvider>
     </PaperProvider>
   );
 }
