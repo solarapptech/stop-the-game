@@ -37,7 +37,7 @@ const RoomScreen = ({ navigation, route }) => {
       
       const playersData = currentRoom.players.map(p => ({
         id: p.user._id || p.user,
-        displayName: p.user.displayName || p.user.username || 'Player',
+        displayName: p.user.displayName || p.user.username || t('gameplay.player'),
         isReady: p.isReady,
         isOwner: (p.user._id || p.user).toString() === ownerId.toString()
       }));
@@ -68,7 +68,7 @@ const RoomScreen = ({ navigation, route }) => {
         
         const playersData = (room.players || []).map(p => ({
           id: p.user._id || p.user,
-          displayName: p.user.displayName || p.user.username || 'Player',
+          displayName: p.user.displayName || p.user.username || t('gameplay.player'),
           isReady: p.isReady,
           isOwner: (p.user._id || p.user).toString() === ownerId.toString()
         }));
@@ -82,7 +82,7 @@ const RoomScreen = ({ navigation, route }) => {
       socket.on('player-joined', (data) => {
         const playersData = data.players.map(p => ({
           id: p.user._id || p.user,
-          displayName: p.user.displayName || p.user.username || 'Player',
+          displayName: p.user.displayName || p.user.username || t('gameplay.player'),
           isReady: p.isReady,
           isOwner: (p.user._id || p.user).toString() === roomOwner
         }));
@@ -102,7 +102,7 @@ const RoomScreen = ({ navigation, route }) => {
         const currentOwnerId = data.newOwnerId || roomOwner;
         const playersData = data.players.map(p => ({
           id: p.user._id || p.user,
-          displayName: p.user.displayName || p.user.username || 'Player',
+          displayName: p.user.displayName || p.user.username || t('gameplay.player'),
           isReady: p.isReady,
           isOwner: (p.user._id || p.user).toString() === currentOwnerId
         }));
@@ -126,7 +126,7 @@ const RoomScreen = ({ navigation, route }) => {
       socket.on('new-message', (data) => {
         setMessages(prev => [...prev, {
           type: 'chat',
-          displayName: data.displayName || data.username || user?.displayName || user?.username || 'Player',
+          displayName: data.displayName || data.username || user?.displayName || user?.username || t('gameplay.player'),
           text: data.message
         }]);
       });
@@ -137,7 +137,7 @@ const RoomScreen = ({ navigation, route }) => {
         
         const playersData = data.players.map(p => ({
           id: p.user._id || p.user,
-          displayName: p.user.displayName || p.user.username || 'Player',
+          displayName: p.user.displayName || p.user.username || t('gameplay.player'),
           isReady: p.isReady,
           isOwner: (p.user._id || p.user).toString() === data.newOwnerId
         }));

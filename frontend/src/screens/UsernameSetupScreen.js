@@ -117,11 +117,11 @@ const UsernameSetupScreen = ({ navigation }) => {
             <View style={styles.languageOptions}>
               <View style={styles.languageOption}>
                 <RadioButton value="en" color={theme.colors.primary} />
-                <Text style={styles.languageOptionText}>English</Text>
+                <Text style={styles.languageOptionText}>{t('settings.english')}</Text>
               </View>
               <View style={styles.languageOption}>
                 <RadioButton value="es" color={theme.colors.primary} />
-                <Text style={styles.languageOptionText}>Español</Text>
+                <Text style={styles.languageOptionText}>{t('settings.spanish')}</Text>
               </View>
             </View>
           </RadioButton.Group>

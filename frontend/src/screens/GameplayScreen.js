@@ -631,7 +631,7 @@ const GameplayScreen = ({ navigation, route }) => {
       return fromGame.map((p, idx) => {
         const u = p.user || {};
         const id = (u && (u._id || u)) || idx.toString();
-        const name = (u && (u.displayName || u.username)) || p.displayName || p.username || 'Player';
+        const name = (u && (u.displayName || u.username)) || p.displayName || p.username || t('gameplay.player');
         return { id: String(id), name: String(name) };
       });
     }
@@ -639,14 +639,14 @@ const GameplayScreen = ({ navigation, route }) => {
       return playerScores.map((s, idx) => {
         const u = s.user || {};
         const id = (u && (u._id || u)) || idx.toString();
-        const name = (u && (u.displayName || u.username)) || s.displayName || s.username || 'Player';
+        const name = (u && (u.displayName || u.username)) || s.displayName || s.username || t('gameplay.player');
         return { id: String(id), name: String(name) };
       });
     }
-    const meName = user?.displayName || user?.username || 'You';
+    const meName = user?.displayName || user?.username || t('leaderboard.you');
     const meId = String(user?.id || user?._id || 'me');
     return [{ id: meId, name: meName }];
-  }, [gameState, playerScores, user]);
+  }, [gameState, playerScores, user, t]);
 
   const pointsById = React.useMemo(() => {
     const map = {};
@@ -1095,11 +1095,11 @@ const GameplayScreen = ({ navigation, route }) => {
       }
       
       // If fetch failed, show error
-      setGameplayRefreshError('Could not sync game state. Please try again.');
+      setGameplayRefreshError(t('gameplay.couldNotSyncState'));
       setIsRefreshingGameplay(false);
     } catch (error) {
       console.error('Error refreshing gameplay:', error);
-      setGameplayRefreshError('An error occurred while trying to refresh. Please try again.');
+      setGameplayRefreshError(t('gameplay.refreshErrorGeneric'));
       setIsRefreshingGameplay(false);
     }
   };
@@ -1185,12 +1185,12 @@ const GameplayScreen = ({ navigation, route }) => {
       }
       
       // If all else fails, set error message and increment retry
-      setRefreshError('Could not fetch round results. The game may still be processing.');
+      setRefreshError(t('gameplay.couldNotFetchResults'));
       setRetryAttempt(prev => prev + 1);
       setIsRefreshing(false);
     } catch (error) {
       console.error('Error refreshing validation:', error);
-      setRefreshError('An error occurred while trying to refresh. Please try again.');
+      setRefreshError(t('gameplay.refreshErrorGeneric'));
       setRetryAttempt(prev => prev + 1);
       setIsRefreshing(false);
     }
@@ -1369,6 +1369,33 @@ const GameplayScreen = ({ navigation, route }) => {
     }
   };
 
+  const getCategoryLabel = (category) => {
+    switch (category) {
+      case 'Name':
+        return t('gameplay.categoryNames.name');
+      case 'Last Name':
+        return t('gameplay.categoryNames.lastName');
+      case 'City/Country':
+        return t('gameplay.categoryNames.cityCountry');
+      case 'Animal':
+        return t('gameplay.categoryNames.animal');
+      case 'Fruit/Food':
+        return t('gameplay.categoryNames.fruitFood');
+      case 'Color':
+        return t('gameplay.categoryNames.color');
+      case 'Object':
+        return t('gameplay.categoryNames.object');
+      case 'Brand':
+        return t('gameplay.categoryNames.brand');
+      case 'Profession':
+        return t('gameplay.categoryNames.profession');
+      case 'Sports':
+        return t('gameplay.categoryNames.sports');
+      default:
+        return category;
+    }
+  };
+
   const renderCategorySelection = () => (
     <View style={styles.categorySelectionContainer}>
       <Card style={styles.card}>
@@ -1443,7 +1470,7 @@ const GameplayScreen = ({ navigation, route }) => {
                   styles.categoryTitle,
                   isSelected && styles.categoryTitleSelected
                 ]}>
-                  {category}
+                  {getCategoryLabel(category)}
                 </Text>
               </TouchableOpacity>
             );
@@ -1465,7 +1492,7 @@ const GameplayScreen = ({ navigation, route }) => {
           <Text style={styles.selectedCategoriesLabel}>
             {t('gameplay.selectCategories')}: 
             <Text style={styles.selectedCategoriesText}>
-              {selectedCategories.length > 0 ? selectedCategories.join(', ') : t('common.no')}
+              {selectedCategories.length > 0 ? selectedCategories.map(c => getCategoryLabel(c)).join(', ') : t('common.no')}
             </Text>
           </Text>
         </View>
@@ -1648,7 +1675,9 @@ const GameplayScreen = ({ navigation, route }) => {
                       color={theme.colors.primary}
                       style={styles.categoryIcon}
                     />
-                    <Text style={styles.categoryLabel}>{category}</Text>
+                    <Text style={styles.categoryTitle}>
+                      {getCategoryLabel(category)}
+                    </Text>
                   </View>
                   <View style={styles.inputRow}>
                     <View style={styles.inputWrapper}>
@@ -1656,7 +1685,7 @@ const GameplayScreen = ({ navigation, route }) => {
                         ref={(ref) => { inputRefs.current[category] = ref; }}
                         value={actualValue}
                         onChangeText={(text) => handleAnswerChange(category, text)}
-                        placeholder={`${category} - ${currentLetter}`}
+                        placeholder={`${getCategoryLabel(category)} - ${currentLetter}`}
                         style={[styles.answerInput, isHidden && styles.hiddenInput]}
                         autoCapitalize="words"
                         editable={timeLeft > 0 && !isFrozen}
@@ -1724,7 +1753,7 @@ const GameplayScreen = ({ navigation, route }) => {
       const pid = (playerUser._id) ? playerUser._id : playerUser;
       const pidStr = typeof pid === 'string' ? pid : String(pid || '');
       if (pidStr === String(userId || '')) return t('leaderboard.you');
-      return playerUser.displayName || playerUser.username || `Player ${pidStr.substring(0, 5)}`;
+      return playerUser.displayName || playerUser.username || `${t('gameplay.player')} ${pidStr.substring(0, 5)}`;
     };
 
     // Calculate total points for this round
@@ -1928,7 +1957,7 @@ const GameplayScreen = ({ navigation, route }) => {
               onPress={() => setFinalConfirmed(true)}
               style={styles.nextButton}
             >
-              Confirm Final Results
+              {t('gameplay.confirmFinalResults')}
             </Button>
           )}
         </Card.Content>
@@ -1998,14 +2027,14 @@ const GameplayScreen = ({ navigation, route }) => {
       {showStopOverlay && (
         <View style={styles.revealOverlay} pointerEvents="none">
           <Animated.View style={[styles.revealBox]}>
-            <Text style={styles.stopText}>Stop!</Text>
+            <Text style={styles.stopText}>{t('gameplay.stop')}</Text>
           </Animated.View>
         </View>
       )}
       {showReveal && (
         <View style={styles.revealOverlay} pointerEvents="none">
           <Animated.View style={[styles.revealBox]}>
-            <Text style={styles.revealText}>Starting in {revealTimeLeft}...</Text>
+            <Text style={styles.revealText}>{t('gameplay.startingIn')} {revealTimeLeft}...</Text>
           </Animated.View>
         </View>
       )}
@@ -2023,7 +2052,7 @@ const GameplayScreen = ({ navigation, route }) => {
       {phase === 'playing' && renderGameplay()}
       {phase === 'validation' && (
         <View style={styles.validationContainer}>
-          <Text style={styles.validationText}>Validating answers...</Text>
+          <Text style={styles.validationText}>{t('gameplay.validatingAnswers')}</Text>
           {isRefreshing && (
             <ActivityIndicator 
               size="large" 
@@ -2032,7 +2061,7 @@ const GameplayScreen = ({ navigation, route }) => {
             />
           )}
           {retryAttempt > 0 && (
-            <Text style={styles.retryAttemptText}>Attempt {retryAttempt}</Text>
+            <Text style={styles.retryAttemptText}>{t('gameplay.attempt')} {retryAttempt}</Text>
           )}
           {refreshError && (
             <Text style={styles.refreshErrorText}>{refreshError}</Text>
@@ -2044,7 +2073,7 @@ const GameplayScreen = ({ navigation, route }) => {
             loading={isRefreshing}
             style={[styles.refreshButton, isRefreshing && styles.refreshButtonDisabled]}
           >
-            {isRefreshing ? 'Loading...' : 'Refresh'}
+            {isRefreshing ? t('common.loading') : t('common.refresh')}
           </Button>
         </View>
       )}

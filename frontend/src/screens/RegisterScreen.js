@@ -83,7 +83,7 @@ const RegisterScreen = ({ navigation }) => {
         Alert.alert(t('auth.registrationFailed'), result.error);
       }
     } catch (e) {
-      Alert.alert(t('auth.registrationFailed'), e?.message || 'Unknown error');
+      Alert.alert(t('auth.registrationFailed'), e?.message || t('errors.generic'));
     } finally {
       setLoading(false);
     }
@@ -93,7 +93,7 @@ const RegisterScreen = ({ navigation }) => {
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <View style={styles.formContainer}>
         <Text style={styles.title}>{t('auth.createAccount')}</Text>
-        <Text style={styles.subtitle}>Join the fun!</Text>
+        <Text style={styles.subtitle}>{t('auth.joinTheFun')}</Text>
 
         <TextInput
           label={t('auth.email')}

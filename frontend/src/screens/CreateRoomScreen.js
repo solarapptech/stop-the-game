@@ -20,9 +20,11 @@ const CreateRoomScreen = ({ navigation }) => {
       const result = await getPublicRooms();
       if (result.success) {
         const roomCount = result.rooms?.length || 0;
-        setRoomName(`Room ${roomCount + 1}`);
+        const prefix = t('createRoom.autoRoomNamePrefix');
+        setRoomName(`${prefix} ${roomCount + 1}`);
       } else {
-        setRoomName('Room 1');
+        const prefix = t('createRoom.autoRoomNamePrefix');
+        setRoomName(`${prefix} 1`);
       }
     };
     generateRoomName();

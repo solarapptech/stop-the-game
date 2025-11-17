@@ -189,7 +189,7 @@ const MenuScreen = ({ navigation }) => {
             />
             <View style={styles.userDetails}>
               <View style={styles.usernameRow}>
-                <Text style={styles.username}>{user?.displayName || user?.username || 'Player'}</Text>
+                <Text style={styles.username}>{user?.displayName || user?.username || t('gameplay.player')}</Text>
                 <IconButton
                   icon="pencil"
                   size={16}

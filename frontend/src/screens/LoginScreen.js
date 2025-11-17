@@ -56,10 +56,10 @@ const LoginScreen = ({ navigation }) => {
       if (data.success) {
         navigation.replace('Menu');
       } else {
-        Alert.alert(t('common.error'), 'Google login failed');
+        Alert.alert(t('common.error'), t('auth.googleLoginFailed'));
       }
     } catch (error) {
-      Alert.alert(t('common.error'), 'Failed to connect with Google');
+      Alert.alert(t('common.error'), t('auth.googleLoginConnectionError'));
     } finally {
       setLoading(false);
     }

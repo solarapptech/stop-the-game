@@ -148,7 +148,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
         <IconButton 
           icon="close" 
           onPress={handleClose}
-          accessibilityLabel="Close settings"
+          accessibilityLabel={t('settings.closeAccessibilityLabel')}
         />
       </View>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -273,7 +273,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
                   value={language}
                 >
                   <List.Item
-                    title="English"
+                    title={t('settings.english')}
                     left={() => <RadioButton value="en" color={theme.colors.primary} />}
                     onPress={() => {
                       changeLanguage('en');
@@ -281,7 +281,7 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
                     }}
                   />
                   <List.Item
-                    title="Español"
+                    title={t('settings.spanish')}
                     left={() => <RadioButton value="es" color={theme.colors.primary} />}
                     onPress={() => {
                       changeLanguage('es');
