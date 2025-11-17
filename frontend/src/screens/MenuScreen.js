@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useLayoutEffect } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Text, Button, Card, Avatar, IconButton, Badge, ActivityIndicator, TextInput, Portal, Dialog } from 'react-native-paper';
+import { Text, Button, Avatar, IconButton, ActivityIndicator, TextInput, Portal, Dialog } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
@@ -23,6 +23,44 @@ const MenuScreen = ({ navigation }) => {
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState(user?.displayName || user?.username || '');
   const [savingName, setSavingName] = useState(false);
+
+  useLayoutEffect(() => {
+    const crownColor = user?.isSubscribed ? '#FFC107' : '#BDBDBD';
+    navigation.setOptions({
+      headerTitle: 'Stop! The Game',
+      headerTitleStyle: {
+        marginTop: 12,
+      },
+      headerRightContainerStyle: {
+        marginTop: 12,
+      },
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 8 }}>
+          <IconButton
+            icon="crown"
+            size={22}
+            onPress={() => navigation.navigate('Payment')}
+            iconColor={crownColor}
+            style={{ margin: 0 }}
+          />
+          <IconButton
+            icon="trophy"
+            size={22}
+            onPress={() => navigation.navigate('Leaderboard')}
+            iconColor="#FFFFFF"
+            style={{ marginLeft: 4 }}
+          />
+          <IconButton
+            icon="cog"
+            size={22}
+            onPress={() => navigation.navigate('Settings')}
+            iconColor="#FFFFFF"
+            style={{ marginLeft: 4, marginRight: 0 }}
+          />
+        </View>
+      ),
+    });
+  }, [navigation, user?.isSubscribed]);
 
   // Update stats when user changes
   useEffect(() => {
@@ -142,37 +180,6 @@ const MenuScreen = ({ navigation }) => {
     );
   };
 
-  const menuItems = [
-    {
-      title: t('menu.createRoom'),
-      subtitle: t('menu.createRoomDesc'),
-      icon: 'plus-circle',
-      color: '#4CAF50',
-      onPress: () => navigation.navigate('CreateRoom'),
-    },
-    {
-      title: t('menu.joinRoom'),
-      subtitle: t('menu.joinRoomDesc'),
-      icon: 'login',
-      color: '#2196F3',
-      onPress: () => navigation.navigate('JoinRoom'),
-    },
-    {
-      title: t('menu.leaderboard'),
-      subtitle: t('menu.leaderboardDesc'),
-      icon: 'trophy',
-      color: '#FFC107',
-      onPress: () => navigation.navigate('Leaderboard'),
-    },
-    {
-      title: t('menu.settings'),
-      subtitle: t('menu.settingsDesc'),
-      icon: 'cog',
-      color: '#9C27B0',
-      onPress: () => navigation.navigate('Settings'),
-    },
-  ];
-
   return (
     <LinearGradient
       colors={['#4CAF50', '#45a049']}
@@ -183,7 +190,7 @@ const MenuScreen = ({ navigation }) => {
         <View style={styles.header}>
           <View style={styles.userInfo}>
             <Avatar.Text 
-              size={60} 
+              size={52} 
               label={user?.username?.substring(0, 2).toUpperCase() || 'US'} 
               style={styles.avatar}
             />
@@ -218,8 +225,7 @@ const MenuScreen = ({ navigation }) => {
           </View>
 
           {/* Stats */}
-          <View style={styles.statsHeaderRow}>
-            
+          <View style={styles.statsContainer}>
             <IconButton
               icon={statsRefreshing ? 'reload' : 'refresh'}
               size={18}
@@ -228,8 +234,6 @@ const MenuScreen = ({ navigation }) => {
               style={styles.refreshIcon}
               iconColor={theme.colors.primary}
             />
-          </View>
-          <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.winPoints}</Text>
               <Text style={styles.statLabel}>{t('menu.points')}</Text>
@@ -258,45 +262,49 @@ const MenuScreen = ({ navigation }) => {
           </Button>
         </View>
 
-        {/* Menu Items */}
+        {/* Primary Menu Actions */}
         <View style={styles.menuContainer}>
-          {menuItems.map((item, index) => (
+          <View style={styles.primaryActionsRow}>
             <TouchableOpacity
-              key={index}
-              onPress={item.onPress}
-              activeOpacity={0.8}
+              onPress={() => navigation.navigate('CreateRoom')}
+              activeOpacity={0.85}
+              style={[styles.primaryActionCard, styles.primaryActionCardLeft]}
             >
-              <Card style={styles.menuCard}>
-                <Card.Content style={styles.menuCardContent}>
-                  <Avatar.Icon
-                    size={48}
-                    icon={item.icon}
-                    style={[styles.menuIcon, { backgroundColor: item.color }]}
-                  />
-                  <View style={styles.menuTextContainer}>
-                    <Text style={styles.menuTitle}>{item.title}</Text>
-                    <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-                  </View>
-                  <IconButton
-                    icon="chevron-right"
-                    size={24}
-                    style={styles.menuArrow}
-                  />
-                </Card.Content>
-              </Card>
+              <Avatar.Icon
+                size={48}
+                icon="plus-circle"
+                style={[styles.primaryActionIcon, { backgroundColor: '#4CAF50' }]}
+              />
+              <Text style={styles.primaryActionTitle}>{t('menu.createRoom')}</Text>
+              <Text style={styles.primaryActionSubtitle}>{t('menu.createRoomDesc')}</Text>
             </TouchableOpacity>
-          ))}
+
+            <TouchableOpacity
+              onPress={() => navigation.navigate('JoinRoom')}
+              activeOpacity={0.85}
+              style={[styles.primaryActionCard, styles.primaryActionCardRight]}
+            >
+              <Avatar.Icon
+                size={48}
+                icon="login"
+                style={[styles.primaryActionIcon, { backgroundColor: '#2196F3' }]}
+              />
+              <Text style={styles.primaryActionTitle}>{t('menu.joinRoom')}</Text>
+              <Text style={styles.primaryActionSubtitle}>{t('menu.joinRoomDesc')}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Subscription Banner */}
+        {/* Remove Ads helper text */}
         {!user?.isSubscribed && (
-          <TouchableOpacity 
-            style={styles.subscriptionBanner}
+          <TouchableOpacity
+            style={styles.removeAdsLink}
             onPress={() => navigation.navigate('Payment')}
           >
-            <Text style={styles.subscriptionText}>{t('menu.goPremium')}</Text>
+            <Text style={styles.removeAdsText}>{t('menu.removeAdsHint')}</Text>
           </TouchableOpacity>
         )}
+
       </ScrollView>
 
       {/* Quick Play Modal */}
@@ -387,18 +395,41 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingBottom: 20,
+    paddingTop: 0,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  appTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  titleIcons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  titleIconButton: {
+    margin: 0,
+    marginLeft: 4,
+    backgroundColor: 'transparent',
   },
   header: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    padding: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     elevation: 5,
   },
   userInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   avatar: {
     backgroundColor: theme.colors.primary,
@@ -435,8 +466,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     backgroundColor: '#F5F5F5',
     borderRadius: 15,
-    padding: 15,
-    marginBottom: 15,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    position: 'relative',
   },
   statsHeaderRow: {
     flexDirection: 'row',
@@ -451,6 +484,9 @@ const styles = StyleSheet.create({
   },
   refreshIcon: {
     margin: 0,
+    position: 'absolute',
+    top: 6,
+    right: 6,
   },
   statItem: {
     alignItems: 'center',
@@ -487,6 +523,48 @@ const styles = StyleSheet.create({
   menuContainer: {
     padding: 20,
   },
+  removeAdsLink: {
+    position: 'absolute',
+    right: 20,
+    bottom: '20%',
+  },
+  removeAdsText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+  },
+  primaryActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  primaryActionCard: {
+    flex: 1,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    elevation: 3,
+  },
+  primaryActionCardLeft: {
+    marginRight: 8,
+  },
+  primaryActionCardRight: {
+    marginLeft: 8,
+  },
+  primaryActionIcon: {
+    marginBottom: 8,
+  },
+  primaryActionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#212121',
+  },
+  primaryActionSubtitle: {
+    fontSize: 12,
+    color: '#757575',
+    marginTop: 2,
+    textAlign: 'center',
+  },
   menuCard: {
     marginBottom: 15,
     elevation: 2,
@@ -517,12 +595,12 @@ const styles = StyleSheet.create({
     margin: 0,
   },
   quickPlayButton: {
-    marginTop: 15,
+    marginTop: 8,
     backgroundColor: '#FF9800',
     elevation: 5,
   },
   quickPlayContent: {
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   modalOverlay: {
     flex: 1,

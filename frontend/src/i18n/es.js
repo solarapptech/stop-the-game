@@ -30,6 +30,7 @@ export default {
     finished: 'Finalizado',
     or: 'O',
     hide: 'Ocultar',
+    hideAll: 'Ocultar todo',
     random: 'Aleatorio',
     unknown: 'Desconocido',
   },
@@ -121,6 +122,7 @@ export default {
     notConnected: 'No conectado al servidor',
     matchmakingFailed: 'No se pudo encontrar una partida',
     quickPlayError: 'No se pudo encontrar una partida',
+    removeAdsHint: '¿Eliminar Anuncios?',
   },
 
   // Create Room Screen

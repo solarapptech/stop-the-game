@@ -217,6 +217,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const [showManualReload, setShowManualReload] = useState(false);
   const [isReloadingCategories, setIsReloadingCategories] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [roundGainMap, setRoundGainMap] = useState({});
   
   const timerRef = useRef(null);
   const inputRefs = useRef({});
@@ -236,6 +237,8 @@ const GameplayScreen = ({ navigation, route }) => {
   const phaseRef = useRef(phase);
   const userIdRef = useRef(userId);
   const isLeavingRef = useRef(false);
+  const roundGainAnimMapRef = useRef({});
+  const roundGainTimeoutRef = useRef(null);
   const { height: winH, width: winW } = Dimensions.get('window');
   const HEADER_HEIGHT = Math.max(56, Math.round(winH * 0.07));
   const CIRCLE_SIZE = Math.max(28, Math.min(64, Math.round(HEADER_HEIGHT * 0.70)));
@@ -572,6 +575,82 @@ const GameplayScreen = ({ navigation, route }) => {
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
+
+  useEffect(() => {
+    if (phase !== 'round-end') return;
+    if (!Array.isArray(roundResults) || roundResults.length === 0) return;
+
+    if (roundGainTimeoutRef.current) {
+      clearTimeout(roundGainTimeoutRef.current);
+      roundGainTimeoutRef.current = null;
+    }
+
+    const gains = {};
+    roundResults.forEach((res) => {
+      const playerUser = res.user;
+      const pid = (playerUser && (playerUser._id || playerUser)) || null;
+      const pidStr = pid != null ? String(pid) : null;
+      if (!pidStr) return;
+
+      const answersObj = res.answers;
+      const categoryAnswers = answersObj && Array.isArray(answersObj.categoryAnswers)
+        ? answersObj.categoryAnswers
+        : [];
+      const basePoints = categoryAnswers.reduce((sum, ca) => sum + (ca.points || 0), 0);
+      const stopBonus = answersObj && answersObj.stoppedFirst ? 5 : 0;
+      const total = basePoints + stopBonus;
+
+      if (total > 0) {
+        gains[pidStr] = total;
+      }
+    });
+
+    if (Object.keys(gains).length === 0) {
+      setRoundGainMap({});
+      return;
+    }
+
+    setRoundGainMap(gains);
+
+    Object.keys(gains).forEach((pid) => {
+      let anims = roundGainAnimMapRef.current[pid];
+      if (!anims) {
+        anims = {
+          fontSize: new Animated.Value(62),
+          translateY: new Animated.Value(0),
+          opacity: new Animated.Value(1),
+        };
+        roundGainAnimMapRef.current[pid] = anims;
+      } else {
+        anims.fontSize.setValue(62);
+        anims.translateY.setValue(0);
+        anims.opacity.setValue(1);
+      }
+
+      Animated.parallel([
+        Animated.timing(anims.fontSize, {
+          toValue: 14,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(anims.translateY, {
+          toValue: -20,
+          duration: 2000,
+          useNativeDriver: false,
+        }),
+        Animated.timing(anims.opacity, {
+          toValue: 0,
+          duration: 3000,
+          useNativeDriver: false,
+        }),
+      ]).start();
+    });
+
+    roundGainTimeoutRef.current = setTimeout(() => {
+      setRoundGainMap({});
+      roundGainTimeoutRef.current = null;
+    }, 3200);
+  }, [phase, roundResults]);
 
   // When entering category-selection phase, signal readiness exactly once
   useEffect(() => {
@@ -1611,19 +1690,6 @@ const GameplayScreen = ({ navigation, route }) => {
           />
         </View>
       </View>
-
-      <View style={styles.hideAllContainer}>
-        <Button
-          mode="outlined"
-          onPress={toggleHideAll}
-          style={styles.hideAllButton}
-          icon={hideAllInputs ? 'eye-off' : 'eye'}
-          labelStyle={styles.hideAllLabel}
-        >
-          {t('common.hide')}
-        </Button>
-      </View>
-
       {(!selectedCategories || selectedCategories.length === 0) ? (
         <View style={styles.stuckContainer}>
           <Text style={styles.stuckText}>{t('common.loading')}</Text>
@@ -1654,6 +1720,14 @@ const GameplayScreen = ({ navigation, route }) => {
           style={styles.answersContainer} 
           keyboardShouldPersistTaps="handled"
         >
+          <View style={styles.hideAllContainer}>
+            <Text
+              style={styles.hideAllLabel}
+              onPress={toggleHideAll}
+            >
+              {t('common.hideAll')}
+            </Text>
+          </View>
           {selectedCategories.map((category, index) => {
             const isHidden = hideAllInputs || hiddenInputs[category];
             const isLastInput = index === selectedCategories.length - 1;
@@ -1849,24 +1923,6 @@ const GameplayScreen = ({ navigation, route }) => {
               <Text style={styles.noAnswersText}>{getPlayerName(viewingPlayer)}</Text>
             )}
 
-            {/* Overall Standings */}
-            <View style={styles.standingsContainer}>
-              <Text style={styles.standingsTitle}>{t('gameplay.overallStandings')}</Text>
-              <View style={styles.scoresContainer}>
-                {Array.isArray(playerScores) && playerScores.map((s, idx) => {
-                  const pid = (s.user && s.user._id) ? s.user._id : s.user;
-                  const pidStr = typeof pid === 'string' ? pid : String(pid || '');
-                  const name = getPlayerName(s.user);
-                  return (
-                    <View key={pidStr || String(idx)} style={styles.scoreItem}>
-                      <Text style={styles.playerName}>{name}</Text>
-                      <Text style={styles.playerScore}>{s.score} {t('leaderboard.pts')}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-
             {/* Continue Button */}
             {currentRound < totalRounds && (
               <>
@@ -1894,6 +1950,24 @@ const GameplayScreen = ({ navigation, route }) => {
                 </Button>
               </>
             )}
+
+            {/* Overall Standings */}
+            <View style={styles.standingsContainer}>
+              <Text style={styles.standingsTitle}>{t('gameplay.overallStandings')}</Text>
+              <View style={styles.scoresContainer}>
+                {Array.isArray(playerScores) && playerScores.map((s, idx) => {
+                  const pid = (s.user && s.user._id) ? s.user._id : s.user;
+                  const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+                  const name = getPlayerName(s.user);
+                  return (
+                    <View key={pidStr || String(idx)} style={styles.scoreItem}>
+                      <Text style={styles.playerName}>{name}</Text>
+                      <Text style={styles.playerScore}>{s.score} {t('leaderboard.pts')}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
           </Card.Content>
         </Card>
       </ScrollView>
@@ -1910,6 +1984,7 @@ const GameplayScreen = ({ navigation, route }) => {
       const pidStr = typeof pid === 'string' ? pid : String(pid || '');
       return pidStr === userId ? t('leaderboard.you') : `${t('gameplay.player')} ${pidStr.substring(0,5)}`;
     });
+
     return (
       <Card style={styles.card}>
         <Card.Content>
@@ -1966,7 +2041,7 @@ const GameplayScreen = ({ navigation, route }) => {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: HEADER_HEIGHT }]}>
+    <View style={[styles.container, { paddingTop: HEADER_HEIGHT }]}>        
       <View style={[styles.gameHeader, { height: HEADER_HEIGHT }]}>
         <TouchableOpacity onPress={handleLeaveGame} style={styles.headerIconBtn} activeOpacity={0.7}>
           <MaterialCommunityIcons name="arrow-left" size={24} color="#424242" />
@@ -1974,6 +2049,8 @@ const GameplayScreen = ({ navigation, route }) => {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.headerScroll} contentContainerStyle={styles.headerCenter}>
           {playersForHeader.map((p) => {
             const isLeader = leaderPlayerId && p.id === leaderPlayerId;
+            const gain = roundGainMap && roundGainMap[p.id];
+            const gainAnim = roundGainAnimMapRef.current && roundGainAnimMapRef.current[p.id];
             return (
               <View key={p.id} style={[styles.playerItem, { width: CIRCLE_SIZE + 28 }]}> 
                 <View style={[styles.playerCircle, { width: CIRCLE_SIZE, height: CIRCLE_SIZE, borderRadius: CIRCLE_SIZE / 2 }]}> 
@@ -1982,7 +2059,7 @@ const GameplayScreen = ({ navigation, route }) => {
                     <View style={[styles.crownContainer, {
                       top: -CIRCLE_SIZE * 0.08,
                       right: -CIRCLE_SIZE * 0.08,
-                    }]}>
+                    }]}> 
                       <MaterialCommunityIcons 
                         name="crown" 
                         size={Math.round(CIRCLE_SIZE * 0.45)} 
@@ -1992,16 +2069,32 @@ const GameplayScreen = ({ navigation, route }) => {
                     </View>
                   )}
                   <View style={[styles.scorePill, { 
-                    width: (CIRCLE_SIZE + 28) * 0.7, // Reduced by 10% (was 0.8, now 0.7)
+                    width: (CIRCLE_SIZE + 28) * 0.7,
                     left: '50%', 
                     transform: [
-                      { translateX: -((CIRCLE_SIZE + 28) * 0.35) } // Adjusted for new width (0.35 = 0.7/2)
+                      { translateX: -((CIRCLE_SIZE + 28) * 0.35) }
                     ]
                   }]}> 
                     <Text style={styles.scorePillText}>{(pointsById && pointsById[p.id]) != null ? pointsById[p.id] : 0}</Text> 
                   </View> 
                 </View> 
-                <Text style={[styles.playerName, { maxWidth: CIRCLE_SIZE + 20, fontSize: 7 }]} numberOfLines={1}>{p.name}</Text> 
+                <View style={styles.playerNameContainer}>
+                  <Text style={[styles.playerName, { maxWidth: CIRCLE_SIZE + 20, fontSize: 7 }]} numberOfLines={1}>{p.name}</Text> 
+                  {gain != null && gainAnim && (
+                    <Animated.Text
+                      style={[
+                        styles.roundGainText,
+                        {
+                          opacity: gainAnim.opacity,
+                          transform: [{ translateY: gainAnim.translateY }],
+                          fontSize: gainAnim.fontSize,
+                        },
+                      ]}
+                    >
+                      +{gain}
+                    </Animated.Text>
+                  )}
+                </View>
               </View>
             );
           })}
@@ -2344,6 +2437,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E0E0E0',
     zIndex: 20,
     elevation: 12,
+    overflow: 'visible',
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2378,12 +2472,25 @@ const styles = StyleSheet.create({
     position: 'absolute',
     zIndex: 10,
   },
+  playerNameContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   playerName: {
     marginTop: 4,
     fontSize: 9,
     color: '#424242',
     maxWidth: 68,
     textAlign: 'center',
+  },
+  roundGainText: {
+    position: 'absolute',
+    top: 10,
+    color: '#4CAF50',
+    fontWeight: '900',
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
   },
   scorePill: {
     position: 'absolute',
@@ -2420,13 +2527,14 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#FFFFFF',
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     elevation: 3,
   },
   roundInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 15,
+    marginBottom: 8,
   },
   roundText: {
     fontSize: 16,
@@ -2442,14 +2550,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   timerText: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#424242',
-    marginBottom: 5,
+    marginBottom: 3,
   },
   timerBar: {
     width: '100%',
-    height: 8,
+    height: 6,
     borderRadius: 4,
   },
   answersContainer: {
@@ -2517,18 +2625,22 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   hideAllContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    paddingHorizontal: 0,
+    paddingTop: 4,
+    paddingBottom: 8,
+    alignItems: 'flex-start',
   },
   hideAllButton: {
     borderColor: theme.colors.primary,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 0,
+    minHeight: 32,
+    borderRadius: 18,
   },
   hideAllLabel: {
     color: theme.colors.primary,
-    fontSize: 14,
+    fontSize: 12,
   },
   errorText: {
     color: '#F44336',

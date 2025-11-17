@@ -95,6 +95,7 @@ export default {
     settingsSubtitle: 'Customize your experience',
     settingsDesc: 'Customize your experience',
     goPremium: '🎮 Go Premium - Remove Ads!',
+    blockAds: 'No Ads',
     points: 'Points',
     games: 'Games',
     friends: 'Friends',
