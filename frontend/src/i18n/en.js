@@ -30,6 +30,8 @@ export default {
     finished: 'Finished',
     or: 'OR',
     hide: 'Hide',
+    hideAll: 'Hide All',
+    showAll: 'Show All',
     random: 'Random',
     unknown: 'Unknown',
   },
@@ -122,6 +124,7 @@ export default {
     notConnected: 'Not connected to server',
     matchmakingFailed: 'Failed to find a match',
     quickPlayError: 'Failed to find a match',
+    removeAdsHint: 'Remove Ads?'
   },
 
   // Create Room Screen

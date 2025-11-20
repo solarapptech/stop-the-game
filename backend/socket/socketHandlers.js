@@ -46,6 +46,21 @@ module.exports = (io, socket) => {
           clearInterval(rematchTimer);
           rematchCountdownTimers.delete(roomId.toString());
         }
+
+        // Notify any lingering sockets that the room has been dissolved
+        try {
+          const roomIdStr = roomId.toString();
+          io.to(roomIdStr).emit('room-deleted', {
+            message: 'Room is Disolved'
+          });
+          const socketsInRoom = await io.in(roomIdStr).fetchSockets();
+          for (const s of socketsInRoom) {
+            s.leave(roomIdStr);
+            s.roomId = null;
+          }
+        } catch (e) {
+          console.error('[ROOM CLEANUP] Error notifying sockets about dissolved room:', e);
+        }
         
         console.log(`[ROOM CLEANUP] Successfully deleted room ${roomId}`);
         return true;
@@ -1213,7 +1228,7 @@ module.exports = (io, socket) => {
 
       // Notify all players in the room
       io.to(roomId).emit('room-deleted', {
-        message: 'Host terminated the session'
+        message: 'Room is Disolved'
       });
 
       // Delete the room from database
@@ -1411,6 +1426,8 @@ module.exports = (io, socket) => {
   
               room.status = 'in_progress';
               room.currentGame = newGame._id;
+              // Reset room TTL by bumping createdAt so 30-minute expiry is counted from rematch
+              room.createdAt = new Date();
               await room.save();
   
               // Notify both the room and the old game room to transition to gameplay

@@ -1725,7 +1725,7 @@ const GameplayScreen = ({ navigation, route }) => {
               style={styles.hideAllLabel}
               onPress={toggleHideAll}
             >
-              {t('common.hideAll')}
+              {hideAllInputs ? t('common.showAll') : t('common.hideAll')}
             </Text>
           </View>
           {selectedCategories.map((category, index) => {

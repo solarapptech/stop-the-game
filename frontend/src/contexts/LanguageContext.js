@@ -3,12 +3,32 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import en from '../i18n/en';
 import es from '../i18n/es';
 
-const LanguageContext = createContext();
+const LanguageContext = createContext(null);
 
 export const useLanguage = () => {
   const context = useContext(LanguageContext);
   if (!context) {
-    throw new Error('useLanguage must be used within a LanguageProvider');
+    // Fallback: safe defaults when no LanguageProvider is present
+    const fallbackTranslate = (key) => {
+      const keys = key.split('.');
+      let value = en;
+      for (const k of keys) {
+        if (value && typeof value === 'object' && k in value) {
+          value = value[k];
+        } else {
+          console.warn(`Translation key not found (fallback): ${key}`);
+          return key;
+        }
+      }
+      return value;
+    };
+
+    return {
+      language: 'en',
+      changeLanguage: () => {},
+      t: fallbackTranslate,
+      loading: false,
+    };
   }
   return context;
 };

@@ -27,6 +27,7 @@ import { AuthProvider } from './src/contexts/AuthContext';
 import { SocketProvider } from './src/contexts/SocketContext';
 import { GameProvider } from './src/contexts/GameContext';
 import { LanguageProvider } from './src/contexts/LanguageContext';
+import { navigationRef } from './src/navigation/RootNavigation';
 
 // Theme
 import theme from './src/theme';
@@ -75,23 +76,23 @@ export default function App() {
   }
 
   return (
-    <PaperProvider theme={theme}>
-      <LanguageProvider>
+    <LanguageProvider>
+      <PaperProvider theme={theme}>
         <AuthProvider>
           <SocketProvider>
             <GameProvider>
-              <NavigationContainer>
-              <Stack.Navigator 
-                initialRouteName={initialRoute}
-                screenOptions={{
-                  headerStyle: {
-                    backgroundColor: theme.colors.primary,
-                  },
-                  headerTintColor: '#fff',
-                  headerTitleStyle: {
-                    fontWeight: 'bold',
-                  },
-                }}
+              <NavigationContainer ref={navigationRef}>
+                <Stack.Navigator 
+                  initialRouteName={initialRoute}
+                  screenOptions={{
+                    headerStyle: {
+                      backgroundColor: theme.colors.primary,
+                    },
+                    headerTintColor: '#fff',
+                    headerTitleStyle: {
+                      fontWeight: 'bold',
+                    },
+                  }}
               >
                 <Stack.Screen 
                   name="Loading" 
@@ -178,7 +179,7 @@ export default function App() {
           </GameProvider>
         </SocketProvider>
       </AuthProvider>
-      </LanguageProvider>
-    </PaperProvider>
+      </PaperProvider>
+    </LanguageProvider>
   );
 }

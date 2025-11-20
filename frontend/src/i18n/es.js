@@ -31,6 +31,7 @@ export default {
     or: 'O',
     hide: 'Ocultar',
     hideAll: 'Ocultar todo',
+    showAll: 'Mostrar todo',
     random: 'Aleatorio',
     unknown: 'Desconocido',
   },

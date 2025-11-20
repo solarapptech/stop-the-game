@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { resetTo } from '../navigation/RootNavigation';
 
 const AuthContext = createContext({});
 
@@ -409,6 +410,32 @@ export const AuthProvider = ({ children }) => {
       };
     }
   };
+
+  // Global 401 handler: if backend says we are unauthorized, clear auth and send user to Login
+  useEffect(() => {
+    const interceptorId = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const status = error?.response?.status;
+        if (status === 401) {
+          try {
+            await AsyncStorage.removeItem('authToken');
+            await AsyncStorage.removeItem('user');
+          } catch (e) {
+            console.error('[AuthContext] auto-logout cleanup error:', e);
+          }
+          setToken(null);
+          setUser(null);
+          delete axios.defaults.headers.common['Authorization'];
+          resetTo('Login');
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => {
+      axios.interceptors.response.eject(interceptorId);
+    };
+  }, []);
 
   return (
     <AuthContext.Provider value={{
