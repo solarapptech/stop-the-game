@@ -124,7 +124,13 @@ export default {
     notConnected: 'Not connected to server',
     matchmakingFailed: 'Failed to find a match',
     quickPlayError: 'Failed to find a match',
-    removeAdsHint: 'Remove Ads?'
+    removeAdsHint: 'Remove Ads?',
+    reconnect: 'Reconnect',
+    reconnectDesc: 'Return to your game',
+    reconnecting: 'Reconnecting...',
+    joining: 'Joining...',
+    reconnectFailed: 'Failed to reconnect to game',
+    gameNoLongerExists: 'Game no longer exists'
   },
 
   // Create Room Screen

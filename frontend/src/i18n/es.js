@@ -124,6 +124,12 @@ export default {
     matchmakingFailed: 'No se pudo encontrar una partida',
     quickPlayError: 'No se pudo encontrar una partida',
     removeAdsHint: '¿Eliminar Anuncios?',
+    reconnect: 'Reconectar',
+    reconnectDesc: 'Volver a tu partida',
+    reconnecting: 'Reconectando...',
+    joining: 'Uniéndose...',
+    reconnectFailed: 'Error al reconectar a la partida',
+    gameNoLongerExists: 'La partida ya no existe'
   },
 
   // Create Room Screen

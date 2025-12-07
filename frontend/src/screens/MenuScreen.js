@@ -3,15 +3,19 @@ import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 're
 import { useFocusEffect } from '@react-navigation/native';
 import { Text, Button, Avatar, IconButton, ActivityIndicator, TextInput, Portal, Dialog } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useGame } from '../contexts/GameContext';
 import theme from '../theme';
 
 const MenuScreen = ({ navigation }) => {
-  const { user, logout, updateDisplayName, refreshUser, statsDirty } = useAuth();
+  const { user, logout, updateDisplayName, refreshUser, statsDirty, token } = useAuth();
   const { socket, connected } = useSocket();
   const { t } = useLanguage();
+  const { joinGame } = useGame();
   const [stats, setStats] = useState({
     winPoints: user?.winPoints || 0,
     matchesPlayed: user?.matchesPlayed || 0,
@@ -23,6 +27,12 @@ const MenuScreen = ({ navigation }) => {
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState(user?.displayName || user?.username || '');
   const [savingName, setSavingName] = useState(false);
+  
+  // Reconnect state
+  const [hasActiveGame, setHasActiveGame] = useState(false);
+  const [activeGameData, setActiveGameData] = useState(null);
+  const [reconnectVisible, setReconnectVisible] = useState(false);
+  const [reconnectStatus, setReconnectStatus] = useState('reconnecting'); // 'reconnecting' | 'joining'
 
   useLayoutEffect(() => {
     const crownColor = user?.isSubscribed ? '#FFC107' : '#BDBDBD';
@@ -99,6 +109,38 @@ const MenuScreen = ({ navigation }) => {
     }, [refreshUser, statsDirty])
   );
 
+  // Check for active game to reconnect on screen focus
+  useFocusEffect(
+    React.useCallback(() => {
+      let cancelled = false;
+      const checkActiveGame = async () => {
+        if (!token) return;
+        try {
+          const response = await axios.get('game/reconnect/check');
+          const data = response.data;
+          if (!cancelled) {
+            if (data.hasActiveGame) {
+              console.log('[MenuScreen] Found active game to reconnect:', data);
+              setHasActiveGame(true);
+              setActiveGameData(data);
+            } else {
+              setHasActiveGame(false);
+              setActiveGameData(null);
+            }
+          }
+        } catch (error) {
+          console.error('[MenuScreen] Error checking for active game:', error);
+          if (!cancelled) {
+            setHasActiveGame(false);
+            setActiveGameData(null);
+          }
+        }
+      };
+      checkActiveGame();
+      return () => { cancelled = true; };
+    }, [token])
+  );
+
   const handleManualStatsRefresh = async () => {
     try {
       setStatsRefreshing(true);
@@ -160,6 +202,66 @@ const MenuScreen = ({ navigation }) => {
     }
     setQuickPlayVisible(false);
     setMatchmakingStatus('searching');
+  };
+
+  const handleReconnect = async () => {
+    if (!activeGameData || !connected) {
+      Alert.alert(t('common.error'), t('menu.notConnected'));
+      return;
+    }
+
+    setReconnectVisible(true);
+    setReconnectStatus('reconnecting');
+
+    try {
+      // Verify game still exists
+      const response = await axios.get('game/reconnect/check');
+      const data = response.data;
+
+      if (!data.hasActiveGame) {
+        setReconnectVisible(false);
+        setReconnectStatus('reconnecting');
+        setHasActiveGame(false);
+        setActiveGameData(null);
+        Alert.alert(t('common.error'), t('menu.gameNoLongerExists'));
+        return;
+      }
+
+      // Game exists, show "Joining..." status
+      setReconnectStatus('joining');
+
+      // Wait 1 second to show the "Joining..." state
+      setTimeout(() => {
+        setReconnectVisible(false);
+        setReconnectStatus('reconnecting');
+
+        // Join the game room via socket
+        if (socket) {
+          socket.emit('join-room', { roomId: data.roomId });
+        }
+
+        // Join game context
+        if (joinGame) {
+          joinGame(data.gameId);
+        }
+
+        // Navigate to gameplay
+        navigation.navigate('Gameplay', { 
+          gameId: data.gameId,
+          roomId: data.roomId 
+        });
+      }, 1000);
+    } catch (error) {
+      console.error('[MenuScreen] Reconnect error:', error);
+      setReconnectVisible(false);
+      setReconnectStatus('reconnecting');
+      Alert.alert(t('common.error'), t('menu.reconnectFailed'));
+    }
+  };
+
+  const handleCancelReconnect = () => {
+    setReconnectVisible(false);
+    setReconnectStatus('reconnecting');
   };
 
   const handleLogout = () => {
@@ -264,11 +366,11 @@ const MenuScreen = ({ navigation }) => {
 
         {/* Primary Menu Actions */}
         <View style={styles.menuContainer}>
-          <View style={styles.primaryActionsRow}>
+          <View style={styles.primaryActionsGrid}>
             <TouchableOpacity
               onPress={() => navigation.navigate('CreateRoom')}
               activeOpacity={0.85}
-              style={[styles.primaryActionCard, styles.primaryActionCardLeft]}
+              style={[styles.primaryActionCard, hasActiveGame ? styles.primaryActionCardThird : styles.primaryActionCardHalf, { marginRight: 8 }]}
             >
               <Avatar.Icon
                 size={48}
@@ -282,7 +384,7 @@ const MenuScreen = ({ navigation }) => {
             <TouchableOpacity
               onPress={() => navigation.navigate('JoinRoom')}
               activeOpacity={0.85}
-              style={[styles.primaryActionCard, styles.primaryActionCardRight]}
+              style={[styles.primaryActionCard, hasActiveGame ? styles.primaryActionCardThird : styles.primaryActionCardHalf, { marginLeft: 8, marginRight: hasActiveGame ? 8 : 0 }]}
             >
               <Avatar.Icon
                 size={48}
@@ -292,6 +394,23 @@ const MenuScreen = ({ navigation }) => {
               <Text style={styles.primaryActionTitle}>{t('menu.joinRoom')}</Text>
               <Text style={styles.primaryActionSubtitle}>{t('menu.joinRoomDesc')}</Text>
             </TouchableOpacity>
+
+            {/* Reconnect Button - Only shown when there's an active game */}
+            {hasActiveGame && (
+              <TouchableOpacity
+                onPress={handleReconnect}
+                activeOpacity={0.85}
+                style={[styles.primaryActionCard, styles.primaryActionCardThird, { marginLeft: 8 }]}
+              >
+                <Avatar.Icon
+                  size={48}
+                  icon="connection"
+                  style={[styles.primaryActionIcon, { backgroundColor: '#FF9800' }]}
+                />
+                <Text style={styles.primaryActionTitle}>{t('menu.reconnect')}</Text>
+                <Text style={styles.primaryActionSubtitle}>{t('menu.reconnectDesc')}</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -324,6 +443,42 @@ const MenuScreen = ({ navigation }) => {
               <Button
                 mode="outlined"
                 onPress={handleCancelQuickPlay}
+                style={styles.cancelButton}
+                textColor="#FFFFFF"
+              >
+                {t('common.cancel')}
+              </Button>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Reconnect Modal */}
+      <Modal
+        visible={reconnectVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelReconnect}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            {reconnectStatus === 'reconnecting' ? (
+              <ActivityIndicator size="large" color={theme.colors.primary} style={styles.spinner} />
+            ) : (
+              <MaterialCommunityIcons 
+                name="check-circle" 
+                size={50} 
+                color="#4CAF50" 
+                style={styles.spinner} 
+              />
+            )}
+            <Text style={styles.modalTitle}>
+              {reconnectStatus === 'reconnecting' ? t('menu.reconnecting') : t('menu.joining')}
+            </Text>
+            {reconnectStatus === 'reconnecting' && (
+              <Button
+                mode="outlined"
+                onPress={handleCancelReconnect}
                 style={styles.cancelButton}
                 textColor="#FFFFFF"
               >
@@ -536,14 +691,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  primaryActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
   primaryActionCard: {
-    flex: 1,
     borderRadius: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     paddingVertical: 14,
     paddingHorizontal: 12,
     alignItems: 'center',
     elevation: 3,
+  },
+  primaryActionCardHalf: {
+    flex: 1,
+    minWidth: '45%',
+  },
+  primaryActionCardThird: {
+    width: '30%',
+    minWidth: 90,
   },
   primaryActionCardLeft: {
     marginRight: 8,

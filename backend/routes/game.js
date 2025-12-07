@@ -565,6 +565,48 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
   }
 });
 
+// Check for active game to reconnect
+router.get('/reconnect/check', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    // Find games where user is a player, marked as disconnected, and game is still active
+    const activeGame = await Game.findOne({
+      'players.user': userId,
+      'players': {
+        $elemMatch: {
+          user: userId,
+          disconnected: true
+        }
+      },
+      status: { $nin: ['finished'] }
+    }).populate('room', 'name inviteCode');
+
+    if (!activeGame) {
+      return res.json({ hasActiveGame: false });
+    }
+
+    // Check if the room still exists
+    const room = await Room.findById(activeGame.room._id || activeGame.room);
+    if (!room) {
+      return res.json({ hasActiveGame: false });
+    }
+
+    res.json({
+      hasActiveGame: true,
+      gameId: activeGame._id,
+      roomId: activeGame.room._id || activeGame.room,
+      roomName: room.name,
+      status: activeGame.status,
+      currentRound: activeGame.currentRound,
+      totalRounds: activeGame.rounds
+    });
+  } catch (error) {
+    console.error('Check reconnect error:', error);
+    res.status(500).json({ message: 'Error checking for active game' });
+  }
+});
+
 // Get game state
 router.get('/:gameId', authMiddleware, async (req, res) => {
   try {
