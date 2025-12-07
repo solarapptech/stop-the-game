@@ -275,6 +275,71 @@ module.exports = (io, socket) => {
     }
   };
 
+  // Helper function to handle letter selector disconnect - pass turn to next connected player
+  const handleLetterSelectorDisconnect = async (game, gameId) => {
+    try {
+      // Clear existing letter timer
+      clearGameTimers(gameId);
+
+      // Find next connected player to be letter selector
+      const currentSelectorId = (game.letterSelector || '').toString();
+      const playerIds = game.players.map(p => (p.user._id || p.user).toString());
+      let currentIndex = playerIds.indexOf(currentSelectorId);
+      if (currentIndex < 0) currentIndex = 0;
+
+      let nextIndex = currentIndex;
+      let attempts = 0;
+      const maxAttempts = game.players.length;
+
+      // Find next connected player
+      do {
+        nextIndex = (nextIndex + 1) % game.players.length;
+        attempts++;
+        const nextPlayer = game.players[nextIndex];
+        if (!nextPlayer.disconnected) {
+          break;
+        }
+      } while (attempts < maxAttempts);
+
+      // If all players disconnected, auto-pick letter
+      if (attempts >= maxAttempts || game.players[nextIndex].disconnected) {
+        console.log(`[LETTER SELECTOR DISCONNECT] All players disconnected, auto-picking letter`);
+        const autoLetter = game.selectRandomLetter();
+        game.letterDeadline = null;
+        await game.save();
+        await proceedWithLetterReveal(gameId, autoLetter);
+        return;
+      }
+
+      // Set new letter selector
+      const newSelector = game.players[nextIndex];
+      const newSelectorId = (newSelector.user._id || newSelector.user).toString();
+      const newSelectorName = newSelector.user.displayName || newSelector.user.username || 'Player';
+
+      console.log(`[LETTER SELECTOR DISCONNECT] Passing turn to ${newSelectorName} (${newSelectorId})`);
+
+      game.letterSelector = newSelector.user._id || newSelector.user;
+      await game.save();
+
+      // Start new letter selection with fresh timer
+      await startLetterSelection(game);
+    } catch (error) {
+      console.error('[LETTER SELECTOR DISCONNECT] Error:', error);
+      // Fallback: auto-pick letter
+      try {
+        const g = await Game.findById(gameId);
+        if (g && g.status === 'selecting_letter' && !g.currentLetter) {
+          const autoLetter = g.selectRandomLetter();
+          g.letterDeadline = null;
+          await g.save();
+          await proceedWithLetterReveal(gameId, autoLetter);
+        }
+      } catch (e) {
+        console.error('[LETTER SELECTOR DISCONNECT] Fallback error:', e);
+      }
+    }
+  };
+
   // Helper to finalize categories for a game (dedupe, fill to min 6, cap at 8)
   const finalizeCategories = async (gameId) => {
     try {
@@ -559,11 +624,12 @@ module.exports = (io, socket) => {
       const User = require('../models/User');
       const user = await User.findById(socket.userId);
       const username = user?.username || 'Player';
+      const displayName = user?.displayName || username;
 
       console.log(`[LEAVE ROOM] User ${socket.userId} (${username}) leaving room ${roomIdToCleanup}`);
 
-      // Load room to determine ownership before removal
-      const roomBefore = await Room.findById(socket.roomId).select('owner players')
+      // Load room to determine ownership and game status before removal
+      const roomBefore = await Room.findById(socket.roomId).select('owner players currentGame status')
         .populate('players.user', 'username displayName winPoints');
       if (!roomBefore) {
         console.log(`[LEAVE ROOM] Room ${socket.roomId} not found`);
@@ -572,7 +638,84 @@ module.exports = (io, socket) => {
       }
 
       const wasOwner = roomBefore.owner.toString() === socket.userId.toString();
+      const isGameInProgress = roomBefore.status === 'in_progress' && roomBefore.currentGame;
 
+      // If game is in progress, mark player as disconnected in Game instead of removing from Room
+      if (isGameInProgress) {
+        const gameId = roomBefore.currentGame.toString();
+        console.log(`[LEAVE ROOM] Game in progress (${gameId}), marking player as disconnected`);
+
+        const game = await Game.findById(gameId).populate('players.user', 'username displayName');
+        if (game && game.status !== 'finished') {
+          const playerInGame = game.players.find(p => (p.user._id || p.user).toString() === socket.userId.toString());
+          if (playerInGame && !playerInGame.disconnected) {
+            // Save score before disconnect and mark as disconnected
+            playerInGame.scoreBeforeDisconnect = playerInGame.score;
+            playerInGame.disconnected = true;
+            await game.save();
+
+            console.log(`[LEAVE ROOM] Marked player ${socket.userId} as disconnected in game ${gameId}, saved score: ${playerInGame.scoreBeforeDisconnect}`);
+
+            // Emit player-disconnected event to game room
+            io.to(`game-${gameId}`).emit('player-disconnected', {
+              odisconnectedPlayerId: socket.userId.toString(),
+              odisconnectedPlayerName: displayName,
+              players: game.players.map(p => ({
+                odisconnectedPlayerId: (p.user._id || p.user).toString(),
+                odisconnectedPlayerName: p.user.displayName || p.user.username || 'Player',
+                disconnected: p.disconnected,
+                score: p.disconnected ? 0 : p.score
+              }))
+            });
+
+            // Check if disconnected player was the letter selector during letter selection phase
+            if (game.status === 'selecting_letter') {
+              const currentSelectorId = (game.letterSelector || '').toString();
+              if (currentSelectorId === socket.userId.toString()) {
+                console.log(`[LEAVE ROOM] Letter selector left, passing turn to next player`);
+                await handleLetterSelectorDisconnect(game, gameId);
+              }
+            }
+
+            // Update rematch totals if in finished/round-end phase (dynamic count)
+            const connectedPlayers = game.players.filter(p => !p.disconnected);
+            if (game.status === 'finished' || game.status === 'round_ended') {
+              const roomId = game.room.toString();
+              const set = rematchReady.get(roomId);
+              // Remove disconnected player from rematch ready set if present
+              if (set) {
+                set.delete(socket.userId.toString());
+              }
+              // Emit updated rematch count
+              io.to(`game-${gameId}`).emit('rematch-update', {
+                ready: set ? set.size : 0,
+                total: connectedPlayers.length
+              });
+
+              // If only 1 or 0 connected players remain, abort rematch
+              if (connectedPlayers.length < 2) {
+                console.log(`[LEAVE ROOM] Less than 2 connected players, aborting rematch`);
+                rematchReady.delete(roomId);
+                const t = rematchCountdownTimers.get(roomId);
+                if (t) {
+                  clearInterval(t);
+                  rematchCountdownTimers.delete(roomId);
+                }
+                io.to(`game-${gameId}`).emit('rematch-aborted', { reason: 'not-enough-players' });
+              }
+            }
+          }
+        }
+
+        // Leave socket rooms but don't remove from Room model
+        socket.leave(roomIdToCleanup);
+        socket.leave(`game-${gameId}`);
+        socket.roomId = null;
+        socket.gameId = null;
+        return;
+      }
+
+      // Game NOT in progress - normal room leave behavior
       // Remove player using atomic $pull
       let room = await Room.findOneAndUpdate(
         { _id: socket.roomId },
@@ -1537,71 +1680,6 @@ module.exports = (io, socket) => {
       console.error('Disconnect socket error:', error);
     }
   });
-
-  // Helper function to handle letter selector disconnect - pass turn to next connected player
-  const handleLetterSelectorDisconnect = async (game, gameId) => {
-    try {
-      // Clear existing letter timer
-      clearGameTimers(gameId);
-
-      // Find next connected player to be letter selector
-      const currentSelectorId = (game.letterSelector || '').toString();
-      const playerIds = game.players.map(p => (p.user._id || p.user).toString());
-      let currentIndex = playerIds.indexOf(currentSelectorId);
-      if (currentIndex < 0) currentIndex = 0;
-
-      let nextIndex = currentIndex;
-      let attempts = 0;
-      const maxAttempts = game.players.length;
-
-      // Find next connected player
-      do {
-        nextIndex = (nextIndex + 1) % game.players.length;
-        attempts++;
-        const nextPlayer = game.players[nextIndex];
-        if (!nextPlayer.disconnected) {
-          break;
-        }
-      } while (attempts < maxAttempts);
-
-      // If all players disconnected, auto-pick letter
-      if (attempts >= maxAttempts || game.players[nextIndex].disconnected) {
-        console.log(`[LETTER SELECTOR DISCONNECT] All players disconnected, auto-picking letter`);
-        const autoLetter = game.selectRandomLetter();
-        game.letterDeadline = null;
-        await game.save();
-        await proceedWithLetterReveal(gameId, autoLetter);
-        return;
-      }
-
-      // Set new letter selector
-      const newSelector = game.players[nextIndex];
-      const newSelectorId = (newSelector.user._id || newSelector.user).toString();
-      const newSelectorName = newSelector.user.displayName || newSelector.user.username || 'Player';
-
-      console.log(`[LETTER SELECTOR DISCONNECT] Passing turn to ${newSelectorName} (${newSelectorId})`);
-
-      game.letterSelector = newSelector.user._id || newSelector.user;
-      await game.save();
-
-      // Start new letter selection with fresh timer
-      await startLetterSelection(game);
-    } catch (error) {
-      console.error('[LETTER SELECTOR DISCONNECT] Error:', error);
-      // Fallback: auto-pick letter
-      try {
-        const g = await Game.findById(gameId);
-        if (g && g.status === 'selecting_letter' && !g.currentLetter) {
-          const autoLetter = g.selectRandomLetter();
-          g.letterDeadline = null;
-          await g.save();
-          await proceedWithLetterReveal(gameId, autoLetter);
-        }
-      } catch (e) {
-        console.error('[LETTER SELECTOR DISCONNECT] Fallback error:', e);
-      }
-    }
-  };
 
   // Rematch readiness: all players must opt-in to start a new game in same room
   socket.on('play-again-ready', async (data) => {
