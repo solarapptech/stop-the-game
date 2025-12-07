@@ -731,32 +731,138 @@ module.exports = (io, socket) => {
       socket.gameId = gameId;
       socket.emit('game-joined', { gameId });
 
-      // Send current category selection state if applicable
+      // Send current game state and handle reconnection
       try {
-        const game = await Game.findById(gameId).populate('players.user', 'username');
+        const game = await Game.findById(gameId).populate('players.user', 'username displayName');
         if (!game) return;
+
+        // Check if this is a reconnecting player
+        const playerInGame = game.players.find(p => (p.user._id || p.user).toString() === socket.userId?.toString());
+        if (playerInGame && playerInGame.disconnected) {
+          console.log(`[RECONNECT] Player ${socket.userId} reconnecting to game ${gameId}`);
+          
+          // Restore player connection status and score
+          playerInGame.disconnected = false;
+          const restoredScore = playerInGame.scoreBeforeDisconnect || 0;
+          playerInGame.score = restoredScore;
+          playerInGame.scoreBeforeDisconnect = 0;
+          
+          // Clear any answers for the current round (fresh start)
+          const currentRoundAnswerIndex = playerInGame.answers.findIndex(a => a.round === game.currentRound);
+          if (currentRoundAnswerIndex !== -1) {
+            playerInGame.answers.splice(currentRoundAnswerIndex, 1);
+          }
+          
+          await game.save();
+          
+          console.log(`[RECONNECT] Restored player ${socket.userId}, score: ${restoredScore}`);
+
+          // Notify all players about reconnection
+          io.to(`game-${gameId}`).emit('player-reconnected', {
+            odisconnectedPlayerId: socket.userId.toString(),
+            odisconnectedPlayerName: playerInGame.user.displayName || playerInGame.user.username || 'Player',
+            restoredScore,
+            players: game.players.map(p => ({
+              odisconnectedPlayerId: (p.user._id || p.user).toString(),
+              odisconnectedPlayerName: p.user.displayName || p.user.username || 'Player',
+              disconnected: p.disconnected,
+              score: p.score
+            }))
+          });
+
+          // Update rematch totals if in finished phase
+          if (game.status === 'finished' || game.status === 'round_ended') {
+            const connectedPlayers = game.players.filter(p => !p.disconnected);
+            const roomId = game.room.toString();
+            const set = rematchReady.get(roomId);
+            io.to(`game-${gameId}`).emit('rematch-update', {
+              ready: set ? set.size : 0,
+              total: connectedPlayers.length
+            });
+          }
+        }
+
+        // Build list of disconnected players for the joining/reconnecting client
+        const disconnectedPlayerIds = game.players
+          .filter(p => p.disconnected)
+          .map(p => (p.user._id || p.user).toString());
+
+        // Send current game state based on phase
         if (game.status === 'selecting_categories' && game.categoryDeadline) {
           socket.emit('category-selection-started', {
             gameId,
             categories: game.categories || [],
             deadline: game.categoryDeadline,
             confirmed: (game.confirmedPlayers || []).length,
-            total: (game.players || []).length
+            total: (game.players || []).length,
+            disconnectedPlayerIds
           });
         }
         if (game.status === 'selecting_letter' && game.letterDeadline) {
           const selectorId = (game.letterSelector || '').toString();
           const selectorPlayer = (game.players || []).find(p => (p.user._id || p.user).toString() === selectorId);
-          const selectorName = selectorPlayer?.user?.username || 'Player';
+          const selectorName = selectorPlayer?.user?.displayName || selectorPlayer?.user?.username || 'Player';
           socket.emit('letter-selection-started', {
             gameId,
             selectorId,
             selectorName,
             deadline: game.letterDeadline,
-            currentRound: game.currentRound
+            currentRound: game.currentRound,
+            disconnectedPlayerIds
           });
         }
-      } catch (e) {}
+        if (game.status === 'playing' && game.roundStartTime) {
+          // Calculate remaining time for reconnecting player
+          const roundDuration = 60000; // 60 seconds
+          const elapsed = Date.now() - new Date(game.roundStartTime).getTime();
+          const remainingMs = Math.max(0, roundDuration - elapsed);
+          const remainingSeconds = Math.ceil(remainingMs / 1000);
+
+          socket.emit('game-sync', {
+            gameId,
+            phase: 'playing',
+            currentRound: game.currentRound,
+            currentLetter: game.currentLetter,
+            categories: game.categories || [],
+            remainingTime: remainingSeconds,
+            roundStartTime: game.roundStartTime,
+            disconnectedPlayerIds,
+            standings: game.players.map(p => ({
+              user: p.user,
+              score: p.disconnected ? 0 : p.score,
+              disconnected: p.disconnected
+            }))
+          });
+        }
+        if (game.status === 'validating') {
+          socket.emit('game-sync', {
+            gameId,
+            phase: 'validation',
+            currentRound: game.currentRound,
+            disconnectedPlayerIds
+          });
+        }
+        if (game.status === 'round_ended' || game.status === 'finished') {
+          const connectedPlayers = game.players.filter(p => !p.disconnected);
+          const roomId = game.room.toString();
+          const set = rematchReady.get(roomId);
+          socket.emit('game-sync', {
+            gameId,
+            phase: game.status === 'finished' ? 'finished' : 'round-end',
+            currentRound: game.currentRound,
+            disconnectedPlayerIds,
+            standings: game.players.map(p => ({
+              user: p.user,
+              score: p.disconnected ? 0 : p.score,
+              disconnected: p.disconnected
+            })),
+            rematchReady: set ? set.size : 0,
+            rematchTotal: connectedPlayers.length
+          });
+        }
+      } catch (e) {
+        console.error('[JOIN-GAME] Error handling game state:', e);
+      }
     } catch (error) {
       console.error('Join game socket error:', error);
       socket.emit('error', { message: 'Failed to join game' });
@@ -1283,13 +1389,15 @@ module.exports = (io, socket) => {
       if (!(socket.roomId && socket.userId)) return;
 
       const roomIdToCleanup = socket.roomId;
+      const gameIdToCheck = socket.gameId;
       const User = require('../models/User');
       const user = await User.findById(socket.userId);
       const username = user?.username || 'Player';
+      const displayName = user?.displayName || username;
 
       console.log(`[DISCONNECT] User ${socket.userId} (${username}) disconnected from room ${roomIdToCleanup}`);
 
-      const roomBefore = await Room.findById(socket.roomId).select('owner players')
+      const roomBefore = await Room.findById(socket.roomId).select('owner players currentGame status')
         .populate('players.user', 'username displayName winPoints');
       if (!roomBefore) {
         console.log(`[DISCONNECT] Room ${socket.roomId} not found`);
@@ -1297,7 +1405,78 @@ module.exports = (io, socket) => {
       }
 
       const wasOwner = roomBefore.owner.toString() === socket.userId.toString();
+      const isGameInProgress = roomBefore.status === 'in_progress' && roomBefore.currentGame;
 
+      // If game is in progress, mark player as disconnected in Game instead of removing from Room
+      if (isGameInProgress) {
+        const gameId = roomBefore.currentGame.toString();
+        console.log(`[DISCONNECT] Game in progress (${gameId}), marking player as disconnected`);
+
+        const game = await Game.findById(gameId).populate('players.user', 'username displayName');
+        if (game && game.status !== 'finished') {
+          const playerInGame = game.players.find(p => (p.user._id || p.user).toString() === socket.userId.toString());
+          if (playerInGame && !playerInGame.disconnected) {
+            // Save score before disconnect and mark as disconnected
+            playerInGame.scoreBeforeDisconnect = playerInGame.score;
+            playerInGame.disconnected = true;
+            await game.save();
+
+            console.log(`[DISCONNECT] Marked player ${socket.userId} as disconnected in game ${gameId}, saved score: ${playerInGame.scoreBeforeDisconnect}`);
+
+            // Emit player-disconnected event to game room
+            io.to(`game-${gameId}`).emit('player-disconnected', {
+              odisconnectedPlayerId: socket.userId.toString(),
+              odisconnectedPlayerName: displayName,
+              players: game.players.map(p => ({
+                odisconnectedPlayerId: (p.user._id || p.user).toString(),
+                odisconnectedPlayerName: p.user.displayName || p.user.username || 'Player',
+                disconnected: p.disconnected,
+                score: p.disconnected ? 0 : p.score
+              }))
+            });
+
+            // Check if disconnected player was the letter selector during letter selection phase
+            if (game.status === 'selecting_letter') {
+              const currentSelectorId = (game.letterSelector || '').toString();
+              if (currentSelectorId === socket.userId.toString()) {
+                console.log(`[DISCONNECT] Letter selector disconnected, passing turn to next player`);
+                await handleLetterSelectorDisconnect(game, gameId);
+              }
+            }
+
+            // Update rematch totals if in finished/round-end phase (dynamic count)
+            const connectedPlayers = game.players.filter(p => !p.disconnected);
+            if (game.status === 'finished' || game.status === 'round_ended') {
+              const roomId = game.room.toString();
+              const set = rematchReady.get(roomId);
+              // Remove disconnected player from rematch ready set if present
+              if (set) {
+                set.delete(socket.userId.toString());
+              }
+              // Emit updated rematch count
+              io.to(`game-${gameId}`).emit('rematch-update', {
+                ready: set ? set.size : 0,
+                total: connectedPlayers.length
+              });
+
+              // If only 1 or 0 connected players remain, abort rematch
+              if (connectedPlayers.length < 2) {
+                console.log(`[DISCONNECT] Less than 2 connected players, aborting rematch`);
+                rematchReady.delete(roomId);
+                const t = rematchCountdownTimers.get(roomId);
+                if (t) {
+                  clearInterval(t);
+                  rematchCountdownTimers.delete(roomId);
+                }
+                io.to(`game-${gameId}`).emit('rematch-aborted', { reason: 'not-enough-players' });
+              }
+            }
+          }
+        }
+        return; // Don't remove from room when game is in progress
+      }
+
+      // Game NOT in progress - normal room leave behavior
       let room = await Room.findOneAndUpdate(
         { _id: socket.roomId },
         { $pull: { players: { user: socket.userId } } },
@@ -1359,6 +1538,71 @@ module.exports = (io, socket) => {
     }
   });
 
+  // Helper function to handle letter selector disconnect - pass turn to next connected player
+  const handleLetterSelectorDisconnect = async (game, gameId) => {
+    try {
+      // Clear existing letter timer
+      clearGameTimers(gameId);
+
+      // Find next connected player to be letter selector
+      const currentSelectorId = (game.letterSelector || '').toString();
+      const playerIds = game.players.map(p => (p.user._id || p.user).toString());
+      let currentIndex = playerIds.indexOf(currentSelectorId);
+      if (currentIndex < 0) currentIndex = 0;
+
+      let nextIndex = currentIndex;
+      let attempts = 0;
+      const maxAttempts = game.players.length;
+
+      // Find next connected player
+      do {
+        nextIndex = (nextIndex + 1) % game.players.length;
+        attempts++;
+        const nextPlayer = game.players[nextIndex];
+        if (!nextPlayer.disconnected) {
+          break;
+        }
+      } while (attempts < maxAttempts);
+
+      // If all players disconnected, auto-pick letter
+      if (attempts >= maxAttempts || game.players[nextIndex].disconnected) {
+        console.log(`[LETTER SELECTOR DISCONNECT] All players disconnected, auto-picking letter`);
+        const autoLetter = game.selectRandomLetter();
+        game.letterDeadline = null;
+        await game.save();
+        await proceedWithLetterReveal(gameId, autoLetter);
+        return;
+      }
+
+      // Set new letter selector
+      const newSelector = game.players[nextIndex];
+      const newSelectorId = (newSelector.user._id || newSelector.user).toString();
+      const newSelectorName = newSelector.user.displayName || newSelector.user.username || 'Player';
+
+      console.log(`[LETTER SELECTOR DISCONNECT] Passing turn to ${newSelectorName} (${newSelectorId})`);
+
+      game.letterSelector = newSelector.user._id || newSelector.user;
+      await game.save();
+
+      // Start new letter selection with fresh timer
+      await startLetterSelection(game);
+    } catch (error) {
+      console.error('[LETTER SELECTOR DISCONNECT] Error:', error);
+      // Fallback: auto-pick letter
+      try {
+        const g = await Game.findById(gameId);
+        if (g && g.status === 'selecting_letter' && !g.currentLetter) {
+          const autoLetter = g.selectRandomLetter();
+          g.letterDeadline = null;
+          await g.save();
+          await proceedWithLetterReveal(gameId, autoLetter);
+        }
+      } catch (e) {
+        console.error('[LETTER SELECTOR DISCONNECT] Fallback error:', e);
+      }
+    }
+  };
+
   // Rematch readiness: all players must opt-in to start a new game in same room
   socket.on('play-again-ready', async (data) => {
     try {
@@ -1374,9 +1618,20 @@ module.exports = (io, socket) => {
       }
       set.add(socket.userId.toString());
 
-      const total = (game.players || []).length;
+      // Use connected players count (not disconnected) for rematch total
+      const connectedPlayers = (game.players || []).filter(p => !p.disconnected);
+      const total = connectedPlayers.length;
+      
       // Inform current game room about rematch readiness
       io.to(`game-${gameId}`).emit('rematch-update', { ready: set.size, total });
+
+      // Need at least 2 connected players for rematch
+      if (total < 2) {
+        console.log(`[REMATCH] Not enough connected players (${total}), aborting`);
+        rematchReady.delete(roomId);
+        io.to(`game-${gameId}`).emit('rematch-aborted', { reason: 'not-enough-players' });
+        return;
+      }
 
       if (set.size >= total) {
         // Start a 5-second countdown if not already running

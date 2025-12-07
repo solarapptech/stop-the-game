@@ -28,6 +28,14 @@ const gameSchema = new mongoose.Schema({
       type: Number,
       default: 0
     },
+    disconnected: {
+      type: Boolean,
+      default: false
+    },
+    scoreBeforeDisconnect: {
+      type: Number,
+      default: 0
+    },
     answers: [{
       round: Number,
       letter: String,

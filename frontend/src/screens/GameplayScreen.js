@@ -218,6 +218,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const [isReloadingCategories, setIsReloadingCategories] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [roundGainMap, setRoundGainMap] = useState({});
+  const [disconnectedPlayers, setDisconnectedPlayers] = useState(new Set());
   
   const timerRef = useRef(null);
   const inputRefs = useRef({});
@@ -521,6 +522,8 @@ const GameplayScreen = ({ navigation, route }) => {
       // Reset hidden inputs state
       setHiddenInputs({});
       setHideAllInputs(false);
+      // Reset disconnected players for new game
+      setDisconnectedPlayers(new Set());
       // Clear any lingering timers
       if (timerRef.current) clearInterval(timerRef.current);
       if (selectTimerRef.current) clearInterval(selectTimerRef.current);
@@ -533,6 +536,107 @@ const GameplayScreen = ({ navigation, route }) => {
       if (typeof data.seconds === 'number') setRematchCountdown(data.seconds);
     };
 
+    // Player disconnect/reconnect handlers
+    const onPlayerDisconnected = (data) => {
+      console.log('[GameplayScreen] Player disconnected:', data);
+      if (data.odisconnectedPlayerId) {
+        setDisconnectedPlayers(prev => new Set([...prev, data.odisconnectedPlayerId]));
+      }
+      // Update player scores to show 0 for disconnected players
+      if (Array.isArray(data.players)) {
+        setPlayerScores(data.players.map(p => ({
+          user: { _id: p.odisconnectedPlayerId, displayName: p.odisconnectedPlayerName },
+          score: p.disconnected ? 0 : p.score
+        })));
+      }
+    };
+
+    const onPlayerReconnected = (data) => {
+      console.log('[GameplayScreen] Player reconnected:', data);
+      if (data.odisconnectedPlayerId) {
+        setDisconnectedPlayers(prev => {
+          const next = new Set(prev);
+          next.delete(data.odisconnectedPlayerId);
+          return next;
+        });
+      }
+      // Update player scores with restored score
+      if (Array.isArray(data.players)) {
+        setPlayerScores(data.players.map(p => ({
+          user: { _id: p.odisconnectedPlayerId, displayName: p.odisconnectedPlayerName },
+          score: p.score
+        })));
+      }
+    };
+
+    const onGameSync = (data) => {
+      console.log('[GameplayScreen] Game sync received:', data);
+      
+      // Update disconnected players list
+      if (Array.isArray(data.disconnectedPlayerIds)) {
+        setDisconnectedPlayers(new Set(data.disconnectedPlayerIds));
+      }
+
+      // Sync phase
+      if (data.phase) {
+        setPhase(data.phase);
+      }
+
+      // Sync round
+      if (typeof data.currentRound === 'number') {
+        setCurrentRound(data.currentRound);
+      }
+
+      // Sync letter
+      if (data.currentLetter) {
+        setCurrentLetter(data.currentLetter);
+      }
+
+      // Sync categories
+      if (Array.isArray(data.categories)) {
+        setSelectedCategories(data.categories);
+      }
+
+      // Sync remaining time for playing phase
+      if (data.phase === 'playing' && typeof data.remainingTime === 'number') {
+        setTimeLeft(data.remainingTime);
+        // Start timer from remaining time
+        if (timerRef.current) clearInterval(timerRef.current);
+        let remaining = data.remainingTime;
+        timerRef.current = setInterval(() => {
+          remaining -= 1;
+          setTimeLeft(remaining);
+          if (remaining <= 0) {
+            clearInterval(timerRef.current);
+          }
+        }, 1000);
+      }
+
+      // Sync standings
+      if (Array.isArray(data.standings)) {
+        setPlayerScores(data.standings.map(s => ({
+          user: s.user,
+          score: s.disconnected ? 0 : s.score
+        })));
+      }
+
+      // Sync rematch state
+      if (typeof data.rematchReady === 'number') {
+        setRematchReady(data.rematchReady);
+      }
+      if (typeof data.rematchTotal === 'number') {
+        setRematchTotal(data.rematchTotal);
+      }
+
+      // Handle finished state
+      if (data.phase === 'finished') {
+        setIsFinished(true);
+      }
+    };
+
+    socket.on('player-disconnected', onPlayerDisconnected);
+    socket.on('player-reconnected', onPlayerReconnected);
+    socket.on('game-sync', onGameSync);
     socket.on('category-selection-started', onCategorySelectionStarted);
     socket.on('category-selected', onCategorySelected);
     socket.on('confirm-update', onConfirmUpdate);
@@ -552,6 +656,9 @@ const GameplayScreen = ({ navigation, route }) => {
     socket.on('rematch-countdown', onRematchCountdown);
 
     return () => {
+      socket.off('player-disconnected', onPlayerDisconnected);
+      socket.off('player-reconnected', onPlayerReconnected);
+      socket.off('game-sync', onGameSync);
       socket.off('category-selection-started', onCategorySelectionStarted);
       socket.off('category-selected', onCategorySelected);
       socket.off('confirm-update', onConfirmUpdate);
@@ -616,32 +723,25 @@ const GameplayScreen = ({ navigation, route }) => {
       let anims = roundGainAnimMapRef.current[pid];
       if (!anims) {
         anims = {
-          fontSize: new Animated.Value(62),
-          translateY: new Animated.Value(0),
+          scale: new Animated.Value(0.01),
           opacity: new Animated.Value(1),
         };
         roundGainAnimMapRef.current[pid] = anims;
       } else {
-        anims.fontSize.setValue(62);
-        anims.translateY.setValue(0);
+        anims.scale.setValue(0.01);
         anims.opacity.setValue(1);
       }
 
       Animated.parallel([
-        Animated.timing(anims.fontSize, {
-          toValue: 14,
-          duration: 2000,
-          useNativeDriver: false,
-        }),
-        Animated.timing(anims.translateY, {
-          toValue: -20,
-          duration: 2000,
-          useNativeDriver: false,
-        }),
         Animated.timing(anims.opacity, {
           toValue: 0,
           duration: 3000,
-          useNativeDriver: false,
+          useNativeDriver: true,
+        }),
+        Animated.timing(anims.scale, {
+          toValue: 1,
+          duration: 3000,
+          useNativeDriver: true,
         }),
       ]).start();
     });
@@ -2051,11 +2151,24 @@ const GameplayScreen = ({ navigation, route }) => {
             const isLeader = leaderPlayerId && p.id === leaderPlayerId;
             const gain = roundGainMap && roundGainMap[p.id];
             const gainAnim = roundGainAnimMapRef.current && roundGainAnimMapRef.current[p.id];
+            const isDisconnected = disconnectedPlayers.has(p.id);
+            const displayScore = isDisconnected ? 0 : ((pointsById && pointsById[p.id]) != null ? pointsById[p.id] : 0);
             return (
               <View key={p.id} style={[styles.playerItem, { width: CIRCLE_SIZE + 28 }]}> 
-                <View style={[styles.playerCircle, { width: CIRCLE_SIZE, height: CIRCLE_SIZE, borderRadius: CIRCLE_SIZE / 2 }]}> 
-                  <MaterialCommunityIcons name="account" size={Math.round(CIRCLE_SIZE * 0.55)} color={theme.colors.primary} /> 
-                  {isLeader && (
+                <View style={[styles.playerCircle, { width: CIRCLE_SIZE, height: CIRCLE_SIZE, borderRadius: CIRCLE_SIZE / 2 }, isDisconnected && styles.playerCircleDisconnected]}> 
+                  <MaterialCommunityIcons name="account" size={Math.round(CIRCLE_SIZE * 0.55)} color={isDisconnected ? '#9E9E9E' : theme.colors.primary} /> 
+                  {/* Red slash overlay for disconnected players */}
+                  {isDisconnected && (
+                    <View style={styles.disconnectedOverlay}>
+                      <MaterialCommunityIcons 
+                        name="cancel" 
+                        size={Math.round(CIRCLE_SIZE * 0.9)} 
+                        color="#F44336" 
+                        style={styles.disconnectedIcon}
+                      />
+                    </View>
+                  )}
+                  {isLeader && !isDisconnected && (
                     <View style={[styles.crownContainer, {
                       top: -CIRCLE_SIZE * 0.08,
                       right: -CIRCLE_SIZE * 0.08,
@@ -2068,32 +2181,32 @@ const GameplayScreen = ({ navigation, route }) => {
                       />
                     </View>
                   )}
-                  <View style={[styles.scorePill, { 
+                  <View style={[styles.scorePill, isDisconnected && styles.scorePillDisconnected, { 
                     width: (CIRCLE_SIZE + 28) * 0.7,
                     left: '50%', 
                     transform: [
                       { translateX: -((CIRCLE_SIZE + 28) * 0.35) }
                     ]
                   }]}> 
-                    <Text style={styles.scorePillText}>{(pointsById && pointsById[p.id]) != null ? pointsById[p.id] : 0}</Text> 
-                  </View> 
-                </View> 
-                <View style={styles.playerNameContainer}>
-                  <Text style={[styles.playerName, { maxWidth: CIRCLE_SIZE + 20, fontSize: 7 }]} numberOfLines={1}>{p.name}</Text> 
-                  {gain != null && gainAnim && (
-                    <Animated.Text
+                    <Text style={[styles.scorePillText, isDisconnected && styles.scorePillTextDisconnected]}>{displayScore}</Text> 
+                  </View>
+                  {gain != null && gainAnim && !isDisconnected && (
+                    <Animated.View
+                      pointerEvents="none"
                       style={[
-                        styles.roundGainText,
+                        styles.roundGainContainer,
                         {
                           opacity: gainAnim.opacity,
-                          transform: [{ translateY: gainAnim.translateY }],
-                          fontSize: gainAnim.fontSize,
+                          transform: [{ scale: gainAnim.scale }],
                         },
                       ]}
                     >
-                      +{gain}
-                    </Animated.Text>
+                      <Text style={styles.roundGainText}>+{gain}</Text>
+                    </Animated.View>
                   )}
+                </View> 
+                <View style={styles.playerNameContainer}>
+                  <Text style={[styles.playerName, { maxWidth: CIRCLE_SIZE + 20, fontSize: 7 }, isDisconnected && styles.playerNameDisconnected]} numberOfLines={1}>{p.name}</Text> 
                 </View>
               </View>
             );
@@ -2483,9 +2596,17 @@ const styles = StyleSheet.create({
     maxWidth: 68,
     textAlign: 'center',
   },
-  roundGainText: {
+  roundGainContainer: {
     position: 'absolute',
-    top: 10,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roundGainText: {
+    fontSize: 72,
     color: '#4CAF50',
     fontWeight: '900',
     textShadowColor: 'rgba(0,0,0,0.35)',
@@ -2515,6 +2636,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 1,
     includeFontPadding: false, // Remove any default font padding
     textAlignVertical: 'center', // Better vertical alignment
+  },
+  // Disconnected player styles
+  playerCircleDisconnected: {
+    borderColor: '#9E9E9E',
+    backgroundColor: '#E0E0E0',
+    opacity: 0.8,
+  },
+  disconnectedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  disconnectedIcon: {
+    opacity: 0.85,
+  },
+  scorePillDisconnected: {
+    backgroundColor: '#E0E0E0',
+    borderColor: '#BDBDBD',
+  },
+  scorePillTextDisconnected: {
+    color: '#757575',
+  },
+  playerNameDisconnected: {
+    color: '#9E9E9E',
   },
   settingsModal: {
     margin: 16,
