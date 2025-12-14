@@ -13,6 +13,7 @@ const rematchCountdownTimers = new Map();
 const validationTimers = new Map();
 const quickPlayQueue = new Set(); // Set of socket IDs waiting for quick play match
 const roundAdvancementLocks = new Map(); // Prevent concurrent round advancement
+const abandonedGameCleanupTimers = new Map();
 
 module.exports = (io, socket) => {
   // Helper to clean up empty rooms - CRITICAL for preventing orphaned rooms
@@ -77,6 +78,14 @@ module.exports = (io, socket) => {
   // Centralized function to clear all timers for a game
   const clearGameTimers = (gameId) => {
     const id = gameId.toString();
+
+    // Clear category selection timer
+    const ct = categoryTimers.get(id);
+    if (ct) {
+      clearTimeout(ct);
+      categoryTimers.delete(id);
+      console.log(`[TIMER CLEANUP] Cleared category timer for game ${id}`);
+    }
     
     // Clear letter selection timer
     const lt = letterTimers.get(id);
@@ -100,6 +109,101 @@ module.exports = (io, socket) => {
       clearTimeout(rnd);
       roundTimers.delete(id);
       console.log(`[TIMER CLEANUP] Cleared round timer for game ${id}`);
+    }
+
+    // Clear validation timer
+    const vt = validationTimers.get(id);
+    if (vt) {
+      clearTimeout(vt);
+      validationTimers.delete(id);
+      console.log(`[TIMER CLEANUP] Cleared validation timer for game ${id}`);
+    }
+
+    // Clear next round countdown timer
+    const nrt = nextRoundTimers.get(id);
+    if (nrt) {
+      clearInterval(nrt);
+      nextRoundTimers.delete(id);
+      console.log(`[TIMER CLEANUP] Cleared next-round timer for game ${id}`);
+    }
+
+    // Clear next round ready tracking
+    if (nextRoundReady.get(id)) {
+      nextRoundReady.delete(id);
+    }
+
+    // Clear any round advancement lock
+    if (roundAdvancementLocks.get(id)) {
+      roundAdvancementLocks.delete(id);
+    }
+  };
+
+  const ABANDONED_GAME_CLEANUP_MS = 20000;
+
+  const cancelAbandonedGameCleanup = (gameId) => {
+    try {
+      const id = gameId.toString();
+      const t = abandonedGameCleanupTimers.get(id);
+      if (t) {
+        clearTimeout(t);
+        abandonedGameCleanupTimers.delete(id);
+        console.log(`[ABANDONED GAME] Canceled scheduled cleanup for game ${id}`);
+      }
+    } catch (e) {
+      console.error('[ABANDONED GAME] Failed to cancel cleanup timer:', e);
+    }
+  };
+
+  const scheduleAbandonedGameCleanup = (gameId, roomId) => {
+    try {
+      const id = gameId.toString();
+      if (abandonedGameCleanupTimers.get(id)) return;
+
+      console.log(`[ABANDONED GAME] Scheduling cleanup for game ${id} in ${ABANDONED_GAME_CLEANUP_MS}ms`);
+      const timer = setTimeout(async () => {
+        abandonedGameCleanupTimers.delete(id);
+
+        try {
+          const g = await Game.findById(id).select('status players room');
+          if (!g) {
+            console.log(`[ABANDONED GAME] Game ${id} not found at cleanup time`);
+            return;
+          }
+
+          if (g.status === 'finished') {
+            console.log(`[ABANDONED GAME] Game ${id} is finished, skipping abandoned cleanup`);
+            return;
+          }
+
+          const players = Array.isArray(g.players) ? g.players : [];
+          const allDisconnected = players.length > 0 && players.every(p => p.disconnected);
+          if (!allDisconnected) {
+            console.log(`[ABANDONED GAME] Cleanup aborted for game ${id} (a player reconnected)`);
+            return;
+          }
+
+          const roomIdFinal = (g.room || roomId || '').toString();
+          console.log(`[ABANDONED GAME] Deleting abandoned game ${id} and room ${roomIdFinal}`);
+
+          clearGameTimers(id);
+          await Game.deleteOne({ _id: id });
+          if (roomIdFinal) {
+            rematchReady.delete(roomIdFinal);
+            const rt = rematchCountdownTimers.get(roomIdFinal);
+            if (rt) {
+              clearInterval(rt);
+              rematchCountdownTimers.delete(roomIdFinal);
+            }
+            await Room.deleteOne({ _id: roomIdFinal });
+          }
+        } catch (err) {
+          console.error(`[ABANDONED GAME] Error cleaning up game ${id}:`, err);
+        }
+      }, ABANDONED_GAME_CLEANUP_MS);
+
+      abandonedGameCleanupTimers.set(id, timer);
+    } catch (e) {
+      console.error('[ABANDONED GAME] Failed to schedule cleanup:', e);
     }
   };
 
@@ -707,6 +811,20 @@ module.exports = (io, socket) => {
           }
         }
 
+        try {
+          if (game && game.status !== 'finished') {
+            const players = Array.isArray(game.players) ? game.players : [];
+            const allDisconnectedNow = players.length > 0 && players.every(p => p.disconnected);
+            if (allDisconnectedNow) {
+              scheduleAbandonedGameCleanup(gameId, roomIdToCleanup);
+            } else {
+              cancelAbandonedGameCleanup(gameId);
+            }
+          }
+        } catch (e) {
+          console.error('[LEAVE ROOM] Error checking abandoned-game cleanup:', e);
+        }
+
         // Leave socket rooms but don't remove from Room model
         socket.leave(roomIdToCleanup);
         socket.leave(`game-${gameId}`);
@@ -851,6 +969,7 @@ module.exports = (io, socket) => {
       // Update room status
       room.status = 'in_progress';
       room.currentGame = game._id;
+      room.expiresAt = null;
       await room.save();
 
       // Notify clients
@@ -873,6 +992,8 @@ module.exports = (io, socket) => {
       socket.join(`game-${gameId}`);
       socket.gameId = gameId;
       socket.emit('game-joined', { gameId });
+
+      cancelAbandonedGameCleanup(gameId);
 
       // Send current game state and handle reconnection
       try {
@@ -1433,6 +1554,7 @@ module.exports = (io, socket) => {
           if (room) {
             room.status = 'waiting';
             room.currentGame = null;
+            room.expiresAt = new Date(Date.now() + 30 * 60 * 1000);
             await room.save();
           }
           // Emit final standings and winner to all players in the current game
@@ -1616,6 +1738,21 @@ module.exports = (io, socket) => {
             }
           }
         }
+
+        try {
+          if (game && game.status !== 'finished') {
+            const players = Array.isArray(game.players) ? game.players : [];
+            const allDisconnectedNow = players.length > 0 && players.every(p => p.disconnected);
+            if (allDisconnectedNow) {
+              scheduleAbandonedGameCleanup(gameId, roomIdToCleanup);
+            } else {
+              cancelAbandonedGameCleanup(gameId);
+            }
+          }
+        } catch (e) {
+          console.error('[DISCONNECT] Error checking abandoned-game cleanup:', e);
+        }
+
         return; // Don't remove from room when game is in progress
       }
 
@@ -1759,8 +1896,7 @@ module.exports = (io, socket) => {
   
               room.status = 'in_progress';
               room.currentGame = newGame._id;
-              // Reset room TTL by bumping createdAt so 30-minute expiry is counted from rematch
-              room.createdAt = new Date();
+              room.expiresAt = null;
               await room.save();
   
               // Notify both the room and the old game room to transition to gameplay
@@ -1937,8 +2073,17 @@ module.exports = (io, socket) => {
         
         // Check if user is already in the room
         const alreadyInRoom = room.players.some(p => (p.user._id || p.user).toString() === socket.userId.toString());
+        const refreshedExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+        let needsSave = false;
         if (!alreadyInRoom) {
           room.players.push({ user: socket.userId, isReady: false });
+          needsSave = true;
+        }
+        if (!room.expiresAt || (room.expiresAt instanceof Date && room.expiresAt.getTime() < refreshedExpiresAt.getTime())) {
+          room.expiresAt = refreshedExpiresAt;
+          needsSave = true;
+        }
+        if (needsSave) {
           await room.save();
         }
 
@@ -1977,6 +2122,7 @@ module.exports = (io, socket) => {
             maxPlayers: 8,
             rounds: 3,
             hasPassword: false,
+            expiresAt: new Date(Date.now() + 30 * 60 * 1000),
             players: sockets.map(s => ({ user: s.quickPlayUserId, isReady: s.quickPlayUserId.toString() === owner.toString() }))
           });
           // Generate invite code so players can share the room

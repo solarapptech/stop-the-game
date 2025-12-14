@@ -128,6 +128,7 @@ export default {
     reconnectDesc: 'Volver a tu partida',
     reconnecting: 'Reconectando...',
     joining: 'Uniéndose...',
+    gameEnded: 'Partida finalizada',
     reconnectFailed: 'Error al reconectar a la partida',
     gameNoLongerExists: 'La partida ya no existe'
   },
@@ -276,6 +277,7 @@ export default {
     finalScores: 'Puntuaciones Finales',
     leaveGame: 'Salir del Juego',
     leaveGameMessage: '¿Estás seguro que quieres salir del juego?',
+    leaveGameLastPlayerMessage: 'Eres el último jugador. Si sales, la partida terminará en 20 segundos.',
     waitingForNextRound: 'Esperando siguiente ronda...',
     round: 'Ronda',
     of: 'de',

@@ -33,6 +33,7 @@ router.post('/create', authMiddleware, [
       password: hashedPassword,
       isPublic,
       rounds,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
       players: [{
         user: req.user._id,
         isReady: true  // Owner is always ready
@@ -135,6 +136,7 @@ router.post('/join/:roomId', authMiddleware, [
     // Add player to room
     try {
       room.addPlayer(req.user._id);
+      room.expiresAt = new Date(Date.now() + 30 * 60 * 1000);
       await room.save();
       await room.populate('players.user', 'username displayName winPoints');
 
@@ -215,6 +217,7 @@ router.post('/join-by-code', authMiddleware, [
     // Add player to room
     try {
       room.addPlayer(req.user._id);
+      room.expiresAt = new Date(Date.now() + 30 * 60 * 1000);
       await room.save();
       await room.populate('players.user', 'username displayName winPoints');
 
@@ -296,6 +299,13 @@ router.post('/leave/:roomId', authMiddleware, async (req, res) => {
         { arrayFilters: [ { 'elem.user': next.user._id || next.user } ] }
       );
     }
+
+    try {
+      await Room.updateOne(
+        { _id: updated._id, status: 'waiting' },
+        { $set: { expiresAt: new Date(Date.now() + 30 * 60 * 1000) } }
+      );
+    } catch (e) {}
 
     res.json({ message: 'Left room successfully' });
   } catch (error) {

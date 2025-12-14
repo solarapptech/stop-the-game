@@ -129,6 +129,7 @@ export default {
     reconnectDesc: 'Return to your game',
     reconnecting: 'Reconnecting...',
     joining: 'Joining...',
+    gameEnded: 'Game ended',
     reconnectFailed: 'Failed to reconnect to game',
     gameNoLongerExists: 'Game no longer exists'
   },
@@ -277,6 +278,7 @@ export default {
     finalScores: 'Final Scores',
     leaveGame: 'Leave Game',
     leaveGameMessage: 'Are you sure you want to leave the game?',
+    leaveGameLastPlayerMessage: "You're the last player. If you leave, the game will end in 20 seconds.",
     waitingForNextRound: 'Waiting for next round...',
     round: 'Round',
     of: 'of',

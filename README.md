@@ -151,6 +151,46 @@ stop-the-game/
 - `POST /api/game/start` - Start game
 - `POST /api/game/submit-answers` - Submit round answers
 - `POST /api/game/validate` - Validate answers with AI
+- `GET /api/game/reconnect/check` - Check if the authenticated user has an active in-progress game they can reconnect to
+
+## ♻️ Reconnect & Cleanup Behavior
+
+### Reconnect
+
+- If you leave/disconnect during an in-progress game, the backend marks you as **disconnected** (your score is preserved).
+- The Menu can show a **Reconnect** button when the backend detects an active game where you are disconnected.
+- If the game/room no longer exists (for example, it was cleaned up), the Reconnect UI will show **"Game ended"** and the Reconnect button will disappear.
+
+### Abandoned in-progress games (20s grace)
+
+- If **all players** in an in-progress game are marked as disconnected, the server schedules an automatic cleanup.
+- After **20 seconds**, if nobody has reconnected, the server deletes:
+  - the `Game` document
+  - the associated `Room` document
+
+This prevents orphaned games/rooms and avoids reconnect errors on slower devices.
+
+## 🧭 MongoDB TTL Index Migration (IMPORTANT)
+
+Rooms no longer expire via `createdAt` TTL. Instead, rooms use an `expiresAt` field:
+
+- When a room is in `waiting`, `expiresAt` is set to **now + 30 minutes**.
+- When a room is `in_progress`, `expiresAt` is set to `null` (so it will not be auto-deleted mid-game).
+
+**You must drop the old TTL index on `createdAt` and create a new TTL index on `expiresAt`.**
+
+Example commands (Mongo shell):
+
+```js
+// 1) Inspect indexes
+db.rooms.getIndexes()
+
+// 2) Drop the old TTL index (name may differ in your DB)
+db.rooms.dropIndex('createdAt_1')
+
+// 3) Create the new TTL index on expiresAt
+db.rooms.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+```
 
 ### Leaderboard
 - `GET /api/leaderboard/global` - Global rankings
@@ -168,6 +208,7 @@ stop-the-game/
 ### Client → Server
 - `join-room` - Join a game room
 - `leave-room` - Leave current room
+- `join-game` - Join/re-join an in-progress game (used for reconnect)
 - `send-message` - Send chat message
 - `player-ready` - Mark ready status
 - `start-game` - Start the game

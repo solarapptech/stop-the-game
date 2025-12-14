@@ -586,16 +586,28 @@ router.get('/reconnect/check', authMiddleware, async (req, res) => {
       return res.json({ hasActiveGame: false });
     }
 
+    const roomRef = activeGame.room;
+    const roomId = roomRef ? (roomRef._id || roomRef) : null;
+    if (!roomId) {
+      try {
+        await Game.deleteOne({ _id: activeGame._id });
+      } catch (e) {}
+      return res.json({ hasActiveGame: false, reason: 'room_missing' });
+    }
+
     // Check if the room still exists
-    const room = await Room.findById(activeGame.room._id || activeGame.room);
+    const room = await Room.findById(roomId);
     if (!room) {
-      return res.json({ hasActiveGame: false });
+      try {
+        await Game.deleteOne({ _id: activeGame._id });
+      } catch (e) {}
+      return res.json({ hasActiveGame: false, reason: 'room_missing' });
     }
 
     res.json({
       hasActiveGame: true,
       gameId: activeGame._id,
-      roomId: activeGame.room._id || activeGame.room,
+      roomId: roomId,
       roomName: room.name,
       status: activeGame.status,
       currentRound: activeGame.currentRound,

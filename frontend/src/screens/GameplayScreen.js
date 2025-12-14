@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator, TouchableOpacity, Dimensions } from 'react-native';
 import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable, Portal, Modal } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ConfettiCannon from 'react-native-confetti-cannon';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -243,6 +244,12 @@ const GameplayScreen = ({ navigation, route }) => {
   const { height: winH, width: winW } = Dimensions.get('window');
   const HEADER_HEIGHT = Math.max(56, Math.round(winH * 0.07));
   const CIRCLE_SIZE = Math.max(28, Math.min(64, Math.round(HEADER_HEIGHT * 0.70)));
+
+  useFocusEffect(
+    useCallback(() => {
+      isLeavingRef.current = false;
+    }, [gameId])
+  );
 
   useEffect(() => {
     loadGameState();
@@ -866,9 +873,12 @@ const GameplayScreen = ({ navigation, route }) => {
 
   const handleLeaveGame = () => {
     if (isLeavingRef.current) return;
+    const totalPlayersCount = playersForHeader.length;
+    const disconnectedCount = disconnectedPlayers instanceof Set ? disconnectedPlayers.size : 0;
+    const isLastConnectedPlayer = totalPlayersCount > 0 && disconnectedCount >= (totalPlayersCount - 1);
     Alert.alert(
       t('gameplay.leaveGame'),
-      t('gameplay.leaveGameMessage'),
+      isLastConnectedPlayer ? t('gameplay.leaveGameLastPlayerMessage') : t('gameplay.leaveGameMessage'),
       [
         { text: t('common.no'), style: 'cancel' },
         {
@@ -877,7 +887,9 @@ const GameplayScreen = ({ navigation, route }) => {
           onPress: () => {
             isLeavingRef.current = true;
             try { if (socket && connected && isAuthenticated && typeof socketLeaveRoom === 'function') socketLeaveRoom(); } catch (e) {}
-            navigation.navigate('Menu');
+            setTimeout(() => {
+              navigation.navigate('Menu');
+            }, 400);
           }
         }
       ]

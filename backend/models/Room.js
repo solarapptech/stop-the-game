@@ -67,8 +67,12 @@ const roomSchema = new mongoose.Schema({
   },
   createdAt: {
     type: Date,
-    default: Date.now,
-    expires: 1800 // Room expires after 30 minutes
+    default: Date.now
+  },
+  expiresAt: {
+    type: Date,
+    default: null,
+    expires: 0
   }
 }, {
   timestamps: true

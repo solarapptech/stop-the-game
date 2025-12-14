@@ -8,14 +8,12 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { useGame } from '../contexts/GameContext';
 import theme from '../theme';
 
 const MenuScreen = ({ navigation }) => {
   const { user, logout, updateDisplayName, refreshUser, statsDirty, token } = useAuth();
-  const { socket, connected } = useSocket();
+  const { socket, connected, isAuthenticated, joinRoom, joinGame } = useSocket();
   const { t } = useLanguage();
-  const { joinGame } = useGame();
   const [stats, setStats] = useState({
     winPoints: user?.winPoints || 0,
     matchesPlayed: user?.matchesPlayed || 0,
@@ -219,11 +217,13 @@ const MenuScreen = ({ navigation }) => {
       const data = response.data;
 
       if (!data.hasActiveGame) {
-        setReconnectVisible(false);
-        setReconnectStatus('reconnecting');
         setHasActiveGame(false);
         setActiveGameData(null);
-        Alert.alert(t('common.error'), t('menu.gameNoLongerExists'));
+        setReconnectStatus('gameEnded');
+        setTimeout(() => {
+          setReconnectVisible(false);
+          setReconnectStatus('reconnecting');
+        }, 1000);
         return;
       }
 
@@ -235,15 +235,10 @@ const MenuScreen = ({ navigation }) => {
         setReconnectVisible(false);
         setReconnectStatus('reconnecting');
 
-        // Join the game room via socket
-        if (socket) {
-          socket.emit('join-room', { roomId: data.roomId });
-        }
-
-        // Join game context
-        if (joinGame) {
-          joinGame(data.gameId);
-        }
+        try {
+          if (typeof joinRoom === 'function') joinRoom(data.roomId);
+          if (typeof joinGame === 'function') joinGame(data.gameId);
+        } catch (e) {}
 
         // Navigate to gameplay
         navigation.navigate('Gameplay', { 
@@ -464,16 +459,27 @@ const MenuScreen = ({ navigation }) => {
           <View style={styles.modalContainer}>
             {reconnectStatus === 'reconnecting' ? (
               <ActivityIndicator size="large" color={theme.colors.primary} style={styles.spinner} />
-            ) : (
+            ) : reconnectStatus === 'joining' ? (
               <MaterialCommunityIcons 
                 name="check-circle" 
                 size={50} 
                 color="#4CAF50" 
                 style={styles.spinner} 
               />
+            ) : (
+              <MaterialCommunityIcons 
+                name="close-circle" 
+                size={50} 
+                color="#F44336" 
+                style={styles.spinner} 
+              />
             )}
             <Text style={styles.modalTitle}>
-              {reconnectStatus === 'reconnecting' ? t('menu.reconnecting') : t('menu.joining')}
+              {reconnectStatus === 'reconnecting'
+                ? t('menu.reconnecting')
+                : reconnectStatus === 'joining'
+                  ? t('menu.joining')
+                  : t('menu.gameEnded')}
             </Text>
             {reconnectStatus === 'reconnecting' && (
               <Button
