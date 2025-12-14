@@ -25,6 +25,11 @@ const roomSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  language: {
+    type: String,
+    enum: ['en', 'es'],
+    default: 'en'
+  },
   rounds: {
     type: Number,
     enum: [1, 3, 6, 9],

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, BackHandler } from 'react-native';
-import { Text, Button, Card, List, Avatar, Chip, IconButton, TextInput } from 'react-native-paper';
+import { Text, Button, Card, List, Avatar, Chip, IconButton, TextInput, Portal, Dialog, ActivityIndicator } from 'react-native-paper';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,7 +10,8 @@ import theme from '../theme';
 const RoomScreen = ({ navigation, route }) => {
   const { roomId } = route.params;
   const { user } = useAuth();
-  const { t } = useLanguage();
+  const { t, language, changeLanguage } = useLanguage();
+  const { updateLanguage: updateUserLanguage } = useAuth() || {};
   const { socket, connected, isAuthenticated, setPlayerReady, startGame, sendMessage, joinRoom, deleteRoom, leaveRoom: socketLeaveRoom } = useSocket();
   const { currentRoom, leaveRoom } = useGame();
   const [players, setPlayers] = useState([]);
@@ -27,6 +28,18 @@ const RoomScreen = ({ navigation, route }) => {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [inviteCode, setInviteCode] = useState(null);
   const [isChatActive, setIsChatActive] = useState(false);
+
+  const [languageMismatchVisible, setLanguageMismatchVisible] = useState(false);
+  const [switchingLanguage, setSwitchingLanguage] = useState(false);
+
+  useEffect(() => {
+    const roomLang = currentRoom?.language || 'en';
+    if (roomLang && (roomLang === 'en' || roomLang === 'es') && language && roomLang !== language) {
+      setLanguageMismatchVisible(true);
+    } else {
+      setLanguageMismatchVisible(false);
+    }
+  }, [currentRoom?.language, language]);
 
   // Initialize players from currentRoom when component mounts
   useEffect(() => {
@@ -509,6 +522,57 @@ const RoomScreen = ({ navigation, route }) => {
         )}
       </View>
       </View>
+
+      <Portal>
+        <Dialog
+          visible={languageMismatchVisible}
+          dismissable={!switchingLanguage}
+          onDismiss={() => {
+            if (switchingLanguage) return;
+            // keep it visible until mismatch is resolved or user leaves
+          }}
+        >
+          <Dialog.Title>{t('gameplay.roomLanguageMismatchTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.dialogText}>
+              {t('gameplay.roomLanguageMismatchMessage', {
+                language: (currentRoom?.language === 'es') ? t('settings.spanish') : t('settings.english')
+              })}
+            </Text>
+            {switchingLanguage && <ActivityIndicator style={styles.loader} />}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={handleLeaveRoom}
+              disabled={switchingLanguage}
+            >
+              {t('gameplay.leaveRoomOrGame')}
+            </Button>
+            <Button
+              onPress={async () => {
+                const target = currentRoom?.language || 'en';
+                if (!target) return;
+                setSwitchingLanguage(true);
+                try {
+                  await changeLanguage(target);
+                  if (updateUserLanguage) {
+                    const res = await updateUserLanguage(target);
+                    if (!res?.success) throw new Error(res?.error || 'failed');
+                  }
+                } catch (e) {
+                  Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
+                } finally {
+                  setSwitchingLanguage(false);
+                }
+              }}
+              loading={switchingLanguage}
+              disabled={switchingLanguage}
+            >
+              {t('gameplay.switchLanguageAndContinue')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </KeyboardAvoidingView>
   );
 };
@@ -622,6 +686,13 @@ const styles = StyleSheet.create({
   },
   messageInput: {
     backgroundColor: '#FFFFFF',
+  },
+  dialogText: {
+    marginBottom: 10,
+    color: '#424242',
+  },
+  loader: {
+    marginTop: 10,
   },
   actionContainer: {
     position: 'absolute',

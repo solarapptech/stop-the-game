@@ -7,6 +7,35 @@ const openai = new OpenAI({
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const cache = new Map();
 
+const normalizeSpanishVowelAccents = (s) => {
+  const str = String(s || '');
+  return str
+    .replace(/[áÁ]/g, 'a')
+    .replace(/[éÉ]/g, 'e')
+    .replace(/[íÍ]/g, 'i')
+    .replace(/[óÓ]/g, 'o')
+    .replace(/[úÚ]/g, 'u')
+    .replace(/[üÜ]/g, 'u');
+};
+
+const normalizeAnswerForKey = (answer, language) => {
+  const a = String(answer || '').trim().toLowerCase();
+  if (language === 'es') return normalizeSpanishVowelAccents(a);
+  return a;
+};
+
+const startsWithLetter = (answer, letter, language) => {
+  const a = String(answer || '').trim();
+  if (!a || a.length < 1) return false;
+  const first = a.charAt(0);
+  const L = String(letter || '').toUpperCase();
+  if (!L) return false;
+  if (language === 'es') {
+    return normalizeSpanishVowelAccents(first).toUpperCase() === L;
+  }
+  return first.toUpperCase() === L;
+};
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const withTimeout = (promise, ms) => Promise.race([
   promise,
@@ -37,28 +66,34 @@ const callWithRetry = async (payload, maxRetries = 3) => {
   }
 };
 
-const validateAnswers = async (category, letter, answer) => {
+const validateAnswers = async (category, letter, answer, options = {}) => {
   try {
+    const language = (options && options.language) || 'en';
     const a = String(answer || '').trim();
     if (!a || a.length < 2) {
       return false;
     }
-    if (a.charAt(0).toUpperCase() !== String(letter || '').toUpperCase()) {
+    if (!startsWithLetter(a, letter, language)) {
       return false;
     }
-    const key = `${String(category || '')}|${String(letter || '')}|${a.toLowerCase()}`;
+    const key = `${language}|${String(category || '')}|${String(letter || '')}|${normalizeAnswerForKey(a, language)}`;
     const now = Date.now();
     const cached = cache.get(key);
     if (cached && cached.expires > now) {
       return cached.value;
     }
-    const prompt = `Is "${a}" a valid answer for the category "${category}" in the game Stop/Tutti Frutti? 
-    The answer must:
-    1. Start with the letter "${String(letter || '').toUpperCase()}"
-    2. Be a real word or name that fits the category
-    3. Be spelled correctly (minor variations acceptable)
-    
-    Respond with only "true" or "false".`;
+
+    const languageName = language === 'es' ? 'Spanish' : 'English';
+    const prompt = `Is "${a}" a valid answer for the category "${category}" in the game Stop/Tutti Frutti?
+The answer must:
+1) Start with the letter "${String(letter || '').toUpperCase()}" (case-insensitive)
+2) Be a real word or name that fits the category
+3) Be spelled correctly (NO minor spelling variants)
+4) Be in ${languageName}, except:
+   - Proper nouns (people/place names), brands, and globally-used terms may be accepted even if they are not translated.
+   - For Spanish: vowel accents (á, é, í, ó, ú, ü) may be omitted.
+
+Respond with only "true" or "false".`;
 
     const completion = await callWithRetry({
       model: MODEL,
@@ -84,7 +119,7 @@ const validateAnswers = async (category, letter, answer) => {
   } catch (error) {
     console.error('OpenAI validation error:', error);
     const a = String(answer || '').trim();
-    return a.length >= 2 && a.charAt(0).toUpperCase() === String(letter || '').toUpperCase();
+    return a.length >= 2 && startsWithLetter(a, letter, (options && options.language) || 'en');
   }
 };
 
@@ -102,27 +137,29 @@ const validateMultipleAnswers = async (answers, letter) => {
       ...answer,
       isValid: (() => {
         const a = String(answer.answer || '').trim();
-        return a && a.length >= 2 && a.charAt(0).toUpperCase() === String(letter || '').toUpperCase();
+        return a && a.length >= 2 && startsWithLetter(a, letter, 'en');
       })()
     }));
   }
 };
 
-const validateBatchAnswersFast = async (items, letter) => {
+const validateBatchAnswersFast = async (items, letter, options = {}) => {
   try {
+    const language = (options && options.language) || 'en';
     const start = Date.now();
     const result = {};
     const toValidate = [];
     const indexMap = [];
     for (const item of items) {
       const a = String(item?.answer || '').trim();
-      const k = `${String(item?.category || '')}|${String(letter || '')}|${a.toLowerCase()}`;
-      const cached = cache.get(k);
+      const baseKey = `${String(item?.category || '')}|${String(letter || '')}|${a.toLowerCase()}`;
+      const cacheKey = `${language}|${String(item?.category || '')}|${String(letter || '')}|${normalizeAnswerForKey(a, language)}`;
+      const cached = cache.get(cacheKey);
       if (cached && cached.expires > Date.now()) {
-        result[k] = cached.value;
+        result[baseKey] = cached.value;
       } else {
         toValidate.push({ category: String(item?.category || ''), answer: a });
-        indexMap.push(k);
+        indexMap.push({ baseKey, cacheKey });
       }
     }
     const cacheHits = items.length - toValidate.length;
@@ -132,7 +169,8 @@ const validateBatchAnswersFast = async (items, letter) => {
       return result;
     }
     const listLines = toValidate.map((it, i) => `${i + 1}) category: "${it.category}", answer: "${it.answer}"`).join('\n');
-    const userContent = `Letter: "${String(letter || '').toUpperCase()}"\nFor each item below, reply with a JSON array of booleans in the same order.\nRules: starts with the letter, fits the category, real word/name, reasonable spelling.\n\nItems:\n${listLines}`;
+    const languageName = language === 'es' ? 'Spanish' : 'English';
+    const userContent = `Required language: ${languageName}\nLetter: "${String(letter || '').toUpperCase()}"\nFor each item below, reply with a JSON array of booleans in the same order.\nRules:\n- Must start with the letter (case-insensitive).\n- Must fit the category.\n- Must be a real word/name.\n- Must be spelled correctly (NO minor spelling variants).\n- Must be in ${languageName}, except: proper nouns (people/place names), brands, and globally-used terms may be accepted even if not translated.\n- Spanish only: vowel accents (á, é, í, ó, ú, ü) may be omitted (e.g., "camion" for "camión").\n\nItems:\n${listLines}`;
     const payload = {
       model: MODEL,
       messages: [
@@ -150,10 +188,10 @@ const validateBatchAnswersFast = async (items, letter) => {
       console.error('[AI] Batch validation error/timeout, falling back to heuristic:', err && err.message ? err.message : err);
       for (let i = 0; i < toValidate.length; i++) {
         const it = toValidate[i];
-        const v = it.answer && it.answer.length >= 2 && it.answer.charAt(0).toUpperCase() === String(letter || '').toUpperCase();
+        const v = it.answer && it.answer.length >= 2 && startsWithLetter(it.answer, letter, language);
         const k = indexMap[i];
-        result[k] = v;
-        cache.set(k, { value: v, expires: Date.now() + 10 * 60 * 1000 });
+        result[k.baseKey] = v;
+        cache.set(k.cacheKey, { value: v, expires: Date.now() + 10 * 60 * 1000 });
       }
       console.log(`[AI] Batch fallback heuristic applied for ${toValidate.length} items in ${Date.now() - start}ms`);
       return result;
@@ -174,15 +212,15 @@ const validateBatchAnswersFast = async (items, letter) => {
       for (let i = 0; i < arr.length && i < indexMap.length; i++) {
         const val = !!arr[i];
         const k = indexMap[i];
-        result[k] = val;
-        cache.set(k, { value: val, expires: Date.now() + 10 * 60 * 1000 });
+        result[k.baseKey] = val;
+        cache.set(k.cacheKey, { value: val, expires: Date.now() + 10 * 60 * 1000 });
       }
       for (let i = arr.length; i < indexMap.length; i++) {
         const it = toValidate[i];
-        const v = it.answer && it.answer.length >= 2 && it.answer.charAt(0).toUpperCase() === String(letter || '').toUpperCase();
+        const v = it.answer && it.answer.length >= 2 && startsWithLetter(it.answer, letter, language);
         const k = indexMap[i];
-        result[k] = v;
-        cache.set(k, { value: v, expires: Date.now() + 10 * 60 * 1000 });
+        result[k.baseKey] = v;
+        cache.set(k.cacheKey, { value: v, expires: Date.now() + 10 * 60 * 1000 });
       }
       console.log(`[AI] Batch validation done in ${Date.now() - start}ms. validated=${toValidate.length}, cacheHits=${cacheHits}`);
       return result;
@@ -190,10 +228,10 @@ const validateBatchAnswersFast = async (items, letter) => {
       console.error('[AI] Batch parse error, falling back to heuristic:', parseErr && parseErr.message ? parseErr.message : parseErr, 'content=', content);
       for (let i = 0; i < toValidate.length; i++) {
         const it = toValidate[i];
-        const v = it.answer && it.answer.length >= 2 && it.answer.charAt(0).toUpperCase() === String(letter || '').toUpperCase();
+        const v = it.answer && it.answer.length >= 2 && startsWithLetter(it.answer, letter, language);
         const k = indexMap[i];
-        result[k] = v;
-        cache.set(k, { value: v, expires: Date.now() + 10 * 60 * 1000 });
+        result[k.baseKey] = v;
+        cache.set(k.cacheKey, { value: v, expires: Date.now() + 10 * 60 * 1000 });
       }
       console.log(`[AI] Batch fallback heuristic applied for ${toValidate.length} items in ${Date.now() - start}ms`);
       return result;
@@ -202,11 +240,13 @@ const validateBatchAnswersFast = async (items, letter) => {
     console.error('OpenAI batch validation fatal error:', error);
     const out = {};
     for (const item of items) {
+      const language = (options && options.language) || 'en';
       const a = String(item?.answer || '').trim();
       const k = `${String(item?.category || '')}|${String(letter || '')}|${a.toLowerCase()}`;
-      const v = a && a.length >= 2 && a.charAt(0).toUpperCase() === String(letter || '').toUpperCase();
+      const v = a && a.length >= 2 && startsWithLetter(a, letter, language);
       out[k] = v;
-      cache.set(k, { value: v, expires: Date.now() + 10 * 60 * 1000 });
+      const cacheKey = `${language}|${String(item?.category || '')}|${String(letter || '')}|${normalizeAnswerForKey(a, language)}`;
+      cache.set(cacheKey, { value: v, expires: Date.now() + 10 * 60 * 1000 });
     }
     return out;
   }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Alert, RefreshControl } from 'react-native';
 import { Text, TextInput, Button, Card, List, Chip, Dialog, Portal, ActivityIndicator } from 'react-native-paper';
 import { useGame } from '../contexts/GameContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
@@ -13,12 +14,23 @@ const JoinRoomScreen = ({ navigation }) => {
   const [passwordDialog, setPasswordDialog] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [roomPassword, setRoomPassword] = useState('');
+  const [filterLanguage, setFilterLanguage] = useState('en');
+  const [languageMismatchVisible, setLanguageMismatchVisible] = useState(false);
+  const [switchingLanguage, setSwitchingLanguage] = useState(false);
+  const [pendingJoin, setPendingJoin] = useState(null);
   const { joinRoom, joinRoomByCode, getPublicRooms } = useGame();
-  const { t } = useLanguage();
+  const { t, language, changeLanguage } = useLanguage();
+  const { updateLanguage: updateUserLanguage } = useAuth() || {};
 
   useEffect(() => {
     loadPublicRooms();
   }, []);
+
+  useEffect(() => {
+    if (language === 'en' || language === 'es') {
+      setFilterLanguage(language);
+    }
+  }, [language]);
 
   const loadPublicRooms = async () => {
     setLoading(true);
@@ -47,26 +59,53 @@ const JoinRoomScreen = ({ navigation }) => {
 
     if (result.success) {
       navigation.replace('Room', { roomId: result.room.id });
+    } else if (result.languageMismatch) {
+      setPendingJoin({
+        type: 'code',
+        inviteCode: inviteCode.toUpperCase(),
+        roomLanguage: result.roomLanguage
+      });
+      setLanguageMismatchVisible(true);
     } else if (result.needsPassword) {
       setSelectedRoom({ inviteCode: inviteCode.toUpperCase(), name: result.roomName });
       setPasswordDialog(true);
     } else {
-      Alert.alert(t('common.error'), result.error);
+      const msg = result.error === 'Game already in progress' ? t('joinRoom.gameAlreadyStarted') : result.error;
+      Alert.alert(t('common.error'), msg);
     }
   };
 
   const handleJoinPublicRoom = async (room) => {
+    const roomLang = room?.language || 'en';
+    if (roomLang !== language) {
+      setPendingJoin({
+        type: 'public',
+        room,
+        roomLanguage: roomLang
+      });
+      setLanguageMismatchVisible(true);
+      return;
+    }
+
     setLoading(true);
     const result = await joinRoom(room.id);
     setLoading(false);
 
     if (result.success) {
       navigation.replace('Room', { roomId: room.id });
+    } else if (result.languageMismatch) {
+      setPendingJoin({
+        type: 'public',
+        room,
+        roomLanguage: result.roomLanguage
+      });
+      setLanguageMismatchVisible(true);
     } else if (result.needsPassword) {
       setSelectedRoom(room);
       setPasswordDialog(true);
     } else {
-      Alert.alert(t('common.error'), result.error);
+      const msg = result.error === 'Game already in progress' ? t('joinRoom.gameAlreadyStarted') : result.error;
+      Alert.alert(t('common.error'), msg);
     }
   };
 
@@ -92,8 +131,64 @@ const JoinRoomScreen = ({ navigation }) => {
 
     if (result.success) {
       navigation.replace('Room', { roomId: result.room.id });
+    } else if (result.languageMismatch) {
+      setPendingJoin({
+        type: selectedRoom?.inviteCode ? 'code' : 'public',
+        inviteCode: selectedRoom?.inviteCode,
+        room: selectedRoom?.inviteCode ? null : selectedRoom,
+        roomLanguage: result.roomLanguage,
+        password: roomPassword
+      });
+      setLanguageMismatchVisible(true);
     } else {
-      Alert.alert(t('common.error'), result.error);
+      const msg = result.error === 'Game already in progress' ? t('joinRoom.gameAlreadyStarted') : result.error;
+      Alert.alert(t('common.error'), msg);
+    }
+  };
+
+  const switchLanguageAndJoin = async () => {
+    const target = pendingJoin?.roomLanguage;
+    if (!target) return;
+
+    setSwitchingLanguage(true);
+    try {
+      await changeLanguage(target);
+      if (updateUserLanguage) {
+        const res = await updateUserLanguage(target);
+        if (!res?.success) {
+          throw new Error(res?.error || 'Failed');
+        }
+      }
+
+      // Retry join after switching language
+      if (pendingJoin?.type === 'public' && pendingJoin?.room?.id) {
+        setLanguageMismatchVisible(false);
+        setPendingJoin(null);
+        await handleJoinPublicRoom(pendingJoin.room);
+      } else if (pendingJoin?.type === 'code' && pendingJoin?.inviteCode) {
+        setLanguageMismatchVisible(false);
+        const code = pendingJoin.inviteCode;
+        const pwd = pendingJoin.password || null;
+        setPendingJoin(null);
+
+        setLoading(true);
+        const result = await joinRoomByCode(code, pwd);
+        setLoading(false);
+
+        if (result.success) {
+          navigation.replace('Room', { roomId: result.room.id });
+        } else if (result.needsPassword) {
+          setSelectedRoom({ inviteCode: code, name: result.roomName });
+          setPasswordDialog(true);
+        } else {
+          const msg = result.error === 'Game already in progress' ? t('joinRoom.gameAlreadyStarted') : result.error;
+          Alert.alert(t('common.error'), msg);
+        }
+      }
+    } catch (e) {
+      Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
+    } finally {
+      setSwitchingLanguage(false);
     }
   };
 
@@ -155,13 +250,33 @@ const JoinRoomScreen = ({ navigation }) => {
                 {t('joinRoom.refresh')}
               </Button>
             </View>
+
+            <View style={styles.languageFiltersRow}>
+              <Chip
+                selected={filterLanguage === 'en'}
+                onPress={() => setFilterLanguage('en')}
+                style={[styles.languageChip, filterLanguage === 'en' ? styles.languageChipSelected : null]}
+              >
+                {t('joinRoom.filterEnglish')}
+              </Chip>
+              <Chip
+                selected={filterLanguage === 'es'}
+                onPress={() => setFilterLanguage('es')}
+                style={[styles.languageChip, filterLanguage === 'es' ? styles.languageChipSelected : null]}
+              >
+                {t('joinRoom.filterSpanish')}
+              </Chip>
+            </View>
+
             {loading && publicRooms.length === 0 ? (
               <ActivityIndicator style={styles.loader} />
             ) : publicRooms.length === 0 ? (
               <Text style={styles.emptyText}>{t('joinRoom.noRooms')}</Text>
             ) : (
               <View>
-                {publicRooms.map((room) => (
+                {publicRooms
+                  .filter(r => (r.language || 'en') === filterLanguage)
+                  .map((room) => (
                   <Card key={room.id} style={styles.roomCard}>
                     <View style={styles.roomContainer}>
                       <View style={styles.roomHeader}>
@@ -201,6 +316,33 @@ const JoinRoomScreen = ({ navigation }) => {
 
       {/* Password Dialog */}
       <Portal>
+        <Dialog visible={languageMismatchVisible} onDismiss={() => {
+          if (switchingLanguage) return;
+          setLanguageMismatchVisible(false);
+          setPendingJoin(null);
+        }}>
+          <Dialog.Title>{t('joinRoom.roomLanguageMismatchTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text style={styles.dialogText}>
+              {t('joinRoom.roomLanguageMismatchMessage', {
+                language: (pendingJoin?.roomLanguage === 'es') ? t('settings.spanish') : t('settings.english')
+              })}
+            </Text>
+            {switchingLanguage && <ActivityIndicator style={styles.loader} />}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={() => {
+              setLanguageMismatchVisible(false);
+              setPendingJoin(null);
+            }} disabled={switchingLanguage}>
+              {t('common.cancel')}
+            </Button>
+            <Button onPress={switchLanguageAndJoin} disabled={switchingLanguage} loading={switchingLanguage}>
+              {t('joinRoom.switchLanguageAndJoin')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+
         <Dialog visible={passwordDialog} onDismiss={() => setPasswordDialog(false)}>
           <Dialog.Title>{t('joinRoom.passwordRequired')}</Dialog.Title>
           <Dialog.Content>
@@ -363,6 +505,18 @@ const styles = StyleSheet.create({
   },
   lockChip: {
     backgroundColor: '#FFEBEE',
+  },
+  languageFiltersRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  languageChip: {
+    backgroundColor: '#EEEEEE',
+  },
+  languageChipSelected: {
+    backgroundColor: '#E3F2FD',
   },
 });
 

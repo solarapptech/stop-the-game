@@ -130,7 +130,13 @@ export default {
     joining: 'Uniéndose...',
     gameEnded: 'Partida finalizada',
     reconnectFailed: 'Error al reconectar a la partida',
-    gameNoLongerExists: 'La partida ya no existe'
+    gameNoLongerExists: 'La partida ya no existe',
+    gamesLanguage: 'Idioma del Juego',
+    quickPlayLanguageSaveFailed: 'No se pudo guardar la preferencia de idioma del juego',
+    switchLanguageTitle: 'Cambiar idioma',
+    switchLanguageToJoin: 'Para continuar, debes cambiar tu idioma a {{language}}.',
+    switchLanguageAndContinue: 'Cambiar idioma y continuar',
+    languageSwitchFailed: 'No se pudo cambiar el idioma'
   },
 
   // Create Room Screen
@@ -167,6 +173,10 @@ export default {
     enterRoomName: 'Por favor ingresa un nombre de sala',
     privatePasswordRequired: 'Las salas privadas requieren una contraseña',
     errorCreating: 'Error al crear la sala',
+    roomLanguage: 'Idioma de la Sala',
+    switchLanguagePromptTitle: 'Cambiar idioma',
+    switchLanguagePromptMessage: 'Para crear esta sala, debes cambiar tu idioma a {{language}}.',
+    switchLanguageAndCreate: 'Cambiar idioma y crear'
   },
 
   // Join Room Screen
@@ -195,6 +205,13 @@ export default {
     requiresPassword: 'requiere una contraseña',
     thisRoom: 'Esta sala',
     enterPassword: 'Por favor ingresa la contraseña de la sala',
+    languageFilterTitle: 'Idioma',
+    filterEnglish: 'English',
+    filterSpanish: 'Español',
+    roomLanguageMismatchTitle: 'Idioma diferente',
+    roomLanguageMismatchMessage: 'Esta sala está en {{language}}. Para unirte, debes cambiar tu idioma.',
+    switchLanguageAndJoin: 'Cambiar idioma y unirse',
+    gameAlreadyStarted: 'El juego ya empezó'
   },
 
   // Room Screen
@@ -288,6 +305,10 @@ export default {
     couldNotFetchResults: 'No se pudieron obtener los resultados de la ronda. El juego puede seguir procesando.',
     refreshErrorGeneric: 'Ocurrió un error al intentar actualizar. Intenta de nuevo.',
     confirmFinalResults: 'Confirmar resultados finales',
+    roomLanguageMismatchTitle: 'Idioma requerido',
+    roomLanguageMismatchMessage: 'Esta sala está en {{language}}. Para seguir jugando, cambia tu idioma o sal del juego.',
+    switchLanguageAndContinue: 'Cambiar idioma y continuar',
+    leaveRoomOrGame: 'Salir de sala/juego',
     categoryNames: {
       name: 'Nombre',
       lastName: 'Apellido',

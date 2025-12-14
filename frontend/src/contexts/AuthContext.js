@@ -365,7 +365,11 @@ export const AuthProvider = ({ children }) => {
   const updateLanguage = async (language) => {
     try {
       const response = await axios.put('user/language', { language });
-      const updatedUser = { ...user, language: response.data.language };
+      const updatedUser = { 
+        ...user, 
+        language: response.data.language,
+        quickPlayLanguagePreference: response.data.quickPlayLanguagePreference ?? user?.quickPlayLanguagePreference
+      };
       setUser(updatedUser);
       await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
       return { success: true, language: response.data.language };
@@ -374,6 +378,25 @@ export const AuthProvider = ({ children }) => {
       return {
         success: false,
         error: error.response?.data?.message || error.message || 'Failed to update language'
+      };
+    }
+  };
+
+  const updateQuickPlayLanguagePreference = async (language) => {
+    try {
+      const response = await axios.put('user/quickplay-language', { language });
+      const updatedUser = { 
+        ...user, 
+        quickPlayLanguagePreference: response.data.quickPlayLanguagePreference 
+      };
+      setUser(updatedUser);
+      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+      return { success: true, quickPlayLanguagePreference: response.data.quickPlayLanguagePreference };
+    } catch (error) {
+      console.error('[AuthContext] updateQuickPlayLanguagePreference error:', error);
+      return {
+        success: false,
+        error: error.response?.data?.message || error.message || 'Failed to update quick play language preference'
       };
     }
   };
@@ -473,6 +496,7 @@ export const AuthProvider = ({ children }) => {
       checkUsernameAvailable,
       updateUsername,
       updateLanguage,
+      updateQuickPlayLanguagePreference,
       refreshUser,
       markStatsDirty,
       isAuthenticated: !!token

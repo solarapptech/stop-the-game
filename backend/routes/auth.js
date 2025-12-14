@@ -82,7 +82,9 @@ router.post('/register', [
         username: user.username,
         displayName: user.displayName,
         email: user.getDecryptedEmail(),
-        verified: user.verified
+        verified: user.verified,
+        language: user.language,
+        quickPlayLanguagePreference: user.quickPlayLanguagePreference
       }
     });
   } catch (error) {
@@ -139,6 +141,8 @@ router.post('/login', [
         displayName: user.displayName,
         email: user.getDecryptedEmail(),
         verified: user.verified,
+        language: user.language,
+        quickPlayLanguagePreference: user.quickPlayLanguagePreference,
         subscribed: user.subscribed,
         winPoints: user.winPoints,
         matchesPlayed: user.matchesPlayed
@@ -240,6 +244,8 @@ router.get('/me', authMiddleware, async (req, res) => {
       displayName: req.user.displayName,
       email: req.user.getDecryptedEmail(),
       verified: req.user.verified,
+      language: req.user.language,
+      quickPlayLanguagePreference: req.user.quickPlayLanguagePreference,
       subscribed: req.user.subscribed,
       winPoints: req.user.winPoints,
       matchesPlayed: req.user.matchesPlayed,

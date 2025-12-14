@@ -145,13 +145,40 @@ stop-the-game/
 - `GET /api/auth/google` - Google OAuth
 
 ### Game
-- `POST /api/room/create` - Create game room
-- `POST /api/room/join` - Join game room
+- `POST /api/room/create` - Create game room (room language is set from the creator's current UI language)
+- `POST /api/room/join/:roomId` - Join game room
+- `POST /api/room/join-by-code` - Join game room by invite code
 - `GET /api/room/:roomId` - Get room details
 - `POST /api/game/start` - Start game
 - `POST /api/game/submit-answers` - Submit round answers
 - `POST /api/game/validate` - Validate answers with AI
 - `GET /api/game/reconnect/check` - Check if the authenticated user has an active in-progress game they can reconnect to
+
+### User
+- `PUT /api/user/language` - Update user's UI language
+- `PUT /api/user/quickplay-language` - Update user's Quick Play matchmaking language preference
+
+## 🌍 Room Language Enforcement
+
+Rooms have an authoritative language stored in MongoDB:
+
+- `Room.language`: `'en' | 'es'`
+- `Game.language`: `'en' | 'es'` (copied from the room when the game starts)
+
+Behavior:
+
+- When creating a room, `Room.language` is set from the creator's current UI language.
+- When joining a room (by ID or invite code), if the user's UI language does not match `Room.language`, the API returns:
+  - **HTTP 409** with `{ message: "Room language mismatch", roomLanguage: "en" | "es" }`
+- AI validation enforces the room/game language during answer validation.
+
+Quick Play:
+
+- Users can store a separate matchmaking preference:
+  - `User.quickPlayLanguagePreference`: `'en' | 'es'`
+- The Quick Play socket event includes the desired language:
+  - `quickplay-join` payload: `{ language: 'en' | 'es' }`
+- Matchmaking only matches players into rooms of the selected language.
 
 ## ♻️ Reconnect & Cleanup Behavior
 

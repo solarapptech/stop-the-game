@@ -189,6 +189,18 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
+  const quickplayJoin = (language) => {
+    if (socket && connected && isAuthenticated) {
+      socket.emit('quickplay-join', { language });
+    }
+  };
+
+  const quickplayLeave = () => {
+    if (socket && connected && isAuthenticated) {
+      socket.emit('quickplay-leave');
+    }
+  };
+
   return (
     <SocketContext.Provider value={{
       socket,
@@ -207,7 +219,9 @@ export const SocketProvider = ({ children }) => {
       categoryPhaseReady,
       deleteRoom,
       readyNextRound,
-      playAgainReady
+      playAgainReady,
+      quickplayJoin,
+      quickplayLeave
     }}>
       {children}
     </SocketContext.Provider>

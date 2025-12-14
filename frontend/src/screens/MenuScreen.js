@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useLayoutEffect } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Text, Button, Avatar, IconButton, ActivityIndicator, TextInput, Portal, Dialog } from 'react-native-paper';
+import { Text, Button, Avatar, IconButton, ActivityIndicator, TextInput, Portal, Dialog, RadioButton } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import axios from 'axios';
@@ -11,9 +11,9 @@ import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const MenuScreen = ({ navigation }) => {
-  const { user, logout, updateDisplayName, refreshUser, statsDirty, token } = useAuth();
-  const { socket, connected, isAuthenticated, joinRoom, joinGame } = useSocket();
-  const { t } = useLanguage();
+  const { user, logout, updateDisplayName, refreshUser, statsDirty, token, updateLanguage, updateQuickPlayLanguagePreference } = useAuth();
+  const { socket, connected, isAuthenticated, joinRoom, joinGame, quickplayJoin, quickplayLeave } = useSocket();
+  const { t, language, changeLanguage } = useLanguage();
   const [stats, setStats] = useState({
     winPoints: user?.winPoints || 0,
     matchesPlayed: user?.matchesPlayed || 0,
@@ -22,6 +22,10 @@ const MenuScreen = ({ navigation }) => {
   const [statsRefreshing, setStatsRefreshing] = useState(false);
   const [quickPlayVisible, setQuickPlayVisible] = useState(false);
   const [matchmakingStatus, setMatchmakingStatus] = useState('searching'); // 'searching' | 'found'
+  const [quickPlayLanguage, setQuickPlayLanguage] = useState((user && (user.quickPlayLanguagePreference || user.language)) || 'en');
+  const [switchLanguageDialogVisible, setSwitchLanguageDialogVisible] = useState(false);
+  const [switchingLanguage, setSwitchingLanguage] = useState(false);
+  const [pendingQuickPlayStart, setPendingQuickPlayStart] = useState(false);
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState(user?.displayName || user?.username || '');
   const [savingName, setSavingName] = useState(false);
@@ -78,6 +82,9 @@ const MenuScreen = ({ navigation }) => {
         matchesPlayed: user.matchesPlayed || 0,
         friends: user.friends?.length || 0,
       });
+
+      const pref = user.quickPlayLanguagePreference || user.language || 'en';
+      setQuickPlayLanguage(pref);
     }
   }, [user]);
 
@@ -204,24 +211,61 @@ const MenuScreen = ({ navigation }) => {
     };
   }, [socket, navigation, t, logout]);
 
-  const handleQuickPlay = () => {
+  const startQuickPlayMatchmaking = () => {
     if (!connected) {
       Alert.alert(t('common.error'), t('menu.notConnected'));
       return;
     }
     setQuickPlayVisible(true);
     setMatchmakingStatus('searching');
-    if (socket) {
-      socket.emit('quickplay-join');
+    if (typeof quickplayJoin === 'function') {
+      quickplayJoin(quickPlayLanguage || 'en');
+    } else if (socket) {
+      socket.emit('quickplay-join', { language: quickPlayLanguage || 'en' });
     }
   };
 
+  const handleQuickPlay = () => {
+    const desired = quickPlayLanguage || 'en';
+    if (language !== desired) {
+      setPendingQuickPlayStart(true);
+      setSwitchLanguageDialogVisible(true);
+      return;
+    }
+    startQuickPlayMatchmaking();
+  };
+
   const handleCancelQuickPlay = () => {
-    if (socket) {
+    if (typeof quickplayLeave === 'function') {
+      quickplayLeave();
+    } else if (socket) {
       socket.emit('quickplay-leave');
     }
     setQuickPlayVisible(false);
     setMatchmakingStatus('searching');
+  };
+
+  const doSwitchLanguageAndMaybeStartQuickPlay = async () => {
+    const desired = quickPlayLanguage || 'en';
+    setSwitchingLanguage(true);
+    try {
+      await changeLanguage(desired);
+      if (updateLanguage) {
+        const res = await updateLanguage(desired);
+        if (!res?.success) {
+          throw new Error(res?.error || 'Failed to update language');
+        }
+      }
+      setSwitchLanguageDialogVisible(false);
+      if (pendingQuickPlayStart) {
+        setPendingQuickPlayStart(false);
+        startQuickPlayMatchmaking();
+      }
+    } catch (e) {
+      Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
+    } finally {
+      setSwitchingLanguage(false);
+    }
   };
 
   const handleReconnect = async () => {
@@ -453,6 +497,36 @@ const MenuScreen = ({ navigation }) => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <ActivityIndicator size="large" color={theme.colors.primary} style={styles.spinner} />
+
+            {matchmakingStatus === 'searching' && (
+              <View style={styles.quickPlayLanguageContainer}>
+                <Text style={styles.quickPlayLanguageTitle}>{t('menu.gamesLanguage')}</Text>
+                <RadioButton.Group
+                  value={quickPlayLanguage}
+                  onValueChange={async (val) => {
+                    setQuickPlayLanguage(val);
+                    if (typeof updateQuickPlayLanguagePreference === 'function') {
+                      const res = await updateQuickPlayLanguagePreference(val);
+                      if (!res?.success) {
+                        Alert.alert(t('common.error'), res?.error || t('menu.quickPlayLanguageSaveFailed'));
+                      }
+                    }
+                  }}
+                >
+                  <View style={styles.quickPlayLanguageRow}>
+                    <View style={styles.quickPlayLanguageOption}>
+                      <RadioButton value="en" color={theme.colors.primary} />
+                      <Text style={styles.quickPlayLanguageOptionText}>{t('settings.english')}</Text>
+                    </View>
+                    <View style={styles.quickPlayLanguageOption}>
+                      <RadioButton value="es" color={theme.colors.primary} />
+                      <Text style={styles.quickPlayLanguageOptionText}>{t('settings.spanish')}</Text>
+                    </View>
+                  </View>
+                </RadioButton.Group>
+              </View>
+            )}
+
             <Text style={styles.modalTitle}>
               {matchmakingStatus === 'searching' ? t('menu.searchingGames') : t('menu.gameFound')}
             </Text>
@@ -469,6 +543,45 @@ const MenuScreen = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Switch Language Dialog (Option A) */}
+      <Portal>
+        <Dialog
+          visible={switchLanguageDialogVisible}
+          onDismiss={() => {
+            if (switchingLanguage) return;
+            setPendingQuickPlayStart(false);
+            setSwitchLanguageDialogVisible(false);
+          }}
+        >
+          <Dialog.Title>{t('menu.switchLanguageTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text>
+              {t('menu.switchLanguageToJoin', {
+                language: quickPlayLanguage === 'es' ? t('settings.spanish') : t('settings.english')
+              })}
+            </Text>
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => {
+                setPendingQuickPlayStart(false);
+                setSwitchLanguageDialogVisible(false);
+              }}
+              disabled={switchingLanguage}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onPress={doSwitchLanguageAndMaybeStartQuickPlay}
+              loading={switchingLanguage}
+              disabled={switchingLanguage}
+            >
+              {t('menu.switchLanguageAndContinue')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       {/* Reconnect Modal */}
       <Modal
@@ -820,6 +933,30 @@ const styles = StyleSheet.create({
     color: '#424242',
     textAlign: 'center',
     marginBottom: 20,
+  },
+  quickPlayLanguageContainer: {
+    width: '100%',
+    marginBottom: 12,
+  },
+  quickPlayLanguageTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#424242',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  quickPlayLanguageRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+  },
+  quickPlayLanguageOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  quickPlayLanguageOptionText: {
+    color: '#424242',
   },
   cancelButton: {
     borderColor: '#757575',

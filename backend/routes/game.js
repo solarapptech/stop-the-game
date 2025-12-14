@@ -46,7 +46,7 @@ async function runValidationAndBroadcast(app, gameId) {
   console.log(`[VALIDATION] Input: game=${gameId}, round=${game.currentRound}, players=${playersCount}, submitted=${submittedPlayers.length}, missing=${missingPlayers}, totalAnswers=${totalCatAnswers}, uniqueItems=${unique.length}, letter=${game.currentLetter}`);
   perUserLines.forEach(l => console.log(`[VALIDATION] Answers ${l}`));
 
-  const resultByKey = await validateBatchAnswersFast(unique.map(u => ({ category: u.category, answer: u.answer })), game.currentLetter);
+  const resultByKey = await validateBatchAnswersFast(unique.map(u => ({ category: u.category, answer: u.answer })), game.currentLetter, { language: game.language || 'en' });
   const t1 = Date.now();
   console.log(`[VALIDATION] AI done in ${t1 - t0}ms for unique=${unique.length}`);
   for (const player of game.players) {
@@ -129,6 +129,7 @@ router.post('/start/:roomId', authMiddleware, async (req, res) => {
     // Create new game
     const game = new Game({
       room: room._id,
+      language: room.language || 'en',
       rounds: room.rounds,
       players: room.players.map(p => ({
         user: p.user._id,
@@ -636,6 +637,7 @@ router.get('/:gameId', authMiddleware, async (req, res) => {
     res.json({
       game: {
         id: game._id,
+        language: game.language,
         rounds: game.rounds,
         currentRound: game.currentRound,
         categories: game.categories,

@@ -6,6 +6,11 @@ const gameSchema = new mongoose.Schema({
     ref: 'Room',
     required: true
   },
+  language: {
+    type: String,
+    enum: ['en', 'es'],
+    default: 'en'
+  },
   rounds: {
     type: Number,
     required: true

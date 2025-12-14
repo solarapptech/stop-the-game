@@ -32,6 +32,7 @@ router.post('/create', authMiddleware, [
       initialOwner: req.user._id,
       password: hashedPassword,
       isPublic,
+      language: req.user?.language || 'en',
       rounds,
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
       players: [{
@@ -54,6 +55,7 @@ router.post('/create', authMiddleware, [
         owner: room.owner,
         initialOwner: room.initialOwner,
         isPublic: room.isPublic,
+        language: room.language || 'en',
         rounds: room.rounds,
         inviteCode: room.inviteCode,
         players: room.players,
@@ -85,6 +87,7 @@ router.get('/public', async (req, res) => {
         id: room._id,
         name: room.name,
         owner: room.owner,
+        language: room.language || 'en',
         rounds: room.rounds,
         players: room.players,
         maxPlayers: room.maxPlayers,
@@ -117,6 +120,15 @@ router.post('/join/:roomId', authMiddleware, [
       return res.status(400).json({ message: 'Game already in progress' });
     }
 
+    const roomLanguage = room.language || 'en';
+    const userLanguage = req.user?.language || 'en';
+    if (roomLanguage !== userLanguage) {
+      return res.status(409).json({
+        message: 'Room language mismatch',
+        roomLanguage
+      });
+    }
+
     // Check password if room has one
     if (room.password) {
       if (!password) {
@@ -147,6 +159,7 @@ router.post('/join/:roomId', authMiddleware, [
           name: room.name,
           owner: room.owner,
           initialOwner: room.initialOwner,
+          language: room.language || 'en',
           rounds: room.rounds,
           players: room.players,
           status: room.status
@@ -183,6 +196,15 @@ router.post('/join-by-code', authMiddleware, [
       return res.status(400).json({ message: 'Game already in progress' });
     }
 
+    const roomLanguage = room.language || 'en';
+    const userLanguage = req.user?.language || 'en';
+    if (roomLanguage !== userLanguage) {
+      return res.status(409).json({
+        message: 'Room language mismatch',
+        roomLanguage
+      });
+    }
+
     // Check password if room has one
     if (room.password) {
       if (!password) {
@@ -207,6 +229,7 @@ router.post('/join-by-code', authMiddleware, [
           name: room.name,
           owner: room.owner,
           initialOwner: room.initialOwner,
+          language: room.language || 'en',
           rounds: room.rounds,
           players: room.players,
           status: room.status
@@ -227,6 +250,7 @@ router.post('/join-by-code', authMiddleware, [
           id: room._id,
           name: room.name,
           owner: room.owner,
+          language: room.language || 'en',
           rounds: room.rounds,
           players: room.players,
           status: room.status
@@ -335,6 +359,7 @@ router.get('/:roomId', authMiddleware, async (req, res) => {
         owner: room.owner,
         initialOwner: room.initialOwner,
         isPublic: room.isPublic,
+        language: room.language || 'en',
         rounds: room.rounds,
         inviteCode: room.inviteCode,
         players: room.players,

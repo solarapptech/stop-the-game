@@ -131,7 +131,13 @@ export default {
     joining: 'Joining...',
     gameEnded: 'Game ended',
     reconnectFailed: 'Failed to reconnect to game',
-    gameNoLongerExists: 'Game no longer exists'
+    gameNoLongerExists: 'Game no longer exists',
+    gamesLanguage: "Game's Language",
+    quickPlayLanguageSaveFailed: "Couldn't save game's language preference",
+    switchLanguageTitle: 'Switch language',
+    switchLanguageToJoin: 'To continue, you need to switch your language to {{language}}.',
+    switchLanguageAndContinue: 'Switch language and continue',
+    languageSwitchFailed: 'Failed to switch language'
   },
 
   // Create Room Screen
@@ -168,6 +174,11 @@ export default {
     enterRoomName: 'Please enter a room name',
     privatePasswordRequired: 'Private rooms require a password',
     errorCreating: 'Error creating room',
+    roomLanguage: "Room's Language",
+    switchLanguagePromptTitle: 'Switch language',
+    switchLanguagePromptMessage: 'To create this room, you need to switch your language to {{language}}.',
+    switchLanguageAndCreate: 'Switch language and create',
+    switchLanguageCancelled: 'Cancelled'
   },
 
   // Join Room Screen
@@ -196,6 +207,13 @@ export default {
     requiresPassword: 'requires a password',
     thisRoom: 'This room',
     enterPassword: 'Please enter the room password',
+    languageFilterTitle: 'Language',
+    filterEnglish: 'English',
+    filterSpanish: 'Español',
+    roomLanguageMismatchTitle: 'Language mismatch',
+    roomLanguageMismatchMessage: 'This room is in {{language}}. To join, you need to switch your language.',
+    switchLanguageAndJoin: 'Switch language and join',
+    gameAlreadyStarted: 'Game already started'
   },
 
   // Room Screen
@@ -288,7 +306,11 @@ export default {
     couldNotSyncState: 'Could not sync game state. Please try again.',
     couldNotFetchResults: 'Could not fetch round results. The game may still be processing.',
     refreshErrorGeneric: 'An error occurred while trying to refresh. Please try again.',
-    confirmFinalResults: 'Confirm Final Results',
+    confirmFinalResults: 'Confirm final results',
+    roomLanguageMismatchTitle: 'Language required',
+    roomLanguageMismatchMessage: 'This room is in {{language}}. To keep playing, please switch your language or leave the game.',
+    switchLanguageAndContinue: 'Switch language and continue',
+    leaveRoomOrGame: 'Leave room/game',
     categoryNames: {
       name: 'Name',
       lastName: 'Last Name',

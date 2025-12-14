@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView, Alert, Clipboard } from 'react-native';
-import { Text, TextInput, Button, Switch, RadioButton, Card, Chip } from 'react-native-paper';
+import { Text, TextInput, Button, Switch, RadioButton, Card, Chip, Portal, Dialog, ActivityIndicator } from 'react-native-paper';
 import { useGame } from '../contexts/GameContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useAuth } from '../contexts/AuthContext';
 import theme from '../theme';
 
 const CreateRoomScreen = ({ navigation }) => {
@@ -11,8 +12,19 @@ const CreateRoomScreen = ({ navigation }) => {
   const [isPublic, setIsPublic] = useState(true);
   const [rounds, setRounds] = useState('3');
   const [loading, setLoading] = useState(false);
+  const [roomLanguage, setRoomLanguage] = useState('en');
+  const [languagePromptVisible, setLanguagePromptVisible] = useState(false);
+  const [pendingLanguage, setPendingLanguage] = useState(null);
+  const [switchingLanguage, setSwitchingLanguage] = useState(false);
   const { createRoom, getPublicRooms } = useGame();
-  const { t } = useLanguage();
+  const { t, language, changeLanguage } = useLanguage();
+  const { updateLanguage: updateUserLanguage } = useAuth() || {};
+
+  useEffect(() => {
+    if (language === 'en' || language === 'es') {
+      setRoomLanguage(language);
+    }
+  }, [language]);
 
   // Auto-generate room name on mount
   useEffect(() => {
@@ -83,6 +95,30 @@ const CreateRoomScreen = ({ navigation }) => {
             />
           </View>
 
+          <Text style={styles.label}>{t('createRoom.roomLanguage')}</Text>
+          <RadioButton.Group
+            onValueChange={(val) => {
+              if (val === language) {
+                setRoomLanguage(val);
+                return;
+              }
+              setPendingLanguage(val);
+              setLanguagePromptVisible(true);
+            }}
+            value={roomLanguage}
+          >
+            <View style={styles.radioContainer}>
+              <View style={styles.radioItem}>
+                <RadioButton value="en" color={theme.colors.primary} />
+                <Text>{t('settings.english')}</Text>
+              </View>
+              <View style={styles.radioItem}>
+                <RadioButton value="es" color={theme.colors.primary} />
+                <Text>{t('settings.spanish')}</Text>
+              </View>
+            </View>
+          </RadioButton.Group>
+
           {!isPublic && (
             <TextInput
               label={t('createRoom.roomPassword')}
@@ -149,6 +185,69 @@ const CreateRoomScreen = ({ navigation }) => {
       >
         {t('createRoom.createRoom')}
       </Button>
+
+      <Portal>
+        <Dialog
+          visible={languagePromptVisible}
+          onDismiss={() => {
+            if (switchingLanguage) return;
+            setPendingLanguage(null);
+            setRoomLanguage(language);
+            setLanguagePromptVisible(false);
+          }}
+        >
+          <Dialog.Title>{t('createRoom.switchLanguagePromptTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text>
+              {t('createRoom.switchLanguagePromptMessage', {
+                language: pendingLanguage === 'es' ? t('settings.spanish') : t('settings.english')
+              })}
+            </Text>
+            {switchingLanguage && (
+              <View style={{ marginTop: 12 }}>
+                <ActivityIndicator />
+              </View>
+            )}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button
+              onPress={() => {
+                setPendingLanguage(null);
+                setRoomLanguage(language);
+                setLanguagePromptVisible(false);
+              }}
+              disabled={switchingLanguage}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onPress={async () => {
+                const target = pendingLanguage;
+                if (!target) return;
+                setSwitchingLanguage(true);
+                try {
+                  await changeLanguage(target);
+                  if (updateUserLanguage) {
+                    const res = await updateUserLanguage(target);
+                    if (!res?.success) throw new Error(res?.error || 'failed');
+                  }
+                  setRoomLanguage(target);
+                  setLanguagePromptVisible(false);
+                } catch (e) {
+                  Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
+                  setRoomLanguage(language);
+                } finally {
+                  setSwitchingLanguage(false);
+                  setPendingLanguage(null);
+                }
+              }}
+              disabled={switchingLanguage}
+            >
+              {t('createRoom.switchLanguageAndCreate')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </ScrollView>
   );
 };

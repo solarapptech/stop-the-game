@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator, TouchableOpacity, Dimensions, AppState } from 'react-native';
-import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable, Portal, Modal } from 'react-native-paper';
+import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable, Portal, Modal, Dialog } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { useFocusEffect } from '@react-navigation/native';
@@ -156,8 +156,8 @@ const getCategoryIcon = (category) => {
 
 const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
-  const { user, refreshUser, updateUser, markStatsDirty } = useAuth();
-  const { t } = useLanguage();
+  const { user, refreshUser, updateUser, markStatsDirty, updateLanguage: updateUserLanguage } = useAuth();
+  const { t, language, changeLanguage } = useLanguage();
   const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound, playAgainReady, leaveRoom: socketLeaveRoom } = useSocket();
   const userId = (user && (user.id || user._id)) || null;
   const { 
@@ -220,6 +220,9 @@ const GameplayScreen = ({ navigation, route }) => {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [roundGainMap, setRoundGainMap] = useState({});
   const [disconnectedPlayers, setDisconnectedPlayers] = useState(new Set());
+
+  const [languageMismatchVisible, setLanguageMismatchVisible] = useState(false);
+  const [switchingLanguage, setSwitchingLanguage] = useState(false);
   
   const timerRef = useRef(null);
   const inputRefs = useRef({});
@@ -267,6 +270,15 @@ const GameplayScreen = ({ navigation, route }) => {
       if (categoryStuckTimerRef.current) clearInterval(categoryStuckTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    const gameLang = gameState?.language || null;
+    if (gameLang && (gameLang === 'en' || gameLang === 'es') && language && gameLang !== language) {
+      setLanguageMismatchVisible(true);
+    } else {
+      setLanguageMismatchVisible(false);
+    }
+  }, [gameState?.language, language]);
 
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -1216,14 +1228,26 @@ const GameplayScreen = ({ navigation, route }) => {
     const v = (value || '').trim();
     if (!currentLetter) return false;
     if (v.length < 2) return false;
-    return v.charAt(0).toUpperCase() === (currentLetter || '').toUpperCase();
+    const first = v.charAt(0);
+    const L = (currentLetter || '').toUpperCase();
+    if ((gameState?.language || 'en') === 'es') {
+      const norm = first
+        .replace(/[áÁ]/g, 'a')
+        .replace(/[éÉ]/g, 'e')
+        .replace(/[íÍ]/g, 'i')
+        .replace(/[óÓ]/g, 'o')
+        .replace(/[úÚ]/g, 'u')
+        .replace(/[üÜ]/g, 'u');
+      return norm.toUpperCase() === L;
+    }
+    return first.toUpperCase() === L;
   };
   const canFinish = Array.isArray(selectedCategories) && selectedCategories.length > 0 && selectedCategories.every(c => isAnswerValid(answers[c] || ''));
 
   const getAnswerError = (value) => {
     const v = (value || '').trim();
     if (v.length === 0) return '';
-    if (currentLetter && v.charAt(0).toUpperCase() !== (currentLetter || '').toUpperCase()) {
+    if (currentLetter && !isAnswerValid(v)) {
       return `${t('common.error')}: ${currentLetter}`;
     }
     return '';
@@ -2292,6 +2316,55 @@ const GameplayScreen = ({ navigation, route }) => {
             <SettingsScreen navigation={navigation} onClose={() => setSettingsVisible(false)} inGame />
           </View>
         </Modal>
+      </Portal>
+
+      <Portal>
+        <Dialog
+          visible={languageMismatchVisible}
+          dismissable={!switchingLanguage}
+          onDismiss={() => {
+            if (switchingLanguage) return;
+          }}
+        >
+          <Dialog.Title>{t('gameplay.roomLanguageMismatchTitle')}</Dialog.Title>
+          <Dialog.Content>
+            <Text>
+              {t('gameplay.roomLanguageMismatchMessage', {
+                language: (gameState?.language === 'es') ? t('settings.spanish') : t('settings.english')
+              })}
+            </Text>
+            {switchingLanguage && (
+              <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginTop: 12 }} />
+            )}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button onPress={handleLeaveGame} disabled={switchingLanguage}>
+              {t('gameplay.leaveRoomOrGame')}
+            </Button>
+            <Button
+              onPress={async () => {
+                const target = gameState?.language || 'en';
+                if (!target) return;
+                setSwitchingLanguage(true);
+                try {
+                  await changeLanguage(target);
+                  if (updateUserLanguage) {
+                    const res = await updateUserLanguage(target);
+                    if (!res?.success) throw new Error(res?.error || 'failed');
+                  }
+                } catch (e) {
+                  Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
+                } finally {
+                  setSwitchingLanguage(false);
+                }
+              }}
+              loading={switchingLanguage}
+              disabled={switchingLanguage}
+            >
+              {t('gameplay.switchLanguageAndContinue')}
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
       </Portal>
       {showStopOverlay && (
         <View style={styles.revealOverlay} pointerEvents="none">

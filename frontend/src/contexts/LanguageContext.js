@@ -9,7 +9,17 @@ export const useLanguage = () => {
   const context = useContext(LanguageContext);
   if (!context) {
     // Fallback: safe defaults when no LanguageProvider is present
-    const fallbackTranslate = (key) => {
+    const applyParams = (text, params) => {
+      if (!params || typeof text !== 'string') return text;
+      return text.replace(/\{\{(\w+)\}\}/g, (match, k) => {
+        if (Object.prototype.hasOwnProperty.call(params, k)) {
+          return String(params[k]);
+        }
+        return match;
+      });
+    };
+
+    const fallbackTranslate = (key, params) => {
       const keys = key.split('.');
       let value = en;
       for (const k of keys) {
@@ -20,7 +30,7 @@ export const useLanguage = () => {
           return key;
         }
       }
-      return value;
+      return applyParams(value, params);
     };
 
     return {
@@ -98,7 +108,17 @@ export const LanguageProvider = ({ children }) => {
     }
   };
 
-  const t = (key) => {
+  const applyParams = (text, params) => {
+    if (!params || typeof text !== 'string') return text;
+    return text.replace(/\{\{(\w+)\}\}/g, (match, k) => {
+      if (Object.prototype.hasOwnProperty.call(params, k)) {
+        return String(params[k]);
+      }
+      return match;
+    });
+  };
+
+  const t = (key, params) => {
     const keys = key.split('.');
     let value = translations;
     
@@ -111,7 +131,7 @@ export const LanguageProvider = ({ children }) => {
       }
     }
     
-    return value;
+    return applyParams(value, params);
   };
 
   const value = {

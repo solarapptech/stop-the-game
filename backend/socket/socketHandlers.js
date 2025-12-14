@@ -11,7 +11,7 @@ const nextRoundReady = new Map();
 const rematchReady = new Map();
 const rematchCountdownTimers = new Map();
 const validationTimers = new Map();
-const quickPlayQueue = new Set(); // Set of socket IDs waiting for quick play match
+const quickPlayQueueByLanguage = new Map(); // Map<language, Set<socketId>>
 const roundAdvancementLocks = new Map(); // Prevent concurrent round advancement
 const abandonedGameCleanupTimers = new Map();
 const appBackgroundTimers = new Map();
@@ -615,7 +615,11 @@ module.exports = (io, socket) => {
       console.log(`[VALIDATION] Input: game=${gameId}, round=${game.currentRound}, players=${playersCount}, submitted=${submittedPlayers.length}, missing=${missingPlayers}, totalAnswers=${totalCatAnswers}, uniqueItems=${unique.length}, letter=${game.currentLetter}`);
       perUserLines.forEach(l => console.log(`[VALIDATION] Answers ${l}`));
 
-      const resultByKey = await validateBatchAnswersFast(unique.map(u => ({ category: u.category, answer: u.answer })), game.currentLetter);
+      const resultByKey = await validateBatchAnswersFast(
+        unique.map(u => ({ category: u.category, answer: u.answer })),
+        game.currentLetter,
+        { language: game.language || 'en' }
+      );
       console.log(`[VALIDATION] AI done in ${Date.now() - t0}ms for unique=${unique.length}`);
       for (const player of game.players) {
         const answer = player.answers.find(a => a.round === game.currentRound);
@@ -867,11 +871,23 @@ module.exports = (io, socket) => {
         return socket.emit('error', { message: 'Not authenticated' });
       }
 
+      const User = require('../models/User');
+      const user = await User.findById(socket.userId).select('language');
+
       const room = await Room.findById(roomId)
         .populate('players.user', 'username displayName winPoints');
 
       if (!room) {
         return socket.emit('error', { message: 'Room not found' });
+      }
+
+      const roomLanguage = room.language || 'en';
+      const userLanguage = user?.language || 'en';
+      if (roomLanguage !== userLanguage) {
+        return socket.emit('error', {
+          message: 'Room language mismatch',
+          roomLanguage
+        });
       }
 
       // Join socket room
@@ -1131,6 +1147,7 @@ module.exports = (io, socket) => {
       // Create game
       const game = new Game({
         room: room._id,
+        language: room.language || 'en',
         rounds: room.rounds,
         players: room.players.map(p => ({
           user: p.user._id || p.user,
@@ -1156,10 +1173,11 @@ module.exports = (io, socket) => {
       io.to(roomId).emit('game-starting', {
         roomId,
         gameId: game._id,
+        language: game.language, // Pass game language into game-starting event
         countdown: 0
       });
 
-      // Do not start selection timer yet; wait for all players to be ready
+      // No-op: don't start selection timer yet; wait for all players to be ready
     } catch (error) {
       console.error('Start game socket error:', error);
       socket.emit('error', { message: 'Failed to start game' });
@@ -1867,11 +1885,17 @@ module.exports = (io, socket) => {
       } catch (e) {}
 
       // Clean up quick play queue
-      if (quickPlayQueue.has(socket.id)) {
-        quickPlayQueue.delete(socket.id);
-        socket.quickPlayUserId = null;
-        console.log(`[DISCONNECT] User removed from quick play queue. Queue size: ${quickPlayQueue.size}`);
-      }
+      try {
+        const lang = socket.quickPlayLanguage;
+        const set = lang ? quickPlayQueueByLanguage.get(lang) : null;
+        if (set && set.has(socket.id)) {
+          set.delete(socket.id);
+          if (set.size === 0) quickPlayQueueByLanguage.delete(lang);
+          socket.quickPlayUserId = null;
+          socket.quickPlayLanguage = null;
+          console.log(`[DISCONNECT] User removed from quick play queue (${lang}). Queue size: ${set.size}`);
+        }
+      } catch (e) {}
 
       if (hasAnotherActiveSocket) {
         console.log(`[DISCONNECT] Skipping disconnect handling for stale socket ${socket.id} (user ${socket.userId} still has another active socket)`);
@@ -2103,6 +2127,7 @@ module.exports = (io, socket) => {
 
               const newGame = new Game({
                 room: room._id,
+                language: room.language || 'en',
                 rounds: room.rounds,
                 players: room.players.map(p => ({
                   user: p.user._id || p.user,
@@ -2127,7 +2152,7 @@ module.exports = (io, socket) => {
               await room.save();
   
               // Notify both the room and the old game room to transition to gameplay
-              const payload = { roomId, gameId: newGame._id, countdown: 0 };
+              const payload = { roomId, gameId: newGame._id, language: newGame.language, countdown: 0 };
               io.to(roomId).emit('game-starting', payload);
               io.to(`game-${gameId}`).emit('game-starting', payload);
               // Also emit directly to every socket found in either room to avoid any missed events
@@ -2276,20 +2301,37 @@ module.exports = (io, socket) => {
   });
 
   // Quick Play: Join matchmaking queue
-  socket.on('quickplay-join', async () => {
+  socket.on('quickplay-join', async (payload) => {
     try {
       if (!socket.userId) {
         socket.emit('quickplay-error', { message: 'Not authenticated' });
         return;
       }
 
-      console.log(`[QUICKPLAY] User ${socket.userId} joining queue`);
+      const requestedLanguage = (payload && payload.language) || 'en';
+      if (!['en', 'es'].includes(requestedLanguage)) {
+        socket.emit('quickplay-error', { message: 'Invalid language' });
+        return;
+      }
+
+      // If the user was already queued for a different language, remove them first
+      try {
+        const prevLang = socket.quickPlayLanguage;
+        const prevSet = prevLang ? quickPlayQueueByLanguage.get(prevLang) : null;
+        if (prevSet && prevSet.has(socket.id)) {
+          prevSet.delete(socket.id);
+          if (prevSet.size === 0) quickPlayQueueByLanguage.delete(prevLang);
+        }
+      } catch (e) {}
+
+      console.log(`[QUICKPLAY] User ${socket.userId} joining queue (language=${requestedLanguage})`);
 
       // First, check if there are any available public rooms
       const Room = require('../models/Room');
       const availableRooms = await Room.find({
         isPublic: true,
         status: 'waiting',
+        language: requestedLanguage,
         $expr: { $lt: [{ $size: '$players' }, '$maxPlayers'] }
       }).populate('players.user owner', 'username displayName').limit(1);
 
@@ -2319,17 +2361,20 @@ module.exports = (io, socket) => {
       }
 
       // No available rooms, add to queue
-      quickPlayQueue.add(socket.id);
+      const set = quickPlayQueueByLanguage.get(requestedLanguage) || new Set();
+      set.add(socket.id);
+      quickPlayQueueByLanguage.set(requestedLanguage, set);
       socket.quickPlayUserId = socket.userId;
-      console.log(`[QUICKPLAY] Added to queue. Queue size: ${quickPlayQueue.size}`);
+      socket.quickPlayLanguage = requestedLanguage;
+      console.log(`[QUICKPLAY] Added to queue (${requestedLanguage}). Queue size: ${set.size}`);
 
       // Check if we have enough players to create a room
       const minPlayers = parseInt(process.env.QUICKPLAY_MIN_PLAYERS || '2');
-      if (quickPlayQueue.size >= minPlayers) {
-        console.log(`[QUICKPLAY] Enough players (${quickPlayQueue.size}/${minPlayers}), creating room...`);
+      if (set.size >= minPlayers) {
+        console.log(`[QUICKPLAY] Enough players (${set.size}/${minPlayers}) in ${requestedLanguage}, creating room...`);
 
         // Get the first N players from the queue
-        const selectedSockets = Array.from(quickPlayQueue).slice(0, minPlayers);
+        const selectedSockets = Array.from(set).slice(0, minPlayers);
         const sockets = [];
         
         for (const socketId of selectedSockets) {
@@ -2346,6 +2391,7 @@ module.exports = (io, socket) => {
             name: `Quick Play Room`,
             owner,
             isPublic: true,
+            language: requestedLanguage,
             maxPlayers: 8,
             rounds: 3,
             hasPassword: false,
@@ -2361,9 +2407,11 @@ module.exports = (io, socket) => {
 
           // Remove matched players from queue
           for (const s of sockets) {
-            quickPlayQueue.delete(s.id);
+            set.delete(s.id);
             s.quickPlayUserId = null;
+            s.quickPlayLanguage = null;
           }
+          if (set.size === 0) quickPlayQueueByLanguage.delete(requestedLanguage);
 
           // Notify all matched players
           for (const s of sockets) {
@@ -2379,10 +2427,16 @@ module.exports = (io, socket) => {
 
   // Quick Play: Leave matchmaking queue
   socket.on('quickplay-leave', () => {
-    if (quickPlayQueue.has(socket.id)) {
-      quickPlayQueue.delete(socket.id);
-      socket.quickPlayUserId = null;
-      console.log(`[QUICKPLAY] User left queue. Queue size: ${quickPlayQueue.size}`);
-    }
+    try {
+      const lang = socket.quickPlayLanguage;
+      const set = lang ? quickPlayQueueByLanguage.get(lang) : null;
+      if (set && set.has(socket.id)) {
+        set.delete(socket.id);
+        if (set.size === 0) quickPlayQueueByLanguage.delete(lang);
+        socket.quickPlayUserId = null;
+        socket.quickPlayLanguage = null;
+        console.log(`[QUICKPLAY] User left queue (${lang}). Queue size: ${set.size}`);
+      }
+    } catch (e) {}
   });
 };

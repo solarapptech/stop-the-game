@@ -79,7 +79,9 @@ export const GameProvider = ({ children }) => {
       return { 
         success: false, 
         error: error.response?.data?.message || 'Failed to join room',
-        needsPassword: error.response?.status === 401
+        needsPassword: error.response?.status === 401,
+        languageMismatch: error.response?.status === 409,
+        roomLanguage: error.response?.data?.roomLanguage
       };
     }
   };
@@ -97,7 +99,9 @@ export const GameProvider = ({ children }) => {
         success: false, 
         error: error.response?.data?.message || 'Failed to join room',
         needsPassword: error.response?.data?.needsPassword,
-        roomName: error.response?.data?.roomName
+        roomName: error.response?.data?.roomName,
+        languageMismatch: error.response?.status === 409,
+        roomLanguage: error.response?.data?.roomLanguage
       };
     }
   };
