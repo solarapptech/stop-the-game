@@ -42,7 +42,6 @@ router.get('/profile/:userId', async (req, res) => {
         email: user.getDecryptedEmail(),
         verified: user.verified,
         language: user.language,
-        quickPlayLanguagePreference: user.quickPlayLanguagePreference,
         winPoints: user.winPoints,
         matchesPlayed: user.matchesPlayed,
         subscribed: user.subscribed
@@ -95,46 +94,15 @@ router.put('/language', authMiddleware, async (req, res) => {
     }
 
     user.language = language;
-    if (!user.quickPlayLanguagePreference) {
-      user.quickPlayLanguagePreference = language;
-    }
     await user.save();
 
     res.json({
       message: 'Language updated',
-      language: user.language,
-      quickPlayLanguagePreference: user.quickPlayLanguagePreference
+      language: user.language
     });
   } catch (error) {
     console.error('Update language error:', error);
     res.status(500).json({ message: 'Error updating language' });
-  }
-});
-
-// Update quick play matchmaking language preference
-router.put('/quickplay-language', authMiddleware, async (req, res) => {
-  try {
-    const { language } = req.body;
-
-    if (!language || !['en', 'es'].includes(language)) {
-      return res.status(400).json({ message: 'Invalid language. Must be "en" or "es"' });
-    }
-
-    const user = await User.findById(req.user._id);
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    user.quickPlayLanguagePreference = language;
-    await user.save();
-
-    res.json({
-      message: 'Quick play language preference updated',
-      quickPlayLanguagePreference: user.quickPlayLanguagePreference
-    });
-  } catch (error) {
-    console.error('Update quick play language preference error:', error);
-    res.status(500).json({ message: 'Error updating quick play language preference' });
   }
 });
 

@@ -156,7 +156,6 @@ stop-the-game/
 
 ### User
 - `PUT /api/user/language` - Update user's UI language
-- `PUT /api/user/quickplay-language` - Update user's Quick Play matchmaking language preference
 
 ## 🌍 Room Language Enforcement
 
@@ -174,11 +173,11 @@ Behavior:
 
 Quick Play:
 
-- Users can store a separate matchmaking preference:
-  - `User.quickPlayLanguagePreference`: `'en' | 'es'`
 - The Quick Play socket event includes the desired language:
   - `quickplay-join` payload: `{ language: 'en' | 'es' }`
-- Matchmaking only matches players into rooms of the selected language.
+- Matchmaking uses the user's current UI language (`User.language`) as the game language.
+- While searching, the Quick Play UI can also show public rooms found in other languages, with a **Join** action that automatically switches the user's UI language before joining.
+- Changing **Game's Language** in the Quick Play modal immediately refreshes matchmaking for the newly selected language.
 
 ## ♻️ Reconnect & Cleanup Behavior
 

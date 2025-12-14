@@ -80,10 +80,6 @@ const userSchema = new mongoose.Schema({
     enum: ['en', 'es'],
     default: 'en'
   },
-  quickPlayLanguagePreference: {
-    type: String,
-    enum: ['en', 'es']
-  },
   winPoints: {
     type: Number,
     default: 0

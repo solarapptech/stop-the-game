@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useLayoutEffect } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Text, Button, Avatar, IconButton, ActivityIndicator, TextInput, Portal, Dialog, RadioButton } from 'react-native-paper';
+import { Text, Button, Avatar, IconButton, ActivityIndicator, TextInput, RadioButton } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import axios from 'axios';
@@ -11,7 +11,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const MenuScreen = ({ navigation }) => {
-  const { user, logout, updateDisplayName, refreshUser, statsDirty, token, updateLanguage, updateQuickPlayLanguagePreference } = useAuth();
+  const { user, logout, updateDisplayName, refreshUser, statsDirty, token, updateLanguage } = useAuth();
   const { socket, connected, isAuthenticated, joinRoom, joinGame, quickplayJoin, quickplayLeave } = useSocket();
   const { t, language, changeLanguage } = useLanguage();
   const [stats, setStats] = useState({
@@ -22,10 +22,9 @@ const MenuScreen = ({ navigation }) => {
   const [statsRefreshing, setStatsRefreshing] = useState(false);
   const [quickPlayVisible, setQuickPlayVisible] = useState(false);
   const [matchmakingStatus, setMatchmakingStatus] = useState('searching'); // 'searching' | 'found'
-  const [quickPlayLanguage, setQuickPlayLanguage] = useState((user && (user.quickPlayLanguagePreference || user.language)) || 'en');
-  const [switchLanguageDialogVisible, setSwitchLanguageDialogVisible] = useState(false);
+  const [quickPlayLanguage, setQuickPlayLanguage] = useState(language || user?.language || 'en');
+  const [otherLanguageRooms, setOtherLanguageRooms] = useState([]);
   const [switchingLanguage, setSwitchingLanguage] = useState(false);
-  const [pendingQuickPlayStart, setPendingQuickPlayStart] = useState(false);
   const [editNameVisible, setEditNameVisible] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState(user?.displayName || user?.username || '');
   const [savingName, setSavingName] = useState(false);
@@ -82,11 +81,12 @@ const MenuScreen = ({ navigation }) => {
         matchesPlayed: user.matchesPlayed || 0,
         friends: user.friends?.length || 0,
       });
-
-      const pref = user.quickPlayLanguagePreference || user.language || 'en';
-      setQuickPlayLanguage(pref);
     }
   }, [user]);
+
+  useEffect(() => {
+    setQuickPlayLanguage(language || user?.language || 'en');
+  }, [language, user?.language]);
 
   // Refresh user stats when screen comes into focus, but only if stats were marked dirty
   useFocusEffect(
@@ -141,20 +141,39 @@ const MenuScreen = ({ navigation }) => {
           }
         }
       };
+      let retryTimer = null;
       checkActiveGame();
-      return () => { cancelled = true; };
+      retryTimer = setTimeout(() => {
+        if (!cancelled) checkActiveGame();
+      }, 1500);
+      return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
     }, [token])
   );
 
-  const handleManualStatsRefresh = async () => {
+  const handleMenuRefresh = async () => {
     try {
       setStatsRefreshing(true);
-      const result = await refreshUser({ force: true });
-      if (!(result?.success)) {
-        console.log('[MenuScreen] Manual stats refresh failed:', result?.error || 'unknown');
+      const tasks = [refreshUser({ force: true })];
+      if (token) {
+        tasks.push(axios.get('game/reconnect/check', { params: { _: Date.now() } }));
+      }
+      const results = await Promise.all(tasks);
+      const userResult = results[0];
+      if (!(userResult?.success)) {
+        console.log('[MenuScreen] Menu refresh failed to refresh user:', userResult?.error || 'unknown');
+      }
+
+      const reconnectResponse = results.length > 1 ? results[1] : null;
+      const data = reconnectResponse && reconnectResponse.data ? reconnectResponse.data : null;
+      if (data && data.hasActiveGame) {
+        setHasActiveGame(true);
+        setActiveGameData(data);
+      } else {
+        setHasActiveGame(false);
+        setActiveGameData(null);
       }
     } catch (e) {
-      console.error('[MenuScreen] Manual stats refresh error', e);
+      console.error('[MenuScreen] Menu refresh error', e);
     } finally {
       setStatsRefreshing(false);
     }
@@ -211,28 +230,64 @@ const MenuScreen = ({ navigation }) => {
     };
   }, [socket, navigation, t, logout]);
 
-  const startQuickPlayMatchmaking = () => {
+  useEffect(() => {
+    if (!quickPlayVisible || matchmakingStatus !== 'searching') {
+      setOtherLanguageRooms([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchRooms = async () => {
+      try {
+        const response = await axios.get('room/public', { params: { _: Date.now() } });
+        const rooms = (response?.data?.rooms || []).map((r) => ({
+          ...r,
+          language: r.language || 'en'
+        }));
+
+        if (cancelled) return;
+        const selected = quickPlayLanguage || 'en';
+        const filtered = rooms
+          .filter((r) => r && r.id && r.status === 'waiting')
+          .filter((r) => (r.language || 'en') !== selected)
+          .filter((r) => !r.hasPassword)
+          .filter((r) => (r.players?.length || 0) < (r.maxPlayers || 8));
+
+        setOtherLanguageRooms(filtered);
+      } catch (e) {
+        if (!cancelled) setOtherLanguageRooms([]);
+      }
+    };
+
+    fetchRooms();
+    const interval = setInterval(fetchRooms, 3500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [quickPlayVisible, matchmakingStatus, quickPlayLanguage]);
+
+  const startQuickPlayMatchmaking = (requestedLanguage) => {
     if (!connected) {
       Alert.alert(t('common.error'), t('menu.notConnected'));
       return;
     }
+
+    const selected = requestedLanguage || language || quickPlayLanguage || 'en';
     setQuickPlayVisible(true);
     setMatchmakingStatus('searching');
     if (typeof quickplayJoin === 'function') {
-      quickplayJoin(quickPlayLanguage || 'en');
+      quickplayJoin(selected);
     } else if (socket) {
-      socket.emit('quickplay-join', { language: quickPlayLanguage || 'en' });
+      socket.emit('quickplay-join', { language: selected });
     }
   };
 
   const handleQuickPlay = () => {
-    const desired = quickPlayLanguage || 'en';
-    if (language !== desired) {
-      setPendingQuickPlayStart(true);
-      setSwitchLanguageDialogVisible(true);
-      return;
-    }
-    startQuickPlayMatchmaking();
+    const desired = language || 'en';
+    setQuickPlayLanguage(desired);
+    startQuickPlayMatchmaking(desired);
   };
 
   const handleCancelQuickPlay = () => {
@@ -245,27 +300,39 @@ const MenuScreen = ({ navigation }) => {
     setMatchmakingStatus('searching');
   };
 
-  const doSwitchLanguageAndMaybeStartQuickPlay = async () => {
-    const desired = quickPlayLanguage || 'en';
-    setSwitchingLanguage(true);
-    try {
-      await changeLanguage(desired);
-      if (updateLanguage) {
-        const res = await updateLanguage(desired);
-        if (!res?.success) {
-          throw new Error(res?.error || 'Failed to update language');
-        }
-      }
-      setSwitchLanguageDialogVisible(false);
-      if (pendingQuickPlayStart) {
-        setPendingQuickPlayStart(false);
-        startQuickPlayMatchmaking();
-      }
-    } catch (e) {
-      Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
-    } finally {
-      setSwitchingLanguage(false);
+  const handleJoinOtherLanguageRoom = async (room) => {
+    const roomId = room?.id;
+    const roomLang = room?.language || 'en';
+    if (!roomId) return;
+
+    if (typeof quickplayLeave === 'function') {
+      quickplayLeave();
+    } else if (socket) {
+      socket.emit('quickplay-leave');
     }
+
+    setQuickPlayVisible(false);
+    setMatchmakingStatus('searching');
+
+    if (roomLang !== (language || 'en')) {
+      setSwitchingLanguage(true);
+      try {
+        await changeLanguage(roomLang);
+        if (updateLanguage) {
+          const res = await updateLanguage(roomLang);
+          if (!res?.success) {
+            throw new Error(res?.error || 'Failed to update language');
+          }
+        }
+      } catch (e) {
+        Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
+        return;
+      } finally {
+        setSwitchingLanguage(false);
+      }
+    }
+
+    navigation.navigate('Room', { roomId });
   };
 
   const handleReconnect = async () => {
@@ -389,14 +456,6 @@ const MenuScreen = ({ navigation }) => {
 
           {/* Stats */}
           <View style={styles.statsContainer}>
-            <IconButton
-              icon={statsRefreshing ? 'reload' : 'refresh'}
-              size={18}
-              onPress={handleManualStatsRefresh}
-              disabled={statsRefreshing}
-              style={styles.refreshIcon}
-              iconColor={theme.colors.primary}
-            />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.winPoints}</Text>
               <Text style={styles.statLabel}>{t('menu.points')}</Text>
@@ -427,6 +486,16 @@ const MenuScreen = ({ navigation }) => {
 
         {/* Primary Menu Actions */}
         <View style={styles.menuContainer}>
+          <View style={styles.menuRefreshRow}>
+            <IconButton
+              icon={statsRefreshing ? 'reload' : 'refresh'}
+              size={20}
+              onPress={handleMenuRefresh}
+              disabled={statsRefreshing}
+              style={styles.menuRefreshIcon}
+              iconColor="#FFFFFF"
+            />
+          </View>
           <View style={styles.primaryActionsGrid}>
             <TouchableOpacity
               onPress={() => navigation.navigate('CreateRoom')}
@@ -495,7 +564,7 @@ const MenuScreen = ({ navigation }) => {
         onRequestClose={handleCancelQuickPlay}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <View style={[styles.modalContainer, styles.quickPlayModalContainer]}>
             <ActivityIndicator size="large" color={theme.colors.primary} style={styles.spinner} />
 
             {matchmakingStatus === 'searching' && (
@@ -504,12 +573,32 @@ const MenuScreen = ({ navigation }) => {
                 <RadioButton.Group
                   value={quickPlayLanguage}
                   onValueChange={async (val) => {
-                    setQuickPlayLanguage(val);
-                    if (typeof updateQuickPlayLanguagePreference === 'function') {
-                      const res = await updateQuickPlayLanguagePreference(val);
-                      if (!res?.success) {
-                        Alert.alert(t('common.error'), res?.error || t('menu.quickPlayLanguageSaveFailed'));
+                    if (switchingLanguage) return;
+                    if (val === (language || 'en')) return;
+
+                    setSwitchingLanguage(true);
+                    try {
+                      await changeLanguage(val);
+                      if (updateLanguage) {
+                        const res = await updateLanguage(val);
+                        if (!res?.success) {
+                          throw new Error(res?.error || 'Failed to update language');
+                        }
                       }
+                    } catch (e) {
+                      Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
+                      return;
+                    } finally {
+                      setSwitchingLanguage(false);
+                    }
+
+                    if (quickPlayVisible && matchmakingStatus === 'searching') {
+                      if (typeof quickplayLeave === 'function') {
+                        quickplayLeave();
+                      } else if (socket) {
+                        socket.emit('quickplay-leave');
+                      }
+                      startQuickPlayMatchmaking(val);
                     }
                   }}
                 >
@@ -540,48 +629,41 @@ const MenuScreen = ({ navigation }) => {
                 {t('common.cancel')}
               </Button>
             )}
+
+            {matchmakingStatus === 'searching' && otherLanguageRooms.length > 0 && (
+              <View style={styles.otherLanguageMatchesContainer}>
+                <Text style={styles.otherLanguageMatchesTitle}>{t('menu.otherLanguageMatchesTitle')}</Text>
+                <ScrollView style={styles.otherLanguageMatchesList} contentContainerStyle={styles.otherLanguageMatchesListContent}>
+                  {otherLanguageRooms.map((room) => (
+                    <View key={room.id} style={styles.otherLanguageMatchRow}>
+                      <View style={styles.otherLanguageMatchLeft}>
+                        <Text style={styles.otherLanguageMatchName} numberOfLines={1}>
+                          {room.name}
+                        </Text>
+                      </View>
+                      <View style={styles.otherLanguageMatchRight}>
+                        <Text style={styles.otherLanguageMatchLanguage}>
+                          {(room.language || 'en') === 'es' ? t('settings.spanish') : t('settings.english')}
+                        </Text>
+                        <Button
+                          mode="contained"
+                          onPress={() => handleJoinOtherLanguageRoom(room)}
+                          buttonColor={theme.colors.primary}
+                          style={styles.otherLanguageMatchJoinButton}
+                          contentStyle={styles.otherLanguageMatchJoinButtonContent}
+                        >
+                          {t('common.join')}
+                        </Button>
+                      </View>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
           </View>
         </View>
       </Modal>
-
-      {/* Switch Language Dialog (Option A) */}
-      <Portal>
-        <Dialog
-          visible={switchLanguageDialogVisible}
-          onDismiss={() => {
-            if (switchingLanguage) return;
-            setPendingQuickPlayStart(false);
-            setSwitchLanguageDialogVisible(false);
-          }}
-        >
-          <Dialog.Title>{t('menu.switchLanguageTitle')}</Dialog.Title>
-          <Dialog.Content>
-            <Text>
-              {t('menu.switchLanguageToJoin', {
-                language: quickPlayLanguage === 'es' ? t('settings.spanish') : t('settings.english')
-              })}
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button
-              onPress={() => {
-                setPendingQuickPlayStart(false);
-                setSwitchLanguageDialogVisible(false);
-              }}
-              disabled={switchingLanguage}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onPress={doSwitchLanguageAndMaybeStartQuickPlay}
-              loading={switchingLanguage}
-              disabled={switchingLanguage}
-            >
-              {t('menu.switchLanguageAndContinue')}
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
 
       {/* Reconnect Modal */}
       <Modal
@@ -778,12 +860,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#424242',
   },
-  refreshIcon: {
-    margin: 0,
-    position: 'absolute',
-    top: 6,
-    right: 6,
-  },
   statItem: {
     alignItems: 'center',
     flex: 1,
@@ -818,6 +894,15 @@ const styles = StyleSheet.create({
   },
   menuContainer: {
     padding: 20,
+  },
+  menuRefreshRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 6,
+  },
+  menuRefreshIcon: {
+    margin: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
   },
   removeAdsLink: {
     position: 'absolute',
@@ -924,6 +1009,10 @@ const styles = StyleSheet.create({
     minWidth: 280,
     elevation: 10,
   },
+  quickPlayModalContainer: {
+    width: '86%',
+    maxHeight: '80%',
+  },
   spinner: {
     marginBottom: 20,
   },
@@ -961,6 +1050,56 @@ const styles = StyleSheet.create({
   cancelButton: {
     borderColor: '#757575',
     borderWidth: 1,
+  },
+  otherLanguageMatchesContainer: {
+    width: '100%',
+    marginTop: 14,
+  },
+  otherLanguageMatchesTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#424242',
+    marginBottom: 8,
+    textAlign: 'left',
+  },
+  otherLanguageMatchesList: {
+    width: '100%',
+    maxHeight: 180,
+  },
+  otherLanguageMatchesListContent: {
+    paddingBottom: 4,
+  },
+  otherLanguageMatchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+  },
+  otherLanguageMatchLeft: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  otherLanguageMatchName: {
+    fontSize: 14,
+    color: '#212121',
+    fontWeight: '600',
+  },
+  otherLanguageMatchRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  otherLanguageMatchLanguage: {
+    fontSize: 12,
+    color: '#616161',
+    marginRight: 10,
+  },
+  otherLanguageMatchJoinButton: {
+    borderRadius: 6,
+  },
+  otherLanguageMatchJoinButtonContent: {
+    height: 32,
   },
   usernameRow: {
     flexDirection: 'row',

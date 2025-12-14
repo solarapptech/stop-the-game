@@ -120,6 +120,7 @@ export default {
     searchingForGames: 'Buscando juegos...',
     searchingGames: 'Buscando juegos...',
     gameFound: '¡Juego encontrado!',
+    otherLanguageMatchesTitle: 'Juegos en otros idiomas',
     notConnected: 'No conectado al servidor',
     matchmakingFailed: 'No se pudo encontrar una partida',
     quickPlayError: 'No se pudo encontrar una partida',
