@@ -14,6 +14,7 @@ const validationTimers = new Map();
 const quickPlayQueue = new Set(); // Set of socket IDs waiting for quick play match
 const roundAdvancementLocks = new Map(); // Prevent concurrent round advancement
 const abandonedGameCleanupTimers = new Map();
+const appBackgroundTimers = new Map();
 
 module.exports = (io, socket) => {
   // Helper to clean up empty rooms - CRITICAL for preventing orphaned rooms
@@ -680,6 +681,162 @@ module.exports = (io, socket) => {
     }
   });
 
+  const markPlayerDisconnectedInGame = async (gameId, userId, displayName) => {
+    try {
+      if (!gameId || !userId) return false;
+      const game = await Game.findById(gameId).populate('players.user', 'username displayName');
+      if (!game || game.status === 'finished') return false;
+
+      const playerInGame = (game.players || []).find(p => (p.user._id || p.user).toString() === userId.toString());
+      if (!playerInGame || playerInGame.disconnected) return false;
+
+      playerInGame.scoreBeforeDisconnect = playerInGame.score;
+      playerInGame.disconnected = true;
+      await game.save();
+
+      io.to(`game-${gameId}`).emit('player-disconnected', {
+        odisconnectedPlayerId: userId.toString(),
+        odisconnectedPlayerName: displayName,
+        players: game.players.map(p => ({
+          odisconnectedPlayerId: (p.user._id || p.user).toString(),
+          odisconnectedPlayerName: p.user.displayName || p.user.username || 'Player',
+          disconnected: p.disconnected,
+          score: p.disconnected ? 0 : p.score
+        }))
+      });
+
+      if (game.status === 'selecting_letter') {
+        const currentSelectorId = (game.letterSelector || '').toString();
+        if (currentSelectorId === userId.toString()) {
+          await handleLetterSelectorDisconnect(game, gameId);
+        }
+      }
+
+      const connectedPlayers = game.players.filter(p => !p.disconnected);
+      if (game.status === 'finished' || game.status === 'round_ended') {
+        const roomId = game.room.toString();
+        const set = rematchReady.get(roomId);
+        if (set) {
+          set.delete(userId.toString());
+        }
+        io.to(`game-${gameId}`).emit('rematch-update', {
+          ready: set ? set.size : 0,
+          total: connectedPlayers.length
+        });
+
+        if (connectedPlayers.length < 2) {
+          rematchReady.delete(roomId);
+          const t = rematchCountdownTimers.get(roomId);
+          if (t) {
+            clearInterval(t);
+            rematchCountdownTimers.delete(roomId);
+          }
+          io.to(`game-${gameId}`).emit('rematch-aborted', { reason: 'not-enough-players' });
+        }
+      }
+
+      try {
+        if (game.status !== 'finished') {
+          const players = Array.isArray(game.players) ? game.players : [];
+          const allDisconnectedNow = players.length > 0 && players.every(p => p.disconnected);
+          const roomIdToCleanup = (game.room || '').toString();
+          if (allDisconnectedNow) {
+            scheduleAbandonedGameCleanup(gameId, roomIdToCleanup);
+          } else {
+            cancelAbandonedGameCleanup(gameId);
+          }
+        }
+      } catch (e) {
+        console.error('[APP BACKGROUND] Error checking abandoned-game cleanup:', e);
+      }
+
+      return true;
+    } catch (e) {
+      console.error('[APP BACKGROUND] Failed to mark player disconnected:', e);
+      return false;
+    }
+  };
+
+  const restorePlayerIfDisconnected = async (gameId, userId) => {
+    try {
+      if (!gameId || !userId) return false;
+      const game = await Game.findById(gameId).populate('players.user', 'username displayName');
+      if (!game || game.status === 'finished') return false;
+
+      const playerInGame = (game.players || []).find(p => (p.user._id || p.user).toString() === userId.toString());
+      if (!playerInGame || !playerInGame.disconnected) return false;
+
+      playerInGame.disconnected = false;
+      const restoredScore = playerInGame.scoreBeforeDisconnect || playerInGame.score || 0;
+      playerInGame.score = restoredScore;
+      playerInGame.scoreBeforeDisconnect = 0;
+      await game.save();
+
+      io.to(`game-${gameId}`).emit('player-reconnected', {
+        odisconnectedPlayerId: userId.toString(),
+        odisconnectedPlayerName: playerInGame.user.displayName || playerInGame.user.username || 'Player',
+        restoredScore,
+        players: game.players.map(p => ({
+          odisconnectedPlayerId: (p.user._id || p.user).toString(),
+          odisconnectedPlayerName: p.user.displayName || p.user.username || 'Player',
+          disconnected: p.disconnected,
+          score: p.score
+        }))
+      });
+
+      try {
+        cancelAbandonedGameCleanup(gameId);
+      } catch (e) {}
+
+      return true;
+    } catch (e) {
+      console.error('[APP FOREGROUND] Failed to restore player:', e);
+      return false;
+    }
+  };
+
+  socket.on('app-background', async (data) => {
+    try {
+      if (!socket.userId) return;
+      const gameId = (data && data.gameId) || socket.gameId;
+      if (!gameId) return;
+      const key = socket.id;
+      if (appBackgroundTimers.get(key)) return;
+
+      const User = require('../models/User');
+      const user = await User.findById(socket.userId);
+      const username = user?.username || 'Player';
+      const displayName = user?.displayName || username;
+
+      const t = setTimeout(async () => {
+        appBackgroundTimers.delete(key);
+        await markPlayerDisconnectedInGame(gameId, socket.userId, displayName);
+      }, 5000);
+
+      appBackgroundTimers.set(key, { timer: t, gameId: gameId.toString() });
+    } catch (e) {
+      console.error('[APP BACKGROUND] Error scheduling background disconnect:', e);
+    }
+  });
+
+  socket.on('app-foreground', async (data) => {
+    try {
+      const key = socket.id;
+      const entry = appBackgroundTimers.get(key);
+      if (entry && entry.timer) {
+        clearTimeout(entry.timer);
+        appBackgroundTimers.delete(key);
+      }
+
+      if (!socket.userId) return;
+      const gameId = (data && data.gameId) || socket.gameId;
+      if (!gameId) return;
+      await restorePlayerIfDisconnected(gameId, socket.userId);
+    } catch (e) {
+      console.error('[APP FOREGROUND] Error handling foreground:', e);
+    }
+  });
+
   // Join room
   socket.on('join-room', async (roomId) => {
     try {
@@ -1000,8 +1157,14 @@ module.exports = (io, socket) => {
         const game = await Game.findById(gameId).populate('players.user', 'username displayName');
         if (!game) return;
 
-        // Check if this is a reconnecting player
         const playerInGame = game.players.find(p => (p.user._id || p.user).toString() === socket.userId?.toString());
+        if (!playerInGame) return;
+        try {
+          socket.roomId = game.room.toString();
+          socket.join(socket.roomId);
+        } catch (e) {}
+
+        // Check if this is a reconnecting player
         if (playerInGame && playerInGame.disconnected) {
           console.log(`[RECONNECT] Player ${socket.userId} reconnecting to game ${gameId}`);
           
@@ -1644,6 +1807,12 @@ module.exports = (io, socket) => {
   // Disconnect (atomic updates)
   socket.on('disconnect', async () => {
     try {
+      const bg = appBackgroundTimers.get(socket.id);
+      if (bg && bg.timer) {
+        clearTimeout(bg.timer);
+        appBackgroundTimers.delete(socket.id);
+      }
+
       // Clean up quick play queue
       if (quickPlayQueue.has(socket.id)) {
         quickPlayQueue.delete(socket.id);

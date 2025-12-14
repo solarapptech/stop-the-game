@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator, TouchableOpacity, Dimensions } from 'react-native';
+import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator, TouchableOpacity, Dimensions, AppState } from 'react-native';
 import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable, Portal, Modal } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -230,6 +230,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const announcedReadyRef = useRef(false);
   const categoryStuckTimerRef = useRef(null);
   const categoryStuckCountRef = useRef(0);
+  const autoManualReloadTriggeredRef = useRef(false);
   const letterTimerRef = useRef(null);
   const revealTimerRef = useRef(null);
   const confettiRef = useRef(null);
@@ -239,6 +240,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const phaseRef = useRef(phase);
   const userIdRef = useRef(userId);
   const isLeavingRef = useRef(false);
+  const backgroundLeaveTriggeredRef = useRef(false);
   const roundGainAnimMapRef = useRef({});
   const roundGainTimeoutRef = useRef(null);
   const { height: winH, width: winW } = Dimensions.get('window');
@@ -301,6 +303,33 @@ const GameplayScreen = ({ navigation, route }) => {
       joinGame(gameId);
     }
   }, [socket, connected, isAuthenticated, joinGame, gameId]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'background' || nextState === 'inactive') {
+        if (backgroundLeaveTriggeredRef.current) return;
+        if (isLeavingRef.current) return;
+
+        if (socket && connected && isAuthenticated) {
+          backgroundLeaveTriggeredRef.current = true;
+          try { socket.emit('app-background', { gameId }); } catch (e) {}
+        }
+      }
+
+      if (nextState === 'active') {
+        if (backgroundLeaveTriggeredRef.current) {
+          backgroundLeaveTriggeredRef.current = false;
+        }
+        if (socket && connected && isAuthenticated) {
+          try { socket.emit('app-foreground', { gameId }); } catch (e) {}
+        }
+      }
+    });
+
+    return () => {
+      try { sub.remove(); } catch (e) {}
+    };
+  }, [socket, connected, isAuthenticated, gameId]);
 
   // Attach socket listeners when socket becomes ready; clean up on change/unmount
   useEffect(() => {
@@ -773,6 +802,7 @@ const GameplayScreen = ({ navigation, route }) => {
       // Start monitoring for stuck state
       if (categoryStuckTimerRef.current) clearInterval(categoryStuckTimerRef.current);
       categoryStuckCountRef.current = 0;
+      autoManualReloadTriggeredRef.current = false;
       setCategoryStuckTimer(0);
       setShowManualReload(false);
       
@@ -800,6 +830,7 @@ const GameplayScreen = ({ navigation, route }) => {
         categoryStuckTimerRef.current = null;
       }
       categoryStuckCountRef.current = 0;
+      autoManualReloadTriggeredRef.current = false;
       setCategoryStuckTimer(0);
       setShowManualReload(false);
     }
@@ -810,6 +841,19 @@ const GameplayScreen = ({ navigation, route }) => {
       }
     };
   }, [phase, selectionDeadline]);
+
+  useEffect(() => {
+    if (
+      phase === 'category-selection' &&
+      showManualReload &&
+      !selectionDeadline &&
+      !isReloadingCategories &&
+      !autoManualReloadTriggeredRef.current
+    ) {
+      autoManualReloadTriggeredRef.current = true;
+      handleCategoryReload(true);
+    }
+  }, [phase, showManualReload, selectionDeadline, isReloadingCategories]);
 
   const playersForHeader = React.useMemo(() => {
     const fromGame = Array.isArray(gameState?.players) ? gameState.players : [];

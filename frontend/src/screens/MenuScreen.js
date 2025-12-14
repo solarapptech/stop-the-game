@@ -170,7 +170,29 @@ const MenuScreen = ({ navigation }) => {
     const handleQuickPlayError = (data) => {
       setQuickPlayVisible(false);
       setMatchmakingStatus('searching');
-      Alert.alert(t('common.error'), data.message || t('menu.quickPlayError'));
+      const message = data?.message || t('menu.quickPlayError');
+      if (message === 'Not authenticated') {
+        Alert.alert(
+          t('common.error'),
+          message,
+          [
+            { text: t('common.cancel'), style: 'cancel' },
+            {
+              text: t('auth.login'),
+              onPress: async () => {
+                try {
+                  await logout();
+                } finally {
+                  navigation.replace('Login');
+                }
+              },
+            },
+          ]
+        );
+        return;
+      }
+
+      Alert.alert(t('common.error'), message);
     };
 
     socket.on('quickplay-matched', handleQuickPlayMatched);
@@ -180,7 +202,7 @@ const MenuScreen = ({ navigation }) => {
       socket.off('quickplay-matched', handleQuickPlayMatched);
       socket.off('quickplay-error', handleQuickPlayError);
     };
-  }, [socket, navigation]);
+  }, [socket, navigation, t, logout]);
 
   const handleQuickPlay = () => {
     if (!connected) {

@@ -161,6 +161,12 @@ stop-the-game/
 - The Menu can show a **Reconnect** button when the backend detects an active game where you are disconnected.
 - If the game/room no longer exists (for example, it was cleaned up), the Reconnect UI will show **"Game ended"** and the Reconnect button will disappear.
 
+### Background / swipe-kill during an in-progress game
+
+- The Gameplay screen emits `app-background` when the app goes to the background.
+- The server schedules a short grace period (currently **5 seconds**). If the app does not return to the foreground within that window, the player is marked as **disconnected** and all other players immediately see the disconnected UI.
+- When the app returns to the foreground, the Gameplay screen emits `app-foreground` and the server clears the background timer and restores the player (if they had been marked disconnected).
+
 ### Abandoned in-progress games (20s grace)
 
 - If **all players** in an in-progress game are marked as disconnected, the server schedules an automatic cleanup.
