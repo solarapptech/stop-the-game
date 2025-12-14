@@ -176,6 +176,15 @@ stop-the-game/
 
 This prevents orphaned games/rooms and avoids reconnect errors on slower devices.
 
+## 🔐 Session Expiry / Authentication Errors
+
+- If the backend returns a `401` with message `"Please authenticate"` (for example, an expired/invalid JWT), the app will:
+  - clear the stored session (`authToken` and cached `user`)
+  - show an authentication error prompt
+  - allow the user to navigate back to the `Login` screen
+
+This prompt can appear during normal gameplay/navigation or during app startup.
+
 ## 🧭 MongoDB TTL Index Migration (IMPORTANT)
 
 Rooms no longer expire via `createdAt` TTL. Instead, rooms use an `expiresAt` field:

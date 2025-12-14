@@ -241,6 +241,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const userIdRef = useRef(userId);
   const isLeavingRef = useRef(false);
   const backgroundLeaveTriggeredRef = useRef(false);
+  const lastAppStateRef = useRef(AppState.currentState);
   const roundGainAnimMapRef = useRef({});
   const roundGainTimeoutRef = useRef(null);
   const { height: winH, width: winW } = Dimensions.get('window');
@@ -306,7 +307,12 @@ const GameplayScreen = ({ navigation, route }) => {
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'background' || nextState === 'inactive') {
+      const prevState = lastAppStateRef.current;
+      lastAppStateRef.current = nextState;
+
+      // Only treat a *real* background transition as backgrounding.
+      // RN can emit 'inactive' during foregrounding which would otherwise schedule a disconnect.
+      if (nextState === 'background') {
         if (backgroundLeaveTriggeredRef.current) return;
         if (isLeavingRef.current) return;
 
@@ -316,7 +322,8 @@ const GameplayScreen = ({ navigation, route }) => {
         }
       }
 
-      if (nextState === 'active') {
+      // Only send foreground when we are coming back from background.
+      if (nextState === 'active' && prevState === 'background') {
         if (backgroundLeaveTriggeredRef.current) {
           backgroundLeaveTriggeredRef.current = false;
         }

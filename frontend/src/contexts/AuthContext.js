@@ -2,7 +2,7 @@ import React, { createContext, useState, useContext, useEffect, useRef } from 'r
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { resetTo } from '../navigation/RootNavigation';
 
 const AuthContext = createContext({});
@@ -87,6 +87,52 @@ export const AuthProvider = ({ children }) => {
   const refreshInFlightRef = useRef(null);
   const profileEtagRef = useRef(null);
   const profileCacheRef = useRef(null);
+  const authAlertShownRef = useRef(false);
+
+  // Global 401 handler: if backend says we are unauthorized, clear auth and prompt user to login
+  useEffect(() => {
+    const interceptorId = axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const status = error?.response?.status;
+        const message = error?.response?.data?.message;
+        // Only treat authMiddleware failures as session/auth errors.
+        // Some endpoints use 401 for other cases (e.g., room password required).
+        if (status === 401 && message === 'Please authenticate') {
+          try {
+            await AsyncStorage.removeItem('authToken');
+            await AsyncStorage.removeItem('user');
+          } catch (e) {
+            console.error('[AuthContext] auto-logout cleanup error:', e);
+          }
+          setToken(null);
+          setUser(null);
+          delete axios.defaults.headers.common['Authorization'];
+
+          if (!authAlertShownRef.current) {
+            authAlertShownRef.current = true;
+            Alert.alert(
+              'Error',
+              message,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Login',
+                  onPress: () => {
+                    resetTo('Login');
+                  },
+                },
+              ]
+            );
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => {
+      axios.interceptors.response.eject(interceptorId);
+    };
+  }, []);
 
   useEffect(() => {
     loadStoredAuth();
@@ -410,32 +456,6 @@ export const AuthProvider = ({ children }) => {
       };
     }
   };
-
-  // Global 401 handler: if backend says we are unauthorized, clear auth and send user to Login
-  useEffect(() => {
-    const interceptorId = axios.interceptors.response.use(
-      (response) => response,
-      async (error) => {
-        const status = error?.response?.status;
-        if (status === 401) {
-          try {
-            await AsyncStorage.removeItem('authToken');
-            await AsyncStorage.removeItem('user');
-          } catch (e) {
-            console.error('[AuthContext] auto-logout cleanup error:', e);
-          }
-          setToken(null);
-          setUser(null);
-          delete axios.defaults.headers.common['Authorization'];
-          resetTo('Login');
-        }
-        return Promise.reject(error);
-      }
-    );
-    return () => {
-      axios.interceptors.response.eject(interceptorId);
-    };
-  }, []);
 
   return (
     <AuthContext.Provider value={{

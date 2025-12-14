@@ -27,7 +27,7 @@ import { AuthProvider } from './src/contexts/AuthContext';
 import { SocketProvider } from './src/contexts/SocketContext';
 import { GameProvider } from './src/contexts/GameContext';
 import { LanguageProvider } from './src/contexts/LanguageContext';
-import { navigationRef } from './src/navigation/RootNavigation';
+import { navigationRef, flushPendingNavigation } from './src/navigation/RootNavigation';
 
 // Theme
 import theme from './src/theme';
@@ -81,7 +81,14 @@ export default function App() {
         <AuthProvider>
           <SocketProvider>
             <GameProvider>
-              <NavigationContainer ref={navigationRef}>
+              <NavigationContainer
+                ref={navigationRef}
+                onReady={() => {
+                  try {
+                    flushPendingNavigation();
+                  } catch (e) {}
+                }}
+              >
                 <Stack.Navigator 
                   initialRouteName={initialRoute}
                   screenOptions={{

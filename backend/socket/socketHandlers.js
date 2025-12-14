@@ -15,6 +15,7 @@ const quickPlayQueue = new Set(); // Set of socket IDs waiting for quick play ma
 const roundAdvancementLocks = new Map(); // Prevent concurrent round advancement
 const abandonedGameCleanupTimers = new Map();
 const appBackgroundTimers = new Map();
+const activeUserSockets = new Map();
 
 module.exports = (io, socket) => {
   // Helper to clean up empty rooms - CRITICAL for preventing orphaned rooms
@@ -675,6 +676,14 @@ module.exports = (io, socket) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       socket.userId = decoded.userId;
+
+      try {
+        const key = socket.userId.toString();
+        const set = activeUserSockets.get(key) || new Set();
+        set.add(socket.id);
+        activeUserSockets.set(key, set);
+      } catch (e) {}
+
       socket.emit('authenticated', { success: true });
     } catch (error) {
       socket.emit('authenticated', { success: false, error: 'Invalid token' });
@@ -800,20 +809,33 @@ module.exports = (io, socket) => {
       if (!socket.userId) return;
       const gameId = (data && data.gameId) || socket.gameId;
       if (!gameId) return;
-      const key = socket.id;
-      if (appBackgroundTimers.get(key)) return;
+      const key = `${socket.userId.toString()}:${gameId.toString()}`;
+
+      const prev = appBackgroundTimers.get(key);
+      if (prev && prev.timer) {
+        clearTimeout(prev.timer);
+        appBackgroundTimers.delete(key);
+      }
 
       const User = require('../models/User');
       const user = await User.findById(socket.userId);
       const username = user?.username || 'Player';
       const displayName = user?.displayName || username;
 
+      const backgroundAt = Date.now();
+
       const t = setTimeout(async () => {
+        const current = appBackgroundTimers.get(key);
+        if (!current || current.backgroundAt !== backgroundAt) return;
         appBackgroundTimers.delete(key);
         await markPlayerDisconnectedInGame(gameId, socket.userId, displayName);
       }, 5000);
 
-      appBackgroundTimers.set(key, { timer: t, gameId: gameId.toString() });
+      appBackgroundTimers.set(key, {
+        timer: t,
+        backgroundAt,
+        socketId: socket.id
+      });
     } catch (e) {
       console.error('[APP BACKGROUND] Error scheduling background disconnect:', e);
     }
@@ -821,16 +843,17 @@ module.exports = (io, socket) => {
 
   socket.on('app-foreground', async (data) => {
     try {
-      const key = socket.id;
+      if (!socket.userId) return;
+      const gameId = (data && data.gameId) || socket.gameId;
+      if (!gameId) return;
+
+      const key = `${socket.userId.toString()}:${gameId.toString()}`;
       const entry = appBackgroundTimers.get(key);
       if (entry && entry.timer) {
         clearTimeout(entry.timer);
         appBackgroundTimers.delete(key);
       }
 
-      if (!socket.userId) return;
-      const gameId = (data && data.gameId) || socket.gameId;
-      if (!gameId) return;
       await restorePlayerIfDisconnected(gameId, socket.userId);
     } catch (e) {
       console.error('[APP FOREGROUND] Error handling foreground:', e);
@@ -1149,6 +1172,17 @@ module.exports = (io, socket) => {
       socket.join(`game-${gameId}`);
       socket.gameId = gameId;
       socket.emit('game-joined', { gameId });
+
+      try {
+        if (socket.userId) {
+          const key = `${socket.userId.toString()}:${gameId.toString()}`;
+          const entry = appBackgroundTimers.get(key);
+          if (entry && entry.timer) {
+            clearTimeout(entry.timer);
+            appBackgroundTimers.delete(key);
+          }
+        }
+      } catch (e) {}
 
       cancelAbandonedGameCleanup(gameId);
 
@@ -1807,17 +1841,41 @@ module.exports = (io, socket) => {
   // Disconnect (atomic updates)
   socket.on('disconnect', async () => {
     try {
-      const bg = appBackgroundTimers.get(socket.id);
-      if (bg && bg.timer) {
-        clearTimeout(bg.timer);
-        appBackgroundTimers.delete(socket.id);
-      }
+      let hasAnotherActiveSocket = false;
+      try {
+        if (socket.userId) {
+          const key = socket.userId.toString();
+          const set = activeUserSockets.get(key);
+          if (set) {
+            set.delete(socket.id);
+            if (set.size === 0) activeUserSockets.delete(key);
+            else activeUserSockets.set(key, set);
+          }
+          const remaining = activeUserSockets.get(key);
+          hasAnotherActiveSocket = !!(remaining && remaining.size > 0);
+        }
+      } catch (e) {}
+
+      // Clear any pending app-background timers associated with this socket
+      try {
+        for (const [key, entry] of appBackgroundTimers.entries()) {
+          if (entry?.socketId === socket.id) {
+            if (entry.timer) clearTimeout(entry.timer);
+            appBackgroundTimers.delete(key);
+          }
+        }
+      } catch (e) {}
 
       // Clean up quick play queue
       if (quickPlayQueue.has(socket.id)) {
         quickPlayQueue.delete(socket.id);
         socket.quickPlayUserId = null;
         console.log(`[DISCONNECT] User removed from quick play queue. Queue size: ${quickPlayQueue.size}`);
+      }
+
+      if (hasAnotherActiveSocket) {
+        console.log(`[DISCONNECT] Skipping disconnect handling for stale socket ${socket.id} (user ${socket.userId} still has another active socket)`);
+        return;
       }
 
       if (!(socket.roomId && socket.userId)) return;
