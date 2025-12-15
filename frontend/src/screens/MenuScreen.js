@@ -337,7 +337,7 @@ const MenuScreen = ({ navigation }) => {
     try {
       const result = await joinRoomHttp(roomId);
       if (result?.success) {
-        navigation.replace('Room', { roomId: result.room?.id || roomId });
+        navigation.navigate('Room', { roomId: result.room?.id || roomId });
       } else if (result?.languageMismatch) {
         Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
       } else {

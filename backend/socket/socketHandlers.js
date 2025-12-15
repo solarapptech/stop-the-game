@@ -1018,16 +1018,21 @@ module.exports = (io, socket) => {
       }
 
       if (!alreadyInRoom && room.status === 'waiting') {
-        room.players.push({
-          user: socket.userId,
-          isReady: room.owner.toString() === socket.userId.toString()
-        });
-        room.expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-        await room.save();
-        room = await Room.findById(rid).populate('players.user', 'username displayName winPoints');
+        try {
+          room.addPlayer(socket.userId);
+          room.expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+          await room.save();
+          room = await Room.findById(rid).populate('players.user', 'username displayName winPoints');
+        } catch (e) {
+          if (e && e.message === 'Room is full') {
+            return socket.emit('error', { message: 'Room is full' });
+          }
+          throw e;
+        }
       }
 
       // Join socket room
+      const wasInSocketRoom = socket.rooms && socket.rooms.has && socket.rooms.has(rid);
       socket.join(rid);
       socket.roomId = rid;
 
@@ -1036,11 +1041,12 @@ module.exports = (io, socket) => {
         (p.user._id || p.user).toString() === socket.userId.toString()
       );
       
-      if (!alreadyInRoom) {
+      if (!wasInSocketRoom) {
         socket.to(rid).emit('player-joined', {
           roomId: rid,
           players: room.players,
-          username: joiningPlayer?.user?.username || 'Player'
+          username: joiningPlayer?.user?.username || 'Player',
+          displayName: joiningPlayer?.user?.displayName || joiningPlayer?.user?.username || 'Player'
         });
       }
 

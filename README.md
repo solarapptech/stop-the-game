@@ -282,8 +282,10 @@ db.rooms.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 
 - The server enforces **room language**: if `User.language` does not match `Room.language`, the server emits an `error` event with `{ message: "Room language mismatch", roomLanguage: "en" | "es" }`.
 - For **waiting** rooms with **no password**, the server will ensure the joining user exists in `Room.players` (auto-add) before emitting `room-joined`.
+- When a client socket joins a room, the server emits `player-joined` to the rest of the room with the updated `players` list. This can happen even if the user was already in `Room.players` (for example, they joined via HTTP first) because their socket still needs to join the Socket.IO room.
 - For **password-protected** rooms, the socket `join-room` event will only succeed if the user is already a player (e.g. they joined via the HTTP API first). Otherwise the server emits `error` with `{ message: "Password required" }`.
 - For rooms that are not in `waiting` (game in progress/finished), socket `join-room` will only work for users already in the room. Otherwise the server emits `error` with `{ message: "Game already in progress" }`.
+- If a room is full, the server emits `error` with `{ message: "Room is full" }`.
 
 ## 🎨 Customization
 

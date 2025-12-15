@@ -64,7 +64,7 @@ const CreateRoomScreen = ({ navigation }) => {
 
     if (result.success) {
       // Navigate directly to the room without showing popup
-      navigation.replace('Room', { roomId: result.room.id });
+      navigation.navigate('Room', { roomId: result.room.id });
     } else {
       Alert.alert(t('common.error'), result.error);
     }

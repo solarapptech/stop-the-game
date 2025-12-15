@@ -263,6 +263,13 @@ const RoomScreen = ({ navigation, route }) => {
           return;
         }
 
+        if (message === 'Room is full') {
+          Alert.alert(t('common.error'), message, [
+            { text: t('common.ok'), onPress: () => navigation.navigate('Menu') }
+          ]);
+          return;
+        }
+
         if (message === 'Password required') {
           Alert.alert(t('common.error'), t('joinRoom.passwordRequired'), [
             { text: t('common.ok'), onPress: () => navigation.navigate('JoinRoom') }
@@ -462,14 +469,11 @@ const RoomScreen = ({ navigation, route }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
     >
-      <Pressable style={styles.container} onPress={Keyboard.dismiss}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="none"
+        keyboardDismissMode="on-drag"
         nestedScrollEnabled
-        scrollEnabled={!isChatActive}
-        onTouchStartCapture={() => setIsChatActive(false)}
       >
         {/* Room Info */}
         <Card style={styles.card}>
@@ -648,7 +652,6 @@ const RoomScreen = ({ navigation, route }) => {
           </Button>
         )}
       </View>
-      </Pressable>
 
       <Portal>
         <Dialog
