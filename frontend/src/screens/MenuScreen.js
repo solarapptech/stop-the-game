@@ -713,10 +713,17 @@ const MenuScreen = ({ navigation }) => {
       </Modal>
 
       {/* Edit Display Name Dialog */}
-      <Portal>
-        <Dialog visible={editNameVisible} onDismiss={() => !savingName && setEditNameVisible(false)}>
-          <Dialog.Title>{t('menu.editDisplayName')}</Dialog.Title>
-          <Dialog.Content>
+      <Modal
+        visible={editNameVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!savingName) setEditNameVisible(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>{t('menu.editDisplayName')}</Text>
             <TextInput
               label={t('menu.displayName')}
               value={newDisplayName}
@@ -729,39 +736,39 @@ const MenuScreen = ({ navigation }) => {
             <Text style={styles.helperText}>
               {t('menu.displayNameHelper')}
             </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setEditNameVisible(false)} disabled={savingName}>
-              {t('common.cancel')}
-            </Button>
-            <Button 
-              onPress={async () => {
-                if (!newDisplayName || newDisplayName.trim().length < 3) {
-                  Alert.alert(t('menu.invalidName'), t('menu.displayNameMin'));
-                  return;
-                }
-                if (newDisplayName.trim().length > 30) {
-                  Alert.alert(t('menu.invalidName'), t('menu.displayNameMax'));
-                  return;
-                }
-                setSavingName(true);
-                const result = await updateDisplayName(newDisplayName.trim());
-                setSavingName(false);
-                if (result.success) {
-                  setEditNameVisible(false);
-                  Alert.alert(t('common.success'), t('menu.displayNameUpdated'));
-                } else {
-                  Alert.alert(t('common.error'), result.error || t('menu.displayNameUpdateFailed'));
-                }
-              }}
-              loading={savingName}
-              disabled={savingName}
-            >
-              {t('common.save')}
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
+              <Button onPress={() => setEditNameVisible(false)} disabled={savingName}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                onPress={async () => {
+                  if (!newDisplayName || newDisplayName.trim().length < 3) {
+                    Alert.alert(t('menu.invalidName'), t('menu.displayNameMin'));
+                    return;
+                  }
+                  if (newDisplayName.trim().length > 30) {
+                    Alert.alert(t('menu.invalidName'), t('menu.displayNameMax'));
+                    return;
+                  }
+                  setSavingName(true);
+                  const result = await updateDisplayName(newDisplayName.trim());
+                  setSavingName(false);
+                  if (result.success) {
+                    setEditNameVisible(false);
+                    Alert.alert(t('common.success'), t('menu.displayNameUpdated'));
+                  } else {
+                    Alert.alert(t('common.error'), result.error || t('menu.displayNameUpdateFailed'));
+                  }
+                }}
+                loading={savingName}
+                disabled={savingName}
+              >
+                {t('common.save')}
+              </Button>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 };

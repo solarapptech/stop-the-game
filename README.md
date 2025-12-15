@@ -193,6 +193,13 @@ Quick Play:
 - The server schedules a short grace period (currently **5 seconds**). If the app does not return to the foreground within that window, the player is marked as **disconnected** and all other players immediately see the disconnected UI.
 - When the app returns to the foreground, the Gameplay screen emits `app-foreground` and the server clears the background timer and restores the player (if they had been marked disconnected).
 
+### Background / swipe-kill in a room lobby (waiting)
+
+- The Room screen emits `room-background` when the app goes to the background while the room status is `waiting`.
+- The server schedules a short grace period (default **1000ms**, configurable via `ROOM_LOBBY_BACKGROUND_LEAVE_MS`).
+- If the app does not return to the foreground within that window, the server removes the player from the room and emits the normal lobby updates (`player-left`, and `ownership-transferred` if needed).
+- If the app returns to the foreground quickly, the Room screen emits `room-foreground` and the server cancels the pending lobby leave.
+
 ### Abandoned in-progress games (20s grace)
 
 - If **all players** in an in-progress game are marked as disconnected, the server schedules an automatic cleanup.
@@ -250,6 +257,10 @@ db.rooms.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 - `join-room` - Join a game room
 - `leave-room` - Leave current room
 - `join-game` - Join/re-join an in-progress game (used for reconnect)
+- `app-background` - Notify the server the app went to background during an in-progress game
+- `app-foreground` - Notify the server the app returned to foreground during an in-progress game
+- `room-background` - Notify the server the app went to background while in a `waiting` room
+- `room-foreground` - Notify the server the app returned to foreground while in a `waiting` room
 - `send-message` - Send chat message
 - `player-ready` - Mark ready status
 - `start-game` - Start the game

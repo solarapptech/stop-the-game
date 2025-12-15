@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, BackHandler } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, BackHandler, AppState } from 'react-native';
 import { Text, Button, Card, List, Avatar, Chip, IconButton, TextInput, Portal, Dialog, ActivityIndicator } from 'react-native-paper';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
@@ -29,21 +29,80 @@ const RoomScreen = ({ navigation, route }) => {
   const [inviteCode, setInviteCode] = useState(null);
   const [isChatActive, setIsChatActive] = useState(false);
 
+  const [roomInfo, setRoomInfo] = useState(null);
+  const [roomLanguage, setRoomLanguage] = useState(null);
+  const lastAppStateRef = useRef('active');
+  const backgroundLeaveTriggeredRef = useRef(false);
+
   const [languageMismatchVisible, setLanguageMismatchVisible] = useState(false);
   const [switchingLanguage, setSwitchingLanguage] = useState(false);
 
   useEffect(() => {
-    const roomLang = currentRoom?.language || 'en';
+    setRoomInfo(null);
+    setRoomLanguage(null);
+    setInviteCode(null);
+    setPlayers([]);
+    setMessages([]);
+    setRoomOwner(null);
+    setIsReady(false);
+    backgroundLeaveTriggeredRef.current = false;
+    isLeavingRef.current = false;
+  }, [roomId]);
+
+  useEffect(() => {
+    const roomLang = roomLanguage;
     if (roomLang && (roomLang === 'en' || roomLang === 'es') && language && roomLang !== language) {
       setLanguageMismatchVisible(true);
     } else {
       setLanguageMismatchVisible(false);
     }
-  }, [currentRoom?.language, language]);
+  }, [roomLanguage, language]);
 
-  // Initialize players from currentRoom when component mounts
   useEffect(() => {
-    if (currentRoom && currentRoom.players) {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      const prevState = lastAppStateRef.current;
+      lastAppStateRef.current = nextState;
+
+      const currentRoomId = currentRoom?.id || currentRoom?._id;
+      const currentRoomStatus = (currentRoomId && String(currentRoomId) === String(roomId)) ? currentRoom?.status : null;
+      const status = roomInfo?.status || currentRoomStatus || 'waiting';
+
+      if (nextState === 'background') {
+        if (backgroundLeaveTriggeredRef.current) return;
+        if (isLeavingRef.current) return;
+
+        if (status === 'waiting' && socket && connected && isAuthenticated) {
+          backgroundLeaveTriggeredRef.current = true;
+          try {
+            socket.emit('room-background', { roomId });
+          } catch (e) {}
+        }
+      }
+
+      if (nextState === 'active' && prevState === 'background') {
+        if (backgroundLeaveTriggeredRef.current) {
+          backgroundLeaveTriggeredRef.current = false;
+        }
+        if (socket && connected && isAuthenticated) {
+          try {
+            socket.emit('room-foreground', { roomId });
+          } catch (e) {}
+        }
+      }
+    });
+
+    return () => {
+      try {
+        sub.remove();
+      } catch (e) {}
+    };
+  }, [socket, connected, isAuthenticated, roomId, roomInfo?.status, currentRoom?.status, currentRoom?.id, currentRoom?._id]);
+
+  useEffect(() => {
+    const currentRoomId = currentRoom?.id || currentRoom?._id;
+    if (currentRoom && currentRoom.players && currentRoomId && String(currentRoomId) === String(roomId)) {
+      setRoomInfo(currentRoom);
+      setRoomLanguage(currentRoom?.language || null);
       const ownerId = currentRoom.owner._id || currentRoom.owner;
       setRoomOwner(ownerId.toString());
       if (currentRoom.inviteCode) setInviteCode(currentRoom.inviteCode);
@@ -61,7 +120,7 @@ const RoomScreen = ({ navigation, route }) => {
         setIsReady(true);
       }
     }
-  }, [currentRoom, user]);
+  }, [currentRoom, user, roomId]);
 
   // Join room via socket on mount and after auth
   useEffect(() => {
@@ -75,6 +134,8 @@ const RoomScreen = ({ navigation, route }) => {
       // Socket event listeners
       socket.on('room-joined', (data) => {
         const room = data.room;
+        setRoomInfo(room);
+        setRoomLanguage(room?.language || null);
         const ownerId = room.owner._id || room.owner;
         setRoomOwner(ownerId.toString());
         if (room.inviteCode) setInviteCode(room.inviteCode);
@@ -147,6 +208,15 @@ const RoomScreen = ({ navigation, route }) => {
       socket.on('ownership-transferred', (data) => {
         setRoomOwner(data.newOwnerId);
         if (data.inviteCode) setInviteCode(data.inviteCode);
+
+        setRoomInfo((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            owner: data.newOwnerId,
+            inviteCode: data.inviteCode || prev.inviteCode
+          };
+        });
         
         const playersData = data.players.map(p => ({
           id: p.user._id || p.user,
@@ -323,6 +393,9 @@ const RoomScreen = ({ navigation, route }) => {
     }
   };
 
+  const currentRoomId = currentRoom?.id || currentRoom?._id;
+  const activeRoom = roomInfo || ((currentRoomId && String(currentRoomId) === String(roomId)) ? currentRoom : null);
+
   const isOwner = roomOwner === user?.id;
   const showInviteCode = inviteCode != null; // Show to all players if code exists
   const allPlayersReady = players.length >= 2 && players.every(p => p.isReady);
@@ -356,11 +429,11 @@ const RoomScreen = ({ navigation, route }) => {
           <Card.Content>
             <View style={styles.roomHeader}>
               <View style={styles.roomInfo}>
-                <Text style={styles.roomName}>{currentRoom?.name || t('room.title')}</Text>
+                <Text style={styles.roomName}>{activeRoom?.name || t('room.title')}</Text>
                 <View style={styles.roomDetails}>
-                  <Chip style={styles.chip}>{currentRoom?.rounds || 3} {t('joinRoom.rounds')}</Chip>
+                  <Chip style={styles.chip}>{activeRoom?.rounds || 3} {t('joinRoom.rounds')}</Chip>
                   <Chip style={styles.chip}>
-                    {players.length}/{currentRoom?.maxPlayers || 8} {t('joinRoom.players')}
+                    {players.length}/{activeRoom?.maxPlayers || 8} {t('joinRoom.players')}
                   </Chip>
                 </View>
               </View>
@@ -529,14 +602,13 @@ const RoomScreen = ({ navigation, route }) => {
           dismissable={!switchingLanguage}
           onDismiss={() => {
             if (switchingLanguage) return;
-            // keep it visible until mismatch is resolved or user leaves
           }}
         >
           <Dialog.Title>{t('gameplay.roomLanguageMismatchTitle')}</Dialog.Title>
           <Dialog.Content>
             <Text style={styles.dialogText}>
               {t('gameplay.roomLanguageMismatchMessage', {
-                language: (currentRoom?.language === 'es') ? t('settings.spanish') : t('settings.english')
+                language: (roomLanguage === 'es') ? t('settings.spanish') : t('settings.english')
               })}
             </Text>
             {switchingLanguage && <ActivityIndicator style={styles.loader} />}
@@ -550,7 +622,7 @@ const RoomScreen = ({ navigation, route }) => {
             </Button>
             <Button
               onPress={async () => {
-                const target = currentRoom?.language || 'en';
+                const target = roomLanguage || 'en';
                 if (!target) return;
                 setSwitchingLanguage(true);
                 try {

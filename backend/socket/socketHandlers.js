@@ -15,6 +15,7 @@ const quickPlayQueueByLanguage = new Map(); // Map<language, Set<socketId>>
 const roundAdvancementLocks = new Map(); // Prevent concurrent round advancement
 const abandonedGameCleanupTimers = new Map();
 const appBackgroundTimers = new Map();
+const roomBackgroundTimers = new Map();
 const activeUserSockets = new Map();
 
 module.exports = (io, socket) => {
@@ -691,6 +692,120 @@ module.exports = (io, socket) => {
       socket.emit('authenticated', { success: true });
     } catch (error) {
       socket.emit('authenticated', { success: false, error: 'Invalid token' });
+    }
+  });
+
+  socket.on('room-background', async (data) => {
+    try {
+      if (!socket.userId) return;
+      const roomId = (data && data.roomId) || socket.roomId;
+      if (!roomId) return;
+
+      const key = `${socket.userId.toString()}:${roomId.toString()}`;
+      const prev = roomBackgroundTimers.get(key);
+      if (prev && prev.timer) {
+        clearTimeout(prev.timer);
+        roomBackgroundTimers.delete(key);
+      }
+
+      const backgroundAt = Date.now();
+      const leaveMs = parseInt(process.env.ROOM_LOBBY_BACKGROUND_LEAVE_MS || '1000');
+
+      const t = setTimeout(async () => {
+        const current = roomBackgroundTimers.get(key);
+        if (!current || current.backgroundAt !== backgroundAt) return;
+        roomBackgroundTimers.delete(key);
+
+        try {
+          const remaining = activeUserSockets.get(socket.userId.toString());
+          if (remaining && remaining.size > 0) {
+            const hasOtherSocket = Array.from(remaining).some((id) => id !== socket.id);
+            if (hasOtherSocket) return;
+          }
+        } catch (e) {}
+
+        const User = require('../models/User');
+        const leavingUser = await User.findById(socket.userId);
+        const leavingUsername = leavingUser?.username || 'Player';
+        const leavingDisplayName = leavingUser?.displayName || leavingUsername;
+
+        const roomBefore = await Room.findById(roomId).select('owner players currentGame status')
+          .populate('players.user', 'username displayName winPoints');
+        if (!roomBefore) return;
+
+        if (roomBefore.status !== 'waiting') return;
+
+        const wasOwner = roomBefore.owner.toString() === socket.userId.toString();
+
+        let room = await Room.findOneAndUpdate(
+          { _id: roomId },
+          { $pull: { players: { user: socket.userId } } },
+          { new: true }
+        ).populate('players.user', 'username displayName winPoints');
+
+        try { socket.leave(roomId.toString()); } catch (e) {}
+        socket.roomId = null;
+
+        if (!room) return;
+
+        if (room.players.length === 0) {
+          await cleanupEmptyRoom(room._id);
+          return;
+        }
+
+        if (wasOwner) {
+          const next = room.players[0];
+          const newOwnerId = (next.user._id || next.user).toString();
+
+          await Room.updateOne(
+            { _id: room._id },
+            { $set: { owner: newOwnerId, 'players.$[elem].isReady': true } },
+            { arrayFilters: [ { 'elem.user': next.user._id || next.user } ] }
+          );
+          room = await Room.findById(room._id).populate('players.user', 'username displayName winPoints');
+
+          io.to(roomId.toString()).emit('ownership-transferred', {
+            newOwnerId,
+            players: room.players,
+            username: next.user.username || 'Player',
+            displayName: next.user.displayName || next.user.username || 'Player',
+            inviteCode: room.inviteCode
+          });
+        }
+
+        io.to(roomId.toString()).emit('player-left', {
+          roomId: roomId.toString(),
+          players: room.players,
+          username: leavingUsername,
+          displayName: leavingDisplayName,
+          newOwnerId: wasOwner && room.players.length > 0 ? (room.players[0].user._id || room.players[0].user).toString() : null
+        });
+      }, leaveMs);
+
+      roomBackgroundTimers.set(key, {
+        timer: t,
+        backgroundAt,
+        socketId: socket.id
+      });
+    } catch (e) {
+      console.error('[ROOM BACKGROUND] Error scheduling lobby leave:', e);
+    }
+  });
+
+  socket.on('room-foreground', async (data) => {
+    try {
+      if (!socket.userId) return;
+      const roomId = (data && data.roomId) || socket.roomId;
+      if (!roomId) return;
+
+      const key = `${socket.userId.toString()}:${roomId.toString()}`;
+      const entry = roomBackgroundTimers.get(key);
+      if (entry && entry.timer) {
+        clearTimeout(entry.timer);
+        roomBackgroundTimers.delete(key);
+      }
+    } catch (e) {
+      console.error('[ROOM FOREGROUND] Error clearing lobby leave timer:', e);
     }
   });
 
@@ -1880,6 +1995,15 @@ module.exports = (io, socket) => {
           if (entry?.socketId === socket.id) {
             if (entry.timer) clearTimeout(entry.timer);
             appBackgroundTimers.delete(key);
+          }
+        }
+      } catch (e) {}
+
+      try {
+        for (const [key, entry] of roomBackgroundTimers.entries()) {
+          if (entry?.socketId === socket.id) {
+            if (entry.timer) clearTimeout(entry.timer);
+            roomBackgroundTimers.delete(key);
           }
         }
       } catch (e) {}
