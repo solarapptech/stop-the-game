@@ -126,7 +126,7 @@ stop-the-game/
 2. **Email Verification**: Verify email to activate account
 3. **Main Menu**: Access game rooms, leaderboard, settings
 4. **Create/Join Room**: Start a new game or join existing
-5. **Room Lobby**: Wait for players, chat, ready up
+5. **Room Lobby**: Wait for players, chat, ready up (the chat keyboard stays open while interacting/scrolling inside the chat area; tap outside the chat area to dismiss it)
 6. **Gameplay**:
    - Category selection phase
    - Letter selection phase

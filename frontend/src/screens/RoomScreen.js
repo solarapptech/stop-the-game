@@ -471,84 +471,91 @@ const RoomScreen = ({ navigation, route }) => {
     >
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="none"
         nestedScrollEnabled
       >
-        {/* Room Info */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.roomHeader}>
-              <View style={styles.roomInfo}>
-                <Text style={styles.roomName}>{activeRoom?.name || t('room.title')}</Text>
-                <View style={styles.roomDetails}>
-                  <Chip style={styles.chip}>{activeRoom?.rounds || 3} {t('joinRoom.rounds')}</Chip>
-                  <Chip style={styles.chip}>
-                    {players.length}/{activeRoom?.maxPlayers || 8} {t('joinRoom.players')}
-                  </Chip>
+        <Pressable
+          onPress={() => {
+            setIsChatActive(false);
+            Keyboard.dismiss();
+          }}
+        >
+          {/* Room Info */}
+          <Card style={styles.card}>
+            <Card.Content>
+              <View style={styles.roomHeader}>
+                <View style={styles.roomInfo}>
+                  <Text style={styles.roomName}>{activeRoom?.name || t('room.title')}</Text>
+                  <View style={styles.roomDetails}>
+                    <Chip style={styles.chip}>{activeRoom?.rounds || 3} {t('joinRoom.rounds')}</Chip>
+                    <Chip style={styles.chip}>
+                      {players.length}/{activeRoom?.maxPlayers || 8} {t('joinRoom.players')}
+                    </Chip>
+                  </View>
                 </View>
-              </View>
-              <View style={{ flexDirection: 'row' }}>
-                {showInviteCode && (
-                  <IconButton
-                    icon="content-copy"
-                    onPress={copyInviteCode}
-                    style={styles.copyButton}
-                  />
-                )}
-                {isOwner && (
-                  <IconButton
-                    icon="delete"
-                    onPress={handleDeleteRoom}
-                    iconColor="#F44336"
-                    style={styles.copyButton}
-                  />
-                )}
-              </View>
-            </View>
-            {showInviteCode && (
-              <View style={styles.inviteContainer}>
-                <Text style={styles.inviteLabel}>{t('room.inviteCode')}:</Text>
-                <Text style={styles.inviteCode}>{inviteCode || 'XXXXXX'}</Text>
-              </View>
-            )}
-          </Card.Content>
-        </Card>
-
-        {/* Players */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>{t('room.players')}</Text>
-            <List.Section>
-              {players.map((player, index) => (
-                <List.Item
-                  key={player.id}
-                  title={player.displayName}
-                  description={player.isOwner ? t('room.owner') : player.isReady ? t('room.ready') : t('room.notReady')}
-                  left={() => (
-                    <Avatar.Text
-                      size={40}
-                      label={player.displayName.substring(0, 2).toUpperCase()}
-                      style={{ backgroundColor: theme.colors.primary }}
+                <View style={{ flexDirection: 'row' }}>
+                  {showInviteCode && (
+                    <IconButton
+                      icon="content-copy"
+                      onPress={copyInviteCode}
+                      style={styles.copyButton}
                     />
                   )}
-                  right={() => (
-                    <View style={styles.playerStatus}>
-                      {player.isOwner && (
-                        <IconButton icon="crown" size={20} iconColor="#FFC107" />
-                      )}
-                      <IconButton
-                        icon={player.isReady ? 'check-circle' : 'circle-outline'}
-                        size={20}
-                        iconColor={player.isReady ? '#4CAF50' : '#757575'}
-                      />
-                    </View>
+                  {isOwner && (
+                    <IconButton
+                      icon="delete"
+                      onPress={handleDeleteRoom}
+                      iconColor="#F44336"
+                      style={styles.copyButton}
+                    />
                   )}
-                />
-              ))}
-            </List.Section>
-          </Card.Content>
-        </Card>
+                </View>
+              </View>
+              {showInviteCode && (
+                <View style={styles.inviteContainer}>
+                  <Text style={styles.inviteLabel}>{t('room.inviteCode')}:</Text>
+                  <Text style={styles.inviteCode}>{inviteCode || 'XXXXXX'}</Text>
+                </View>
+              )}
+            </Card.Content>
+          </Card>
+
+          {/* Players */}
+          <Card style={styles.card}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>{t('room.players')}</Text>
+              <List.Section>
+                {players.map((player, index) => (
+                  <List.Item
+                    key={player.id}
+                    title={player.displayName}
+                    description={player.isOwner ? t('room.owner') : player.isReady ? t('room.ready') : t('room.notReady')}
+                    left={() => (
+                      <Avatar.Text
+                        size={40}
+                        label={player.displayName.substring(0, 2).toUpperCase()}
+                        style={{ backgroundColor: theme.colors.primary }}
+                      />
+                    )}
+                    right={() => (
+                      <View style={styles.playerStatus}>
+                        {player.isOwner && (
+                          <IconButton icon="crown" size={20} iconColor="#FFC107" />
+                        )}
+                        <IconButton
+                          icon={player.isReady ? 'check-circle' : 'circle-outline'}
+                          size={20}
+                          iconColor={player.isReady ? '#4CAF50' : '#757575'}
+                        />
+                      </View>
+                    )}
+                  />
+                ))}
+              </List.Section>
+            </Card.Content>
+          </Card>
+        </Pressable>
 
         {/* Chat */}
         <Card style={styles.card}>
