@@ -254,14 +254,14 @@ db.rooms.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 ## 🔌 Socket Events
 
 ### Client → Server
-- `join-room` - Join a game room
+- `join-room` - Join a game room lobby via socket (see semantics below)
 - `leave-room` - Leave current room
 - `join-game` - Join/re-join an in-progress game (used for reconnect)
 - `app-background` - Notify the server the app went to background during an in-progress game
 - `app-foreground` - Notify the server the app returned to foreground during an in-progress game
 - `room-background` - Notify the server the app went to background while in a `waiting` room
 - `room-foreground` - Notify the server the app returned to foreground while in a `waiting` room
-- `send-message` - Send chat message
+- `chat-message` - Send chat message
 - `player-ready` - Mark ready status
 - `start-game` - Start the game
 - `select-category` - Select game category
@@ -269,14 +269,21 @@ db.rooms.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 - `stop-round` - Stop the round early
 
 ### Server → Client
-- `room-updated` - Room state changed
+- `room-joined` - Full room state for the joining client
 - `player-joined` - New player joined
 - `player-left` - Player left room
-- `message` - Chat message received
+- `new-message` - Chat message received
 - `game-started` - Game has started
 - `round-started` - New round began
 - `round-ended` - Round finished
 - `game-finished` - Game completed
+
+### `join-room` semantics
+
+- The server enforces **room language**: if `User.language` does not match `Room.language`, the server emits an `error` event with `{ message: "Room language mismatch", roomLanguage: "en" | "es" }`.
+- For **waiting** rooms with **no password**, the server will ensure the joining user exists in `Room.players` (auto-add) before emitting `room-joined`.
+- For **password-protected** rooms, the socket `join-room` event will only succeed if the user is already a player (e.g. they joined via the HTTP API first). Otherwise the server emits `error` with `{ message: "Password required" }`.
+- For rooms that are not in `waiting` (game in progress/finished), socket `join-room` will only work for users already in the room. Otherwise the server emits `error` with `{ message: "Game already in progress" }`.
 
 ## 🎨 Customization
 

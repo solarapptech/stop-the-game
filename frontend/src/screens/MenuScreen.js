@@ -7,12 +7,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
+import { useGame } from '../contexts/GameContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 
 const MenuScreen = ({ navigation }) => {
   const { user, logout, updateDisplayName, refreshUser, statsDirty, token, updateLanguage } = useAuth();
-  const { socket, connected, isAuthenticated, joinRoom, joinGame, quickplayJoin, quickplayLeave } = useSocket();
+  const { socket, connected, isAuthenticated, joinRoom: joinRoomSocket, joinGame, quickplayJoin, quickplayLeave } = useSocket();
+  const { joinRoom: joinRoomHttp } = useGame();
   const { t, language, changeLanguage } = useLanguage();
   const [stats, setStats] = useState({
     winPoints: user?.winPoints || 0,
@@ -332,7 +334,18 @@ const MenuScreen = ({ navigation }) => {
       }
     }
 
-    navigation.navigate('Room', { roomId });
+    try {
+      const result = await joinRoomHttp(roomId);
+      if (result?.success) {
+        navigation.replace('Room', { roomId: result.room?.id || roomId });
+      } else if (result?.languageMismatch) {
+        Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
+      } else {
+        Alert.alert(t('common.error'), result?.error || t('common.error'));
+      }
+    } catch (e) {
+      Alert.alert(t('common.error'), t('common.error'));
+    }
   };
 
   const handleReconnect = async () => {
@@ -369,7 +382,7 @@ const MenuScreen = ({ navigation }) => {
         setReconnectStatus('reconnecting');
 
         try {
-          if (typeof joinRoom === 'function') joinRoom(data.roomId);
+          if (typeof joinRoomSocket === 'function') joinRoomSocket(data.roomId);
           if (typeof joinGame === 'function') joinGame(data.gameId);
         } catch (e) {}
 
@@ -624,7 +637,8 @@ const MenuScreen = ({ navigation }) => {
                 mode="outlined"
                 onPress={handleCancelQuickPlay}
                 style={styles.cancelButton}
-                textColor="#FFFFFF"
+                textColor={theme.colors.primary}
+                contentStyle={styles.cancelButtonContent}
               >
                 {t('common.cancel')}
               </Button>
@@ -651,6 +665,7 @@ const MenuScreen = ({ navigation }) => {
                           buttonColor={theme.colors.primary}
                           style={styles.otherLanguageMatchJoinButton}
                           contentStyle={styles.otherLanguageMatchJoinButtonContent}
+                          labelStyle={styles.otherLanguageMatchJoinButtonLabel}
                         >
                           {t('common.join')}
                         </Button>
@@ -703,7 +718,8 @@ const MenuScreen = ({ navigation }) => {
                 mode="outlined"
                 onPress={handleCancelReconnect}
                 style={styles.cancelButton}
-                textColor="#FFFFFF"
+                textColor={theme.colors.primary}
+                contentStyle={styles.cancelButtonContent}
               >
                 {t('common.cancel')}
               </Button>
@@ -1055,8 +1071,12 @@ const styles = StyleSheet.create({
     color: '#424242',
   },
   cancelButton: {
-    borderColor: '#757575',
+    borderColor: theme.colors.primary,
     borderWidth: 1,
+  },
+  cancelButtonContent: {
+    minHeight: 36,
+    paddingHorizontal: 14,
   },
   otherLanguageMatchesContainer: {
     width: '100%',
@@ -1106,7 +1126,11 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   otherLanguageMatchJoinButtonContent: {
-    height: 32,
+    minHeight: 36,
+    paddingHorizontal: 12,
+  },
+  otherLanguageMatchJoinButtonLabel: {
+    lineHeight: 18,
   },
   usernameRow: {
     flexDirection: 'row',

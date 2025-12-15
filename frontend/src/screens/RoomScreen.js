@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, BackHandler, AppState } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform, Keyboard, BackHandler, AppState, Pressable } from 'react-native';
 import { Text, Button, Card, List, Avatar, Chip, IconButton, TextInput, Portal, Dialog, ActivityIndicator } from 'react-native-paper';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
@@ -121,13 +121,6 @@ const RoomScreen = ({ navigation, route }) => {
       }
     }
   }, [currentRoom, user, roomId]);
-
-  // Join room via socket on mount and after auth
-  useEffect(() => {
-    if (socket && roomId && isAuthenticated) {
-      joinRoom(roomId);
-    }
-  }, [socket, roomId, isAuthenticated]);
 
   useEffect(() => {
     if (socket) {
@@ -262,6 +255,43 @@ const RoomScreen = ({ navigation, route }) => {
         );
       });
 
+      socket.on('error', (data) => {
+        const message = data?.message || 'Error';
+        if (message === 'Room language mismatch') {
+          const target = data?.roomLanguage;
+          setRoomLanguage(target || roomLanguage);
+          return;
+        }
+
+        if (message === 'Password required') {
+          Alert.alert(t('common.error'), t('joinRoom.passwordRequired'), [
+            { text: t('common.ok'), onPress: () => navigation.navigate('JoinRoom') }
+          ]);
+          return;
+        }
+
+        if (message === 'Game already in progress') {
+          Alert.alert(t('common.error'), t('joinRoom.gameAlreadyStarted'), [
+            { text: t('common.ok'), onPress: () => navigation.navigate('Menu') }
+          ]);
+          return;
+        }
+
+        if (message === 'Room not found') {
+          Alert.alert(t('common.error'), message, [
+            { text: t('common.ok'), onPress: () => navigation.navigate('Menu') }
+          ]);
+          return;
+        }
+
+        if (message === 'Not authenticated') {
+          Alert.alert(t('common.error'), message, [
+            { text: t('common.ok'), onPress: () => navigation.navigate('Login') }
+          ]);
+          return;
+        }
+      });
+
       return () => {
         socket.off('room-joined');
         socket.off('player-joined');
@@ -271,9 +301,17 @@ const RoomScreen = ({ navigation, route }) => {
         socket.off('game-starting');
         socket.off('new-message');
         socket.off('room-deleted');
+        socket.off('error');
       };
     }
   }, [socket, currentRoom, user, roomOwner]);
+
+  // Join room via socket on mount and after auth
+  useEffect(() => {
+    if (socket && roomId && isAuthenticated) {
+      joinRoom(roomId);
+    }
+  }, [socket, roomId, isAuthenticated]);
 
   // Handle hardware back button press
   useEffect(() => {
@@ -311,12 +349,14 @@ const RoomScreen = ({ navigation, route }) => {
   }, [navigation, socket, connected, isAuthenticated]);
 
   const handleReady = () => {
+    Keyboard.dismiss();
     const newReadyState = !isReady;
     setIsReady(newReadyState);
     setPlayerReady(roomId, newReadyState);
   };
 
   const handleStartGame = () => {
+    Keyboard.dismiss();
     if (players.length < 2) {
       Alert.alert(t('room.cannotStart'), t('room.needTwoPlayers'));
       return;
@@ -329,6 +369,7 @@ const RoomScreen = ({ navigation, route }) => {
   };
 
   const handleLeaveRoom = () => {
+    Keyboard.dismiss();
     Alert.alert(
       t('room.leaveRoom'),
       t('room.leaveRoomMessage'),
@@ -355,6 +396,7 @@ const RoomScreen = ({ navigation, route }) => {
   };
 
   const handleDeleteRoom = () => {
+    Keyboard.dismiss();
     Alert.alert(
       t('room.deleteRoom'),
       t('room.deleteRoomMessage'),
@@ -415,11 +457,16 @@ const RoomScreen = ({ navigation, route }) => {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+    >
+      <Pressable style={styles.container} onPress={Keyboard.dismiss}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="none"
         nestedScrollEnabled
         scrollEnabled={!isChatActive}
         onTouchStartCapture={() => setIsChatActive(false)}
@@ -502,19 +549,26 @@ const RoomScreen = ({ navigation, route }) => {
         {/* Chat */}
         <Card style={styles.card}>
           <Card.Content>
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <Pressable onPress={() => {}}>
               <Text style={styles.sectionTitle}>{t('room.chat')}</Text>
-            </TouchableWithoutFeedback>
-            <View 
+            </Pressable>
+            <Pressable
+              onPress={() => {}}
+              onPressIn={() => setIsChatActive(true)}
               style={[styles.chatContainer, isChatActive && styles.chatContainerActive]}
-              onTouchStart={() => setIsChatActive(true)}
             >
                 <ScrollView
                   ref={messagesRef}
                   style={styles.messagesContainer}
                   contentContainerStyle={styles.messagesContentContainer}
-                  keyboardShouldPersistTaps="handled"
+                  keyboardShouldPersistTaps="always"
+                  keyboardDismissMode="none"
                   nestedScrollEnabled
+                  onTouchStart={() => {
+                    if (inputFocused) {
+                      inputRef.current?.focus?.();
+                    }
+                  }}
                   onScroll={handleMessagesScroll}
                   scrollEventThrottle={16}
                   onContentSizeChange={handleMessagesContentSizeChange}
@@ -557,7 +611,7 @@ const RoomScreen = ({ navigation, route }) => {
                     }
                   />
                 </View>
-            </View>
+            </Pressable>
           </Card.Content>
         </Card>
       </ScrollView>
@@ -594,7 +648,7 @@ const RoomScreen = ({ navigation, route }) => {
           </Button>
         )}
       </View>
-      </View>
+      </Pressable>
 
       <Portal>
         <Dialog

@@ -989,7 +989,9 @@ module.exports = (io, socket) => {
       const User = require('../models/User');
       const user = await User.findById(socket.userId).select('language');
 
-      const room = await Room.findById(roomId)
+      const rid = roomId?.toString?.() ? roomId.toString() : String(roomId);
+
+      let room = await Room.findById(rid)
         .populate('players.user', 'username displayName winPoints');
 
       if (!room) {
@@ -1005,23 +1007,45 @@ module.exports = (io, socket) => {
         });
       }
 
+      const alreadyInRoom = room.players.some(p => (p.user._id || p.user).toString() === socket.userId.toString());
+
+      if (!alreadyInRoom && room.status !== 'waiting') {
+        return socket.emit('error', { message: 'Game already in progress' });
+      }
+
+      if (room.password && !alreadyInRoom) {
+        return socket.emit('error', { message: 'Password required' });
+      }
+
+      if (!alreadyInRoom && room.status === 'waiting') {
+        room.players.push({
+          user: socket.userId,
+          isReady: room.owner.toString() === socket.userId.toString()
+        });
+        room.expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+        await room.save();
+        room = await Room.findById(rid).populate('players.user', 'username displayName winPoints');
+      }
+
       // Join socket room
-      socket.join(roomId);
-      socket.roomId = roomId;
+      socket.join(rid);
+      socket.roomId = rid;
 
       // Notify others in room about the new player
       const joiningPlayer = room.players.find(p => 
         (p.user._id || p.user).toString() === socket.userId.toString()
       );
       
-      socket.to(roomId).emit('player-joined', {
-        roomId,
-        players: room.players,
-        username: joiningPlayer?.user?.username || 'Player'
-      });
+      if (!alreadyInRoom) {
+        socket.to(rid).emit('player-joined', {
+          roomId: rid,
+          players: room.players,
+          username: joiningPlayer?.user?.username || 'Player'
+        });
+      }
 
       socket.emit('room-joined', {
-        roomId,
+        roomId: rid,
         room: room.toObject()
       });
     } catch (error) {

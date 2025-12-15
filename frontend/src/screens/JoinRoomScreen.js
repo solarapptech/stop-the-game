@@ -292,17 +292,17 @@ const JoinRoomScreen = ({ navigation }) => {
                       </View>
                       <View style={styles.roomMeta}>
                         <Text style={styles.roomHost}>{t('joinRoom.host')}: {room.owner?.displayName || room.owner?.username || t('common.unknown')}</Text>
-                        <Chip style={styles.playersChip} icon="account-group">
+                        <Chip style={styles.playersChip} icon="account-group" textStyle={styles.chipText}>
                           {room.players.length}/{room.maxPlayers} {t('joinRoom.players')}
                         </Chip>
                       </View>
                       <View style={styles.roomChipsWrap}>
-                        <Chip style={styles.roundChip} icon="timer-outline">{room.rounds} {t('joinRoom.rounds')}</Chip>
-                        <Chip style={[styles.statusChip, room.status === 'in_progress' ? styles.playingChip : null]}>
+                        <Chip style={styles.roundChip} icon="timer-outline" textStyle={styles.chipText}>{room.rounds} {t('joinRoom.rounds')}</Chip>
+                        <Chip style={[styles.statusChip, room.status === 'in_progress' ? styles.playingChip : null]} textStyle={styles.chipText}>
                           {room.status === 'in_progress' ? t('joinRoom.inGame') : t('joinRoom.waiting')}
                         </Chip>
                         {room.hasPassword && (
-                          <Chip style={styles.lockChip} icon="lock">{t('joinRoom.private')}</Chip>
+                          <Chip style={styles.lockChip} icon="lock" textStyle={styles.chipText}>{t('joinRoom.private')}</Chip>
                         )}
                       </View>
                     </View>
@@ -442,11 +442,13 @@ const styles = StyleSheet.create({
   },
   roundChip: {
     marginRight: 5,
-    height: 28,
+    minHeight: 32,
+    paddingVertical: 2,
     backgroundColor: '#E3F2FD',
   },
   statusChip: {
-    height: 28,
+    minHeight: 32,
+    paddingVertical: 2,
     backgroundColor: '#E8F5E9',
   },
   playingChip: {
@@ -494,7 +496,8 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   playersChip: {
-    height: 26,
+    minHeight: 32,
+    paddingVertical: 2,
     backgroundColor: '#F1F8E9',
   },
   roomChipsWrap: {
@@ -503,7 +506,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 6,
   },
+  chipText: {
+    lineHeight: 16,
+    includeFontPadding: false,
+  },
   lockChip: {
+    minHeight: 32,
+    paddingVertical: 2,
     backgroundColor: '#FFEBEE',
   },
   languageFiltersRow: {
