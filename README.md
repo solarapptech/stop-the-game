@@ -136,6 +136,12 @@ stop-the-game/
    - Round results
 7. **Game End**: View final scores and rankings
 
+Game end behavior:
+
+- Final results are shown automatically after the last round results (no extra confirmation tap).
+- Rematch readiness is based on **connected players only** and requires **at least 2 connected players**.
+- If a player disconnects/leaves while a rematch countdown is running, the countdown is canceled and players must re-confirm.
+
 ## 🔧 API Endpoints
 
 ### Authentication
@@ -187,6 +193,12 @@ Quick Play:
 - If you leave/disconnect during an in-progress game, the backend marks you as **disconnected** (your score is preserved).
 - The Menu can show a **Reconnect** button when the backend detects an active game where you are disconnected.
 - If the game/room no longer exists (for example, it was cleaned up), the Reconnect UI will show **"Game ended"** and the Reconnect button will disappear.
+
+### Rematch (Play Again)
+
+- The final results screen shows `(<ready>/<total>) Play Again` where `<total>` is the number of **connected** players.
+- A rematch only starts when **all connected players** confirm and there are **at least 2 connected players**.
+- If the connected player count changes (disconnect/leave) during the rematch countdown, the countdown is canceled.
 
 ### Background / swipe-kill during an in-progress game
 

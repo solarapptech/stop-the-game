@@ -228,6 +228,8 @@ const GameplayScreen = ({ navigation, route }) => {
   const inputRefs = useRef({});
   const scrollViewRef = useRef(null);
   const cardRefs = useRef({});
+  const totalRoundsRef = useRef(totalRounds);
+  const finalAdvanceRequestedRef = useRef(false);
   const selectTimerRef = useRef(null);
   const autoRetryTimerRef = useRef(null);
   const announcedReadyRef = useRef(false);
@@ -515,6 +517,15 @@ const GameplayScreen = ({ navigation, route }) => {
       if (Array.isArray(data.standings)) setReadyTotal(data.standings.length);
       // Set viewing player to current user by default
       setViewingPlayerId(userIdRef.current);
+
+       // Auto-advance to final results on last round (no extra confirm button)
+      try {
+        const roundNum = typeof data?.currentRound === 'number' ? data.currentRound : currentRound;
+        if (roundNum >= (totalRoundsRef.current || 0) && !finalAdvanceRequestedRef.current) {
+          finalAdvanceRequestedRef.current = true;
+          readyNextRound(gameId);
+        }
+      } catch (e) {}
     };
     const onReadyUpdate = (data) => {
       if (typeof data.ready === 'number') setReadyCount(data.ready);
@@ -527,6 +538,7 @@ const GameplayScreen = ({ navigation, route }) => {
       console.log('[GameplayScreen] onGameFinished called with data:', data);
       setShowConfetti(true);
       setIsFinished(true);
+      setFinalConfirmed(true);
       // derive totals if provided
       if (Array.isArray(data?.standings)) {
         setPlayerScores(data.standings);
@@ -568,6 +580,8 @@ const GameplayScreen = ({ navigation, route }) => {
     };
     const onRematchAborted = (data) => {
       setRematchAborted(true);
+      setHasVotedRematch(false);
+      setRematchCountdown(null);
     };
     const onGameStarting = (data) => {
       setIsFinished(false);
@@ -602,6 +616,7 @@ const GameplayScreen = ({ navigation, route }) => {
       setHideAllInputs(false);
       // Reset disconnected players for new game
       setDisconnectedPlayers(new Set());
+      finalAdvanceRequestedRef.current = false;
       // Clear any lingering timers
       if (timerRef.current) clearInterval(timerRef.current);
       if (selectTimerRef.current) clearInterval(selectTimerRef.current);
@@ -709,6 +724,7 @@ const GameplayScreen = ({ navigation, route }) => {
       // Handle finished state
       if (data.phase === 'finished') {
         setIsFinished(true);
+        setFinalConfirmed(true);
       }
     };
 
@@ -760,6 +776,16 @@ const GameplayScreen = ({ navigation, route }) => {
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
+
+  useEffect(() => {
+    totalRoundsRef.current = totalRounds;
+  }, [totalRounds]);
+
+  useEffect(() => {
+    if (isFinished) {
+      setFinalConfirmed(true);
+    }
+  }, [isFinished]);
 
   useEffect(() => {
     if (phase !== 'round-end') return;
@@ -2143,13 +2169,8 @@ const GameplayScreen = ({ navigation, route }) => {
             )}
             {currentRound >= totalRounds && !isFinished && (
               <>
-                <Button
-                  mode="contained"
-                  onPress={() => { readyNextRound(gameId); setFinalConfirmed(true); setIsFinished(true); }}
-                  style={styles.nextButton}
-                >
-                  {t('gameplay.confirmSelection')}
-                </Button>
+                <Text style={styles.instruction}>{t('common.loading')}</Text>
+                <ActivityIndicator size="small" color={theme.colors.primary} />
               </>
             )}
 
@@ -2204,39 +2225,42 @@ const GameplayScreen = ({ navigation, route }) => {
               );
             })}
           </View>
-          {finalConfirmed ? (
-            <>
-              <Text style={styles.instruction}>
-                {isDraw ? `${winnerNames.join(', ')}` : `${t('gameplay.winner')}: ${winnerNames[0]}`}
-              </Text>
-              <Text style={styles.instruction}>{`(${rematchReady}/${rematchTotal}) ${t('gameplay.playAgain')}`}</Text>
-              <Button
-                mode="contained"
-                onPress={() => { if (!hasVotedRematch && !rematchAborted) { setHasVotedRematch(true); playAgainReady(gameId); } }}
-                style={styles.nextButton}
-                disabled={hasVotedRematch || rematchAborted}
-                labelStyle={{ color: '#FFFFFF' }}
-              >
-                {rematchAborted ? t('common.error') : (typeof rematchCountdown === 'number') ? `${t('common.start')} ${rematchCountdown}s...` : hasVotedRematch ? t('gameplay.waitingForPlayers') : t('gameplay.playAgain')}
-              </Button>
-              <Button
-                mode="outlined"
-                onPress={() => navigation.replace('Menu')}
-                style={styles.nextButton}
-                labelStyle={{ color: theme.colors.primary }}
-              >
-                {t('gameplay.backToMenu')}
-              </Button>
-            </>
-          ) : (
+          <>
+            <Text style={styles.instruction}>
+              {isDraw ? `${winnerNames.join(', ')}` : `${t('gameplay.winner')}: ${winnerNames[0]}`}
+            </Text>
+            <Text style={styles.instruction}>{`(${rematchReady}/${rematchTotal}) ${t('gameplay.playAgain')}`}</Text>
             <Button
               mode="contained"
-              onPress={() => setFinalConfirmed(true)}
+              onPress={() => {
+                if (rematchTotal < 2) return;
+                if (!hasVotedRematch) {
+                  setHasVotedRematch(true);
+                  setRematchAborted(false);
+                  playAgainReady(gameId);
+                }
+              }}
               style={styles.nextButton}
+              disabled={hasVotedRematch || rematchTotal < 2}
+              labelStyle={{ color: '#FFFFFF' }}
             >
-              {t('gameplay.confirmFinalResults')}
+              {(typeof rematchCountdown === 'number') ? `${t('common.start')} ${rematchCountdown}s...` : hasVotedRematch ? t('gameplay.waitingForPlayers') : t('gameplay.playAgain')}
             </Button>
-          )}
+            <Button
+              mode="contained"
+              onPress={() => {
+                isLeavingRef.current = true;
+                try { if (socket && connected && isAuthenticated && typeof socketLeaveRoom === 'function') socketLeaveRoom(); } catch (e) {}
+                setTimeout(() => {
+                  navigation.replace('Menu');
+                }, 300);
+              }}
+              style={styles.nextButton}
+              labelStyle={{ color: '#FFFFFF' }}
+            >
+              {t('gameplay.backToMenu')}
+            </Button>
+          </>
         </Card.Content>
       </Card>
     );

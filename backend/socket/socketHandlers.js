@@ -1146,9 +1146,20 @@ module.exports = (io, socket) => {
               if (set) {
                 set.delete(socket.userId.toString());
               }
+
+              // If a rematch countdown is already running, cancel it on any disconnect/leave.
+              // This prevents starting a new game while player counts are changing.
+              const runningCountdown = rematchCountdownTimers.get(roomId);
+              if (runningCountdown) {
+                clearInterval(runningCountdown);
+                rematchCountdownTimers.delete(roomId);
+                rematchReady.delete(roomId);
+                io.to(`game-${gameId}`).emit('rematch-aborted', { reason: 'player-left' });
+              }
+
               // Emit updated rematch count
               io.to(`game-${gameId}`).emit('rematch-update', {
-                ready: set ? set.size : 0,
+                ready: rematchReady.get(roomId) ? rematchReady.get(roomId).size : 0,
                 total: connectedPlayers.length
               });
 
@@ -2150,9 +2161,20 @@ module.exports = (io, socket) => {
               if (set) {
                 set.delete(socket.userId.toString());
               }
+
+              // If a rematch countdown is already running, cancel it on any disconnect/leave.
+              // This prevents starting a new game while player counts are changing.
+              const runningCountdown = rematchCountdownTimers.get(roomId);
+              if (runningCountdown) {
+                clearInterval(runningCountdown);
+                rematchCountdownTimers.delete(roomId);
+                rematchReady.delete(roomId);
+                io.to(`game-${gameId}`).emit('rematch-aborted', { reason: 'player-left' });
+              }
+
               // Emit updated rematch count
               io.to(`game-${gameId}`).emit('rematch-update', {
-                ready: set ? set.size : 0,
+                ready: rematchReady.get(roomId) ? rematchReady.get(roomId).size : 0,
                 total: connectedPlayers.length
               });
 
