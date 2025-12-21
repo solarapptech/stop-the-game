@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import { View, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Text, TextInput, Button, HelperText, RadioButton, List } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -11,6 +11,26 @@ const UsernameSetupScreen = ({ navigation }) => {
   const [username, setUsername] = useState(user?.username || '');
   const [errorMessage, setErrorMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [isSwitchingLanguage, setIsSwitchingLanguage] = useState(false);
+  const [switchingToLanguage, setSwitchingToLanguage] = useState(null);
+
+  const handleLanguageChange = async (value) => {
+    if (isSwitchingLanguage) return;
+    if (value === language) return;
+
+    setIsSwitchingLanguage(true);
+    setSwitchingToLanguage(value);
+
+    try {
+      await changeLanguage(value);
+      if (updateUserLanguage) {
+        await updateUserLanguage(value);
+      }
+    } finally {
+      setIsSwitchingLanguage(false);
+      setSwitchingToLanguage(null);
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -106,22 +126,23 @@ const UsernameSetupScreen = ({ navigation }) => {
         <View style={styles.languageContainer}>
           <Text style={styles.languageLabel}>{t('usernameSetup.selectLanguage')}</Text>
           <RadioButton.Group 
-            onValueChange={async (value) => {
-              await changeLanguage(value);
-              if (updateUserLanguage) {
-                await updateUserLanguage(value);
-              }
-            }} 
+            onValueChange={handleLanguageChange}
             value={language}
           >
             <View style={styles.languageOptions}>
               <View style={styles.languageOption}>
-                <RadioButton value="en" color={theme.colors.primary} />
+                <RadioButton value="en" color={theme.colors.primary} disabled={isSwitchingLanguage} />
                 <Text style={styles.languageOptionText}>{t('settings.english')}</Text>
+                {isSwitchingLanguage && switchingToLanguage === 'en' && (
+                  <ActivityIndicator size="small" color={theme.colors.primary} style={styles.languageSpinner} />
+                )}
               </View>
               <View style={styles.languageOption}>
-                <RadioButton value="es" color={theme.colors.primary} />
+                <RadioButton value="es" color={theme.colors.primary} disabled={isSwitchingLanguage} />
                 <Text style={styles.languageOptionText}>{t('settings.spanish')}</Text>
+                {isSwitchingLanguage && switchingToLanguage === 'es' && (
+                  <ActivityIndicator size="small" color={theme.colors.primary} style={styles.languageSpinner} />
+                )}
               </View>
             </View>
           </RadioButton.Group>
@@ -194,7 +215,10 @@ const styles = StyleSheet.create({
   languageOptionText: {
     fontSize: 16,
     color: '#424242',
-    marginLeft: -8,
+    marginLeft: 8,
+  },
+  languageSpinner: {
+    marginLeft: 8,
   },
   continueButton: {
     marginTop: 16,

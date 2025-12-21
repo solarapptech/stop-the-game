@@ -208,14 +208,21 @@ export const GameProvider = ({ children }) => {
   const validateAnswers = async (gameId) => {
     try {
       const response = await axios.post(`${API_URL}/game/${gameId}/validate`);
+      const statusCode = response.status;
+      const hasResults = Array.isArray(response.data?.standings) && Array.isArray(response.data?.roundResults);
+      const pending = statusCode === 202 || !hasResults;
       return { 
-        success: true, 
-        standings: response.data.standings,
-        roundResults: response.data.roundResults
+        success: !pending,
+        pending,
+        statusCode,
+        validationDeadline: response.data?.validationDeadline,
+        standings: response.data?.standings,
+        roundResults: response.data?.roundResults
       };
     } catch (error) {
       return { 
         success: false, 
+        pending: false,
         error: error.response?.data?.message || 'Failed to validate answers' 
       };
     }

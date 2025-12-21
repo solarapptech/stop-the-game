@@ -326,6 +326,15 @@ module.exports = (io, socket) => {
                   reason: 'timeout', 
                   validationDeadline: g3.validationDeadline 
                 });
+                try {
+                  const roomId = g3.room ? g3.room.toString() : null;
+                  if (roomId) {
+                    io.to(roomId).emit('round-ended', { 
+                      reason: 'timeout', 
+                      validationDeadline: g3.validationDeadline 
+                    });
+                  }
+                } catch (e) {}
 
                 // Schedule validation
                 const vt = validationTimers.get(gameId);
@@ -537,6 +546,12 @@ module.exports = (io, socket) => {
                     g3.validationDeadline = new Date(Date.now() + graceMs);
                     await g3.save();
                     io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                    try {
+                      const roomId = g3.room ? g3.room.toString() : null;
+                      if (roomId) {
+                        io.to(roomId).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                      }
+                    } catch (e) {}
                     const vt = validationTimers.get(game._id.toString());
                     if (vt) clearTimeout(vt);
                     const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));
@@ -1704,6 +1719,18 @@ module.exports = (io, socket) => {
         timestamp: new Date()
       });
       io.to(`game-${gameId}`).emit('round-ended', { reason: 'stopped', validationDeadline: g.validationDeadline });
+
+      try {
+        const roomId = g.room ? g.room.toString() : null;
+        if (roomId) {
+          io.to(roomId).emit('player-stopped', {
+            playerId: socket.userId,
+            username,
+            timestamp: new Date()
+          });
+          io.to(roomId).emit('round-ended', { reason: 'stopped', validationDeadline: g.validationDeadline });
+        }
+      } catch (e) {}
       const vt = validationTimers.get(idStr);
       if (vt) clearTimeout(vt);
       const allSubmitted = (g.players || []).every(p => (p.answers || []).some(a => a.round === g.currentRound));
@@ -2405,6 +2432,12 @@ module.exports = (io, socket) => {
                               g3.validationDeadline = new Date(Date.now() + graceMs);
                               await g3.save();
                               io.to(`game-${g3._id}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                              try {
+                                const roomId = g3.room ? g3.room.toString() : null;
+                                if (roomId) {
+                                  io.to(roomId).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                                }
+                              } catch (e) {}
                               const vt = validationTimers.get(g3._id.toString());
                               if (vt) clearTimeout(vt);
                               const allSubmitted = (g3.players || []).every(p => (p.answers || []).some(a => a.round === g3.currentRound));

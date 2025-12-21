@@ -307,6 +307,29 @@ const GameplayScreen = ({ navigation, route }) => {
   }, [phase]);
 
   useEffect(() => {
+    if (phase !== 'playing') return;
+
+    const watchdog = setInterval(async () => {
+      if (phaseRef.current !== 'playing') return;
+      try {
+        const gs = await getGameState(gameId);
+        if (!gs?.success) return;
+        const g = gs.game;
+        if (!g?.status) return;
+
+        if (g.status === 'validating' || g.status === 'round_ended') {
+          if (timerRef.current) clearInterval(timerRef.current);
+          setTimeLeft(0);
+          setIsFrozen(true);
+          setPhase('validation');
+        }
+      } catch (e) {}
+    }, 2500);
+
+    return () => clearInterval(watchdog);
+  }, [phase, gameId, getGameState]);
+
+  useEffect(() => {
     userIdRef.current = userId;
   }, [userId]);
 
@@ -1265,6 +1288,7 @@ const GameplayScreen = ({ navigation, route }) => {
     setShowStopOverlay(true);
     stopRound(gameId);
     await submitAnswers(gameId, answers, true);
+    setPhase('validation');
     setTimeout(() => setShowStopOverlay(false), 1500);
     await handleValidation();
   };
@@ -1279,7 +1303,16 @@ const GameplayScreen = ({ navigation, route }) => {
       await submitAnswers(gameId, answers, false);
     } catch (e) {}
     setTimeout(() => setShowStopOverlay(false), 1500);
-    // Wait for server 'round-ended' then validation will run
+    try {
+      const gs = await getGameState(gameId);
+      if (gs?.success) {
+        const g = gs.game;
+        if (g?.status === 'validating' || g?.status === 'round_ended') {
+          setPhase('validation');
+          await handleValidation();
+        }
+      }
+    } catch (e) {}
   };
 
   const handleValidation = async () => {
@@ -1409,24 +1442,6 @@ const GameplayScreen = ({ navigation, route }) => {
             setTimeLeft(0);
             setRoundResults(retryResult.roundResults);
             setPlayerScores(retryResult.standings);
-            setPhase('round-end');
-            setIsRefreshing(false);
-            return;
-          }
-          
-          // If still no results but game has standings, use those
-          if (game?.standings && Array.isArray(game.standings)) {
-            if (timerRef.current) clearInterval(timerRef.current);
-            setTimeLeft(0);
-            setPlayerScores(game.standings);
-            // Try to construct basic round results from game data
-            if (game?.players && Array.isArray(game.players)) {
-              const basicResults = game.players.map(p => ({
-                user: p.user,
-                answers: p.answers?.[game.currentRound - 1] || {}
-              }));
-              setRoundResults(basicResults);
-            }
             setPhase('round-end');
             setIsRefreshing(false);
             return;
@@ -2395,13 +2410,11 @@ const GameplayScreen = ({ navigation, route }) => {
       {phase === 'validation' && (
         <View style={styles.validationContainer}>
           <Text style={styles.validationText}>{t('gameplay.validatingAnswers')}</Text>
-          {isRefreshing && (
-            <ActivityIndicator 
-              size="large" 
-              color={theme.colors.primary} 
-              style={{ marginTop: 20 }}
-            />
-          )}
+          <ActivityIndicator 
+            size="large" 
+            color={theme.colors.primary} 
+            style={{ marginTop: 20 }}
+          />
           {retryAttempt > 0 && (
             <Text style={styles.retryAttemptText}>{t('gameplay.attempt')} {retryAttempt}</Text>
           )}
