@@ -289,7 +289,7 @@ export default {
     player: 'Player',
     score: 'Score',
     nextRound: 'Next Round',
-    playAgain: 'Play Again',
+    playAgain: 'Rematch',
     backToMenu: 'Back to Menu',
     gameOver: 'Game Over!',
     winner: 'Winner',

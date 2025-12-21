@@ -287,7 +287,7 @@ export default {
     player: 'Jugador',
     score: 'Puntuación',
     nextRound: 'Siguiente Ronda',
-    playAgain: 'Jugar de Nuevo',
+    playAgain: 'Revancha',
     backToMenu: 'Volver al Menú',
     gameOver: '¡Juego Terminado!',
     winner: 'Ganador',
