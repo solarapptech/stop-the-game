@@ -1493,11 +1493,16 @@ module.exports = (io, socket) => {
             gameId,
             phase: game.status === 'finished' ? 'finished' : 'round-end',
             currentRound: game.currentRound,
+            totalRounds: game.rounds,
             disconnectedPlayerIds,
             standings: game.players.map(p => ({
               user: p.user,
               score: p.disconnected ? 0 : p.score,
               disconnected: p.disconnected
+            })),
+            roundResults: (game.players || []).map(p => ({
+              user: p.user,
+              answers: (p.answers || []).find(a => a.round === game.currentRound)
             })),
             rematchReady: set ? set.size : 0,
             rematchTotal: connectedPlayers.length

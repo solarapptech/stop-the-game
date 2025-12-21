@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 import SettingsScreen from './SettingsScreen';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Helper function to get icon for category
 const getCategoryIcon = (category) => {
@@ -539,13 +540,30 @@ const GameplayScreen = ({ navigation, route }) => {
     };
     const onGameFinished = async (data) => {
       console.log('[GameplayScreen] onGameFinished called with data:', data);
-      if (!confettiShownRef.current) {
-        confettiShownRef.current = true;
-        setShowConfetti(true);
-        if (confettiHideTimerRef.current) clearTimeout(confettiHideTimerRef.current);
-        confettiHideTimerRef.current = setTimeout(() => {
-          setShowConfetti(false);
-        }, 4500);
+      try {
+        const uid = String(userIdRef.current || '');
+        const key = `confetti_shown:${String(gameId || '')}:${uid}`;
+        const already = await AsyncStorage.getItem(key);
+        if (!already && !confettiShownRef.current) {
+          confettiShownRef.current = true;
+          await AsyncStorage.setItem(key, '1');
+          setShowConfetti(true);
+          if (confettiHideTimerRef.current) clearTimeout(confettiHideTimerRef.current);
+          confettiHideTimerRef.current = setTimeout(() => {
+            setShowConfetti(false);
+          }, 4500);
+        } else {
+          confettiShownRef.current = true;
+        }
+      } catch (e) {
+        if (!confettiShownRef.current) {
+          confettiShownRef.current = true;
+          setShowConfetti(true);
+          if (confettiHideTimerRef.current) clearTimeout(confettiHideTimerRef.current);
+          confettiHideTimerRef.current = setTimeout(() => {
+            setShowConfetti(false);
+          }, 4500);
+        }
       }
       setIsFinished(true);
       setFinalConfirmed(true);
@@ -697,12 +715,24 @@ const GameplayScreen = ({ navigation, route }) => {
 
       // Sync phase
       if (data.phase) {
-        setPhase(data.phase);
+        // Important: keep UI phase as 'round-end' for both 'round-end' and 'finished'
+        // so the end-game screen renders instead of a blank/loader state.
+        if (data.phase === 'finished') {
+          setPhase('round-end');
+          setIsFinished(true);
+          setFinalConfirmed(true);
+        } else {
+          setPhase(data.phase);
+        }
       }
 
       // Sync round
       if (typeof data.currentRound === 'number') {
         setCurrentRound(data.currentRound);
+      }
+
+      if (typeof data.totalRounds === 'number') {
+        setTotalRounds(data.totalRounds);
       }
 
       // Sync letter
@@ -738,6 +768,14 @@ const GameplayScreen = ({ navigation, route }) => {
         })));
       }
 
+      // Sync round results for end screens (prevents loading loop after reconnect)
+      if (Array.isArray(data.roundResults)) {
+        setRoundResults(data.roundResults);
+        if (!viewingPlayerId) {
+          setViewingPlayerId(userIdRef.current);
+        }
+      }
+
       // Sync rematch state
       if (typeof data.rematchReady === 'number') {
         setRematchReady(data.rematchReady);
@@ -750,6 +788,9 @@ const GameplayScreen = ({ navigation, route }) => {
       if (data.phase === 'finished') {
         setIsFinished(true);
         setFinalConfirmed(true);
+        // Confetti should NOT replay on reconnect. Persisted per user+game.
+        confettiShownRef.current = true;
+        setShowConfetti(false);
       }
     };
 

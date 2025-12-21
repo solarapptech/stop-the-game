@@ -144,6 +144,7 @@ Game end behavior:
 - Rematch readiness is based on **connected players only** and requires **at least 2 connected players**.
 - If a player disconnects/leaves while a rematch countdown is running, the countdown is canceled and players must re-confirm.
 - Confetti is triggered once per game finish and rendered as a top overlay to reduce lag.
+- If a user reconnects into an already-ended match (round ended / finished), the end-game UI renders immediately (no loading loop) and confetti does **not** replay for that user.
 
 ## 🔧 API Endpoints
 
