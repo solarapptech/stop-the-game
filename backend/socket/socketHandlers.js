@@ -1390,10 +1390,14 @@ module.exports = (io, socket) => {
           playerInGame.score = restoredScore;
           playerInGame.scoreBeforeDisconnect = 0;
           
-          // Clear any answers for the current round (fresh start)
-          const currentRoundAnswerIndex = playerInGame.answers.findIndex(a => a.round === game.currentRound);
-          if (currentRoundAnswerIndex !== -1) {
-            playerInGame.answers.splice(currentRoundAnswerIndex, 1);
+          // Clear any answers for the current round ONLY if the round is actively being played.
+          // If the round already ended (round_ended/finished), clearing here would delete the results
+          // and cause reconnecting clients to get stuck with missing round breakdown.
+          if (game.status === 'playing') {
+            const currentRoundAnswerIndex = playerInGame.answers.findIndex(a => a.round === game.currentRound);
+            if (currentRoundAnswerIndex !== -1) {
+              playerInGame.answers.splice(currentRoundAnswerIndex, 1);
+            }
           }
           
           await game.save();

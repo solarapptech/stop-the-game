@@ -735,6 +735,19 @@ const GameplayScreen = ({ navigation, route }) => {
         setTotalRounds(data.totalRounds);
       }
 
+      // If we reconnect into the last round's results, treat it as end-game UI so players see rematch/menu controls.
+      // The backend may keep status as 'round_ended' for a short time or until a host action.
+      try {
+        const roundNum = typeof data.currentRound === 'number' ? data.currentRound : currentRound;
+        const totalNum = typeof data.totalRounds === 'number' ? data.totalRounds : totalRoundsRef.current;
+        if (data.phase === 'round-end' && Number(roundNum || 0) >= Number(totalNum || 0)) {
+          setIsFinished(true);
+          setFinalConfirmed(true);
+          confettiShownRef.current = true;
+          setShowConfetti(false);
+        }
+      } catch (e) {}
+
       // Sync letter
       if (data.currentLetter) {
         setCurrentLetter(data.currentLetter);
