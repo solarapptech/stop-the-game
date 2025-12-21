@@ -710,6 +710,15 @@ module.exports = (io, socket) => {
       game.validationStartedAt = null;
       game.validationDeadline = null;
       await game.save();
+
+      try {
+        if (game.room) {
+          await Room.updateOne(
+            { _id: game.room },
+            { $set: { expiresAt: new Date(Date.now() + TTL_15_MIN_MS) } }
+          );
+        }
+      } catch (e) {}
       const standings = game.getStandings();
       const roundResults = game.players.map(p => ({
         user: p.user,

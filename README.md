@@ -231,6 +231,7 @@ Behavior:
 - Documents are deleted automatically by MongoDB when `expiresAt` is in the past.
 - The expiration is **15 minutes**.
 - The expiration is refreshed whenever the room/game is updated during normal play.
+- The expiration is refreshed when each round ends (validation completes).
 - When a **rematch** starts, the expiration is refreshed back to **15 minutes** again.
 
 This prevents orphaned rooms/games from lingering indefinitely while still keeping active matches alive.

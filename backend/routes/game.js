@@ -8,6 +8,7 @@ const { authMiddleware } = require('../middleware/auth');
 const { validateAnswers, validateBatchAnswersFast } = require('../utils/openai');
 
 const VALIDATION_LOCK_STALE_MS = parseInt(process.env.VALIDATION_LOCK_STALE_MS || '30000');
+const TTL_15_MIN_MS = 15 * 60 * 1000;
 
 async function runValidationAndBroadcast(app, gameId) {
   try {
@@ -99,6 +100,15 @@ async function runValidationAndBroadcast(app, gameId) {
     game.validationStartedAt = null;
     game.validationDeadline = null;
     await game.save();
+
+    try {
+      if (game.room) {
+        await Room.updateOne(
+          { _id: game.room },
+          { $set: { expiresAt: new Date(Date.now() + TTL_15_MIN_MS) } }
+        );
+      }
+    } catch (e) {}
 
     const standings = game.getStandings();
     const roundResults = game.players.map(p => ({
