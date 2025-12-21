@@ -7,103 +7,130 @@ const User = require('../models/User');
 const { authMiddleware } = require('../middleware/auth');
 const { validateAnswers, validateBatchAnswersFast } = require('../utils/openai');
 
+const VALIDATION_LOCK_STALE_MS = parseInt(process.env.VALIDATION_LOCK_STALE_MS || '30000');
+
 async function runValidationAndBroadcast(app, gameId) {
-  const game = await Game.findById(gameId).populate('players.user', 'username displayName');
-  if (!game || game.status !== 'validating') return {};
-  const unique = [];
-  const seen = new Set();
-  for (const player of game.players) {
-    const answer = player.answers.find(a => a.round === game.currentRound);
-    if (answer) {
-      for (const catAnswer of answer.categoryAnswers) {
-        const a = String(catAnswer.answer || '').trim();
-        const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          unique.push({ key, category: catAnswer.category, answer: a });
+  try {
+    const game = await Game.findById(gameId).populate('players.user', 'username displayName');
+    if (!game || game.status !== 'validating') return {};
+
+    const unique = [];
+    const seen = new Set();
+    for (const player of game.players) {
+      const answer = player.answers.find(a => a.round === game.currentRound);
+      if (answer) {
+        for (const catAnswer of answer.categoryAnswers) {
+          const a = String(catAnswer.answer || '').trim();
+          const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            unique.push({ key, category: catAnswer.category, answer: a });
+          }
         }
       }
     }
-  }
-  const t0 = Date.now();
-  console.log(`[VALIDATION] Start: game=${gameId}, round=${game.currentRound}, unique=${unique.length}`);
-  const playersCount = (game.players || []).length;
-  const submittedPlayers = game.players.filter(p => p.answers.find(a => a.round === game.currentRound));
-  const missingPlayers = playersCount - submittedPlayers.length;
-  let totalCatAnswers = 0;
-  const perUserLines = [];
-  for (const player of game.players) {
-    const ans = player.answers.find(a => a.round === game.currentRound);
-    if (ans) {
-      const list = (ans.categoryAnswers || []).map(ca => {
-        totalCatAnswers += 1;
-        return `${ca.category}: "${String(ca.answer || '').trim()}"`;
-      }).join(', ');
-      const uname = player.user?.username || (player.user?._id || player.user || '').toString();
-      perUserLines.push(`- ${uname} (${(ans.categoryAnswers || []).length}): ${list}`);
-    }
-  }
-  console.log(`[VALIDATION] Input: game=${gameId}, round=${game.currentRound}, players=${playersCount}, submitted=${submittedPlayers.length}, missing=${missingPlayers}, totalAnswers=${totalCatAnswers}, uniqueItems=${unique.length}, letter=${game.currentLetter}`);
-  perUserLines.forEach(l => console.log(`[VALIDATION] Answers ${l}`));
 
-  const resultByKey = await validateBatchAnswersFast(unique.map(u => ({ category: u.category, answer: u.answer })), game.currentLetter, { language: game.language || 'en' });
-  const t1 = Date.now();
-  console.log(`[VALIDATION] AI done in ${t1 - t0}ms for unique=${unique.length}`);
-  for (const player of game.players) {
-    const answer = player.answers.find(a => a.round === game.currentRound);
-    if (answer) {
-      for (const catAnswer of answer.categoryAnswers) {
-        const a = String(catAnswer.answer || '').trim();
-        const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
-        catAnswer.isValid = !!resultByKey[key];
-      }
-    }
-  }
-  // Per-answer correctness logs
-  try {
-    let totalValid = 0, totalInvalid = 0;
-    const summaries = [];
+    const t0 = Date.now();
+    console.log(`[VALIDATION] Start: game=${gameId}, round=${game.currentRound}, unique=${unique.length}`);
+    const playersCount = (game.players || []).length;
+    const submittedPlayers = game.players.filter(p => p.answers.find(a => a.round === game.currentRound));
+    const missingPlayers = playersCount - submittedPlayers.length;
+    let totalCatAnswers = 0;
+    const perUserLines = [];
     for (const player of game.players) {
       const ans = player.answers.find(a => a.round === game.currentRound);
-      if (!ans) continue;
-      const uname = player.user?.username || (player.user?._id || player.user || '').toString();
-      let c = 0, i = 0;
-      for (const ca of (ans.categoryAnswers || [])) {
-        const txt = String(ca.answer || '').trim();
-        const ok = !!ca.isValid;
-        if (ok) { c++; totalValid++; } else { i++; totalInvalid++; }
-        console.log(`[VALIDATION] Result - ${uname} | ${ca.category}: "${txt}" => ${ok ? 'VALID' : 'INVALID'}`);
+      if (ans) {
+        const list = (ans.categoryAnswers || []).map(ca => {
+          totalCatAnswers += 1;
+          return `${ca.category}: "${String(ca.answer || '').trim()}"`;
+        }).join(', ');
+        const uname = player.user?.username || (player.user?._id || player.user || '').toString();
+        perUserLines.push(`- ${uname} (${(ans.categoryAnswers || []).length}): ${list}`);
       }
-      summaries.push(`[VALIDATION] Summary - ${uname}: correct=${c}, incorrect=${i}`);
     }
-    summaries.forEach(l => console.log(l));
-    console.log(`[VALIDATION] Output totals: correct=${totalValid}, incorrect=${totalInvalid}`);
+    console.log(`[VALIDATION] Input: game=${gameId}, round=${game.currentRound}, players=${playersCount}, submitted=${submittedPlayers.length}, missing=${missingPlayers}, totalAnswers=${totalCatAnswers}, uniqueItems=${unique.length}, letter=${game.currentLetter}`);
+    perUserLines.forEach(l => console.log(`[VALIDATION] Answers ${l}`));
+
+    const resultByKey = await validateBatchAnswersFast(
+      unique.map(u => ({ category: u.category, answer: u.answer })),
+      game.currentLetter,
+      { language: game.language || 'en' }
+    );
+    const t1 = Date.now();
+    console.log(`[VALIDATION] AI done in ${t1 - t0}ms for unique=${unique.length}`);
+
+    for (const player of game.players) {
+      const answer = player.answers.find(a => a.round === game.currentRound);
+      if (answer) {
+        for (const catAnswer of answer.categoryAnswers) {
+          const a = String(catAnswer.answer || '').trim();
+          const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
+          catAnswer.isValid = !!resultByKey[key];
+        }
+      }
+    }
+
+    // Per-answer correctness logs
+    try {
+      let totalValid = 0, totalInvalid = 0;
+      const summaries = [];
+      for (const player of game.players) {
+        const ans = player.answers.find(a => a.round === game.currentRound);
+        if (!ans) continue;
+        const uname = player.user?.username || (player.user?._id || player.user || '').toString();
+        let c = 0, i = 0;
+        for (const ca of (ans.categoryAnswers || [])) {
+          const txt = String(ca.answer || '').trim();
+          const ok = !!ca.isValid;
+          if (ok) { c++; totalValid++; } else { i++; totalInvalid++; }
+          console.log(`[VALIDATION] Result - ${uname} | ${ca.category}: "${txt}" => ${ok ? 'VALID' : 'INVALID'}`);
+        }
+        summaries.push(`[VALIDATION] Summary - ${uname}: correct=${c}, incorrect=${i}`);
+      }
+      summaries.forEach(l => console.log(l));
+      console.log(`[VALIDATION] Output totals: correct=${totalValid}, incorrect=${totalInvalid}`);
+    } catch (e) {
+      console.error('Validation result logging error:', e);
+    }
+
+    game.calculateRoundScores();
+    game.status = 'round_ended';
+    game.validationInProgress = false;
+    game.validationStartedAt = null;
+    game.validationDeadline = null;
+    await game.save();
+
+    const standings = game.getStandings();
+    const roundResults = game.players.map(p => ({
+      user: p.user,
+      answers: p.answers.find(a => a.round === game.currentRound)
+    }));
+
+    try {
+      const io = app.get('io');
+      if (io) {
+        io.to(`game-${gameId}`).emit('round-results', {
+          standings,
+          results: roundResults,
+          currentRound: game.currentRound,
+          timestamp: new Date()
+        });
+      }
+    } catch (e) {}
+
+    console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswerSets=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
+    return { standings, roundResults };
   } catch (e) {
-    console.error('Validation result logging error:', e);
+    console.error('[VALIDATION] runValidationAndBroadcast error:', e);
+    throw e;
+  } finally {
+    try {
+      await Game.updateOne(
+        { _id: gameId, status: 'validating', validationInProgress: true },
+        { $set: { validationInProgress: false, validationStartedAt: null } }
+      );
+    } catch (e) {}
   }
-  game.calculateRoundScores();
-  game.status = 'round_ended';
-  game.validationInProgress = false;
-  game.validationDeadline = null;
-  await game.save();
-  const standings = game.getStandings();
-  const roundResults = game.players.map(p => ({
-    user: p.user,
-    answers: p.answers.find(a => a.round === game.currentRound)
-  }));
-  try {
-    const io = app.get('io');
-    if (io) {
-      io.to(`game-${gameId}`).emit('round-results', {
-        standings,
-        results: roundResults,
-        currentRound: game.currentRound,
-        timestamp: new Date()
-      });
-    }
-  } catch (e) {}
-  console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswerSets=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
-  return { standings, roundResults };
 }
 
 // Start game
@@ -368,9 +395,19 @@ router.post('/:gameId/submit', authMiddleware, [
       const deadlineMs = g2 && g2.validationDeadline ? new Date(g2.validationDeadline).getTime() : 0;
       const nowMs2 = Date.now();
       if (g2 && g2.status === 'validating' && !g2.validationInProgress && allSubmittedNow && (!deadlineMs || nowMs2 <= deadlineMs)) {
+        const now = new Date();
+        const staleBefore = new Date(Date.now() - VALIDATION_LOCK_STALE_MS);
         const locked = await Game.findOneAndUpdate(
-          { _id: gameId, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
-          { $set: { validationInProgress: true } },
+          {
+            _id: gameId,
+            status: 'validating',
+            $or: [
+              { validationInProgress: { $exists: false } },
+              { validationInProgress: false },
+              { validationInProgress: true, validationStartedAt: { $lt: staleBefore } }
+            ]
+          },
+          { $set: { validationInProgress: true, validationStartedAt: now } },
           { new: true }
         );
         if (locked) {
@@ -412,8 +449,16 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
     }
 
     const locked = await Game.findOneAndUpdate(
-      { _id: gameId, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
-      { $set: { validationInProgress: true } },
+      {
+        _id: gameId,
+        status: 'validating',
+        $or: [
+          { validationInProgress: { $exists: false } },
+          { validationInProgress: false },
+          { validationInProgress: true, validationStartedAt: { $lt: new Date(Date.now() - VALIDATION_LOCK_STALE_MS) } }
+        ]
+      },
+      { $set: { validationInProgress: true, validationStartedAt: new Date() } },
       { new: true }
     );
     if (!locked) {

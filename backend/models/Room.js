@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const ROOM_TTL_MS = 15 * 60 * 1000;
+
 const roomSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -76,11 +78,40 @@ const roomSchema = new mongoose.Schema({
   },
   expiresAt: {
     type: Date,
-    default: null,
+    default: () => new Date(Date.now() + ROOM_TTL_MS),
     expires: 0
   }
 }, {
   timestamps: true
+});
+
+roomSchema.pre('save', function(next) {
+  this.expiresAt = new Date(Date.now() + ROOM_TTL_MS);
+  next();
+});
+
+roomSchema.pre('findOneAndUpdate', function(next) {
+  const update = this.getUpdate() || {};
+  update.$set = update.$set || {};
+  update.$set.expiresAt = new Date(Date.now() + ROOM_TTL_MS);
+  this.setUpdate(update);
+  next();
+});
+
+roomSchema.pre('updateOne', function(next) {
+  const update = this.getUpdate() || {};
+  update.$set = update.$set || {};
+  update.$set.expiresAt = new Date(Date.now() + ROOM_TTL_MS);
+  this.setUpdate(update);
+  next();
+});
+
+roomSchema.pre('updateMany', function(next) {
+  const update = this.getUpdate() || {};
+  update.$set = update.$set || {};
+  update.$set.expiresAt = new Date(Date.now() + ROOM_TTL_MS);
+  this.setUpdate(update);
+  next();
 });
 
 // Generate unique invite code

@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const GAME_TTL_MS = 15 * 60 * 1000;
+
 const gameSchema = new mongoose.Schema({
   room: {
     type: mongoose.Schema.Types.ObjectId,
@@ -90,6 +92,10 @@ const gameSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  validationStartedAt: {
+    type: Date,
+    default: null
+  },
   roundStartTime: {
     type: Date,
     default: null
@@ -107,9 +113,43 @@ const gameSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  expiresAt: {
+    type: Date,
+    default: () => new Date(Date.now() + GAME_TTL_MS),
+    expires: 0
   }
 }, {
   timestamps: true
+});
+
+gameSchema.pre('save', function(next) {
+  this.expiresAt = new Date(Date.now() + GAME_TTL_MS);
+  next();
+});
+
+gameSchema.pre('findOneAndUpdate', function(next) {
+  const update = this.getUpdate() || {};
+  update.$set = update.$set || {};
+  update.$set.expiresAt = new Date(Date.now() + GAME_TTL_MS);
+  this.setUpdate(update);
+  next();
+});
+
+gameSchema.pre('updateOne', function(next) {
+  const update = this.getUpdate() || {};
+  update.$set = update.$set || {};
+  update.$set.expiresAt = new Date(Date.now() + GAME_TTL_MS);
+  this.setUpdate(update);
+  next();
+});
+
+gameSchema.pre('updateMany', function(next) {
+  const update = this.getUpdate() || {};
+  update.$set = update.$set || {};
+  update.$set.expiresAt = new Date(Date.now() + GAME_TTL_MS);
+  this.setUpdate(update);
+  next();
 });
 
 // Add category to game

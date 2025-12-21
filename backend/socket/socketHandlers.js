@@ -18,6 +18,9 @@ const appBackgroundTimers = new Map();
 const roomBackgroundTimers = new Map();
 const activeUserSockets = new Map();
 
+const TTL_15_MIN_MS = 15 * 60 * 1000;
+const VALIDATION_LOCK_STALE_MS = parseInt(process.env.VALIDATION_LOCK_STALE_MS || '30000');
+
 module.exports = (io, socket) => {
   // Helper to clean up empty rooms - CRITICAL for preventing orphaned rooms
   const cleanupEmptyRoom = async (roomId) => {
@@ -350,16 +353,26 @@ module.exports = (io, socket) => {
                 const timer = setTimeout(async () => {
                   validationTimers.delete(gameId);
                   try {
+                    const now = new Date();
+                    const staleBefore = new Date(Date.now() - VALIDATION_LOCK_STALE_MS);
                     const locked = await Game.findOneAndUpdate(
                       { 
                         _id: gameId, 
                         status: 'validating', 
                         $or: [
                           { validationInProgress: { $exists: false } }, 
-                          { validationInProgress: false }
+                          { validationInProgress: false },
+                          {
+                            validationInProgress: true,
+                            $or: [
+                              { validationStartedAt: { $exists: false } },
+                              { validationStartedAt: null },
+                              { validationStartedAt: { $lt: staleBefore } }
+                            ]
+                          }
                         ] 
                       },
-                      { $set: { validationInProgress: true } },
+                      { $set: { validationInProgress: true, validationStartedAt: now } },
                       { new: true }
                     );
                     if (locked) {
@@ -560,9 +573,26 @@ module.exports = (io, socket) => {
                     const timer = setTimeout(async () => {
                       validationTimers.delete(game._id.toString());
                       try {
+                        const now = new Date();
+                        const staleBefore = new Date(Date.now() - VALIDATION_LOCK_STALE_MS);
                         const locked = await Game.findOneAndUpdate(
-                          { _id: game._id, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
-                          { $set: { validationInProgress: true } },
+                          {
+                            _id: game._id,
+                            status: 'validating',
+                            $or: [
+                              { validationInProgress: { $exists: false } },
+                              { validationInProgress: false },
+                              {
+                                validationInProgress: true,
+                                $or: [
+                                  { validationStartedAt: { $exists: false } },
+                                  { validationStartedAt: null },
+                                  { validationStartedAt: { $lt: staleBefore } }
+                                ]
+                              }
+                            ]
+                          },
+                          { $set: { validationInProgress: true, validationStartedAt: now } },
                           { new: true }
                         );
                         if (locked) await runValidation(gameId);
@@ -594,7 +624,12 @@ module.exports = (io, socket) => {
   const runValidation = async (gameId) => {
     try {
       const game = await Game.findById(gameId).populate('players.user', 'username');
-      if (!game || game.status !== 'validating') return;
+      if (!game || game.status !== 'validating') {
+        try {
+          await Game.updateOne({ _id: gameId }, { $set: { validationInProgress: false, validationStartedAt: null } });
+        } catch (e) {}
+        return;
+      }
       const unique = [];
       const seen = new Set();
       for (const player of game.players) {
@@ -672,6 +707,7 @@ module.exports = (io, socket) => {
       game.calculateRoundScores();
       game.status = 'round_ended';
       game.validationInProgress = false;
+      game.validationStartedAt = null;
       game.validationDeadline = null;
       await game.save();
       const standings = game.getStandings();
@@ -688,7 +724,7 @@ module.exports = (io, socket) => {
       console.log(`[VALIDATION] Completed: game=${gameId}, round=${game.currentRound}, totalPlayers=${game.players.length}, totalAnswerSets=${roundResults.length}, totalTime=${Date.now() - t0}ms`);
     } catch (err) {
       console.error('Socket runValidation error:', err);
-      try { await Game.updateOne({ _id: gameId }, { $set: { validationInProgress: false } }); } catch (e) {}
+      try { await Game.updateOne({ _id: gameId }, { $set: { validationInProgress: false, validationStartedAt: null } }); } catch (e) {}
     }
   };
   // Authenticate socket connection
@@ -1035,7 +1071,7 @@ module.exports = (io, socket) => {
       if (!alreadyInRoom && room.status === 'waiting') {
         try {
           room.addPlayer(socket.userId);
-          room.expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+          room.expiresAt = new Date(Date.now() + TTL_15_MIN_MS);
           await room.save();
           room = await Room.findById(rid).populate('players.user', 'username displayName winPoints');
         } catch (e) {
@@ -1330,7 +1366,7 @@ module.exports = (io, socket) => {
       // Update room status
       room.status = 'in_progress';
       room.currentGame = game._id;
-      room.expiresAt = null;
+      room.expiresAt = new Date(Date.now() + TTL_15_MIN_MS);
       await room.save();
 
       // Notify clients
@@ -1752,9 +1788,26 @@ module.exports = (io, socket) => {
       const timer = setTimeout(async () => {
         validationTimers.delete(idStr);
         try {
+          const now = new Date();
+          const staleBefore = new Date(Date.now() - VALIDATION_LOCK_STALE_MS);
           const locked = await Game.findOneAndUpdate(
-            { _id: gameId, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
-            { $set: { validationInProgress: true } },
+            {
+              _id: gameId,
+              status: 'validating',
+              $or: [
+                { validationInProgress: { $exists: false } },
+                { validationInProgress: false },
+                {
+                  validationInProgress: true,
+                  $or: [
+                    { validationStartedAt: { $exists: false } },
+                    { validationStartedAt: null },
+                    { validationStartedAt: { $lt: staleBefore } }
+                  ]
+                }
+              ]
+            },
+            { $set: { validationInProgress: true, validationStartedAt: now } },
             { new: true }
           );
           if (locked) await runValidation(gameId);
@@ -1954,7 +2007,7 @@ module.exports = (io, socket) => {
           if (room) {
             room.status = 'waiting';
             room.currentGame = null;
-            room.expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+            room.expiresAt = new Date(Date.now() + TTL_15_MIN_MS);
             await room.save();
           }
           // Emit final standings and winner to all players in the current game
@@ -2344,7 +2397,7 @@ module.exports = (io, socket) => {
   
               room.status = 'in_progress';
               room.currentGame = newGame._id;
-              room.expiresAt = null;
+              room.expiresAt = new Date(Date.now() + TTL_15_MIN_MS);
               await room.save();
   
               // Notify both the room and the old game room to transition to gameplay
@@ -2461,9 +2514,26 @@ module.exports = (io, socket) => {
                               const timer = setTimeout(async () => {
                                 validationTimers.delete(g3._id.toString());
                                 try {
+                                  const now = new Date();
+                                  const staleBefore = new Date(Date.now() - VALIDATION_LOCK_STALE_MS);
                                   const locked = await Game.findOneAndUpdate(
-                                    { _id: g3._id, status: 'validating', $or: [ { validationInProgress: { $exists: false } }, { validationInProgress: false } ] },
-                                    { $set: { validationInProgress: true } },
+                                    {
+                                      _id: g3._id,
+                                      status: 'validating',
+                                      $or: [
+                                        { validationInProgress: { $exists: false } },
+                                        { validationInProgress: false },
+                                        {
+                                          validationInProgress: true,
+                                          $or: [
+                                            { validationStartedAt: { $exists: false } },
+                                            { validationStartedAt: null },
+                                            { validationStartedAt: { $lt: staleBefore } }
+                                          ]
+                                        }
+                                      ]
+                                    },
+                                    { $set: { validationInProgress: true, validationStartedAt: now } },
                                     { new: true }
                                   );
                                   if (locked) await runValidation(g3._id.toString());
@@ -2544,7 +2614,7 @@ module.exports = (io, socket) => {
         
         // Check if user is already in the room
         const alreadyInRoom = room.players.some(p => (p.user._id || p.user).toString() === socket.userId.toString());
-        const refreshedExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+        const refreshedExpiresAt = new Date(Date.now() + TTL_15_MIN_MS);
         let needsSave = false;
         if (!alreadyInRoom) {
           room.players.push({ user: socket.userId, isReady: false });
@@ -2597,7 +2667,7 @@ module.exports = (io, socket) => {
             maxPlayers: 8,
             rounds: 3,
             hasPassword: false,
-            expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+            expiresAt: new Date(Date.now() + TTL_15_MIN_MS),
             players: sockets.map(s => ({ user: s.quickPlayUserId, isReady: s.quickPlayUserId.toString() === owner.toString() }))
           });
           // Generate invite code so players can share the room

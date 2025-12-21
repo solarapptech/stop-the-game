@@ -219,6 +219,30 @@ Quick Play:
 
 ### Abandoned in-progress games (20s grace)
 
+## ⏳ Room/Game Expiration (TTL)
+
+To ensure no rooms or games stay in the database forever, both `Room` and `Game` documents use a MongoDB TTL field:
+
+- `Room.expiresAt`
+- `Game.expiresAt`
+
+Behavior:
+
+- Documents are deleted automatically by MongoDB when `expiresAt` is in the past.
+- The expiration is **15 minutes**.
+- The expiration is refreshed whenever the room/game is updated during normal play.
+- When a **rematch** starts, the expiration is refreshed back to **15 minutes** again.
+
+This prevents orphaned rooms/games from lingering indefinitely while still keeping active matches alive.
+
+## ✅ Validation Hang Protection
+
+If answer validation gets stuck (e.g., a server crash or a stale `validationInProgress` flag), a new validation attempt can take over after a short timeout.
+
+Environment variable:
+
+- `VALIDATION_LOCK_STALE_MS` (default: `30000`)
+
 - If **all players** in an in-progress game are marked as disconnected, the server schedules an automatic cleanup.
 - After **20 seconds**, if nobody has reconnected, the server deletes:
   - the `Game` document
