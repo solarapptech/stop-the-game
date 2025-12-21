@@ -230,6 +230,9 @@ const GameplayScreen = ({ navigation, route }) => {
   const cardRefs = useRef({});
   const totalRoundsRef = useRef(totalRounds);
   const finalAdvanceRequestedRef = useRef(false);
+  const confettiShownRef = useRef(false);
+  const confettiHideTimerRef = useRef(null);
+  const disconnectedPlayersRef = useRef(new Set());
   const selectTimerRef = useRef(null);
   const autoRetryTimerRef = useRef(null);
   const announcedReadyRef = useRef(false);
@@ -536,13 +539,30 @@ const GameplayScreen = ({ navigation, route }) => {
     };
     const onGameFinished = async (data) => {
       console.log('[GameplayScreen] onGameFinished called with data:', data);
-      setShowConfetti(true);
+      if (!confettiShownRef.current) {
+        confettiShownRef.current = true;
+        setShowConfetti(true);
+        if (confettiHideTimerRef.current) clearTimeout(confettiHideTimerRef.current);
+        confettiHideTimerRef.current = setTimeout(() => {
+          setShowConfetti(false);
+        }, 4500);
+      }
       setIsFinished(true);
       setFinalConfirmed(true);
-      // derive totals if provided
+      // Sync standings and connected totals (disconnected players show 0 and are excluded from rematch total)
       if (Array.isArray(data?.standings)) {
-        setPlayerScores(data.standings);
-        setRematchTotal(data.standings.length);
+        const mapped = data.standings.map((s) => {
+          const pid = (s.user && (s.user._id || s.user)) || '';
+          const pidStr = String(pid || '');
+          const isDisconnected = disconnectedPlayersRef.current && disconnectedPlayersRef.current.has(pidStr);
+          return {
+            ...s,
+            disconnected: isDisconnected,
+            score: isDisconnected ? 0 : (Number(s.score) || 0),
+          };
+        });
+        setPlayerScores(mapped);
+        setRematchTotal(mapped.filter(p => !p.disconnected).length);
       }
       // Optimistically update local stats to avoid immediate API calls
       try {
@@ -587,6 +607,11 @@ const GameplayScreen = ({ navigation, route }) => {
       setIsFinished(false);
       setFinalConfirmed(false);
       setShowConfetti(false);
+      confettiShownRef.current = false;
+      if (confettiHideTimerRef.current) {
+        clearTimeout(confettiHideTimerRef.current);
+        confettiHideTimerRef.current = null;
+      }
       setRematchReady(0);
       setRematchTotal(0);
       setRematchAborted(false);
@@ -776,6 +801,10 @@ const GameplayScreen = ({ navigation, route }) => {
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
+
+  useEffect(() => {
+    disconnectedPlayersRef.current = disconnectedPlayers;
+  }, [disconnectedPlayers]);
 
   useEffect(() => {
     totalRoundsRef.current = totalRounds;
@@ -1213,20 +1242,6 @@ const GameplayScreen = ({ navigation, route }) => {
         setPlayerScores(data.standings);
         setPhase('round-end');
       });
-
-      socket.on('game-finished', (data) => {
-        setShowConfetti(true);
-        setTimeout(() => {
-          Alert.alert(
-            t('gameplay.gameOver'),
-            `${t('gameplay.winner')}: ${data.winner.username}\n${t('gameplay.score')}: ${data.winner.score}`,
-            [
-              { text: t('leaderboard.title'), onPress: () => navigation.replace('Leaderboard') },
-              { text: t('gameplay.backToMenu'), onPress: () => navigation.replace('Menu') }
-            ]
-          );
-        }, 3000);
-      });
     }
   };
 
@@ -1663,7 +1678,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const handleNextRound = async () => {
     const result = await nextRound(gameId);
     if (result.finished) {
-      setShowConfetti(true);
+      // no-op (endgame confetti is handled by socket-driven game-finished)
     } else {
       setAnswers({});
       setSelectedCategories([]);
@@ -2197,6 +2212,184 @@ const GameplayScreen = ({ navigation, route }) => {
     );
   };
 
+  const renderEndGame = () => {
+    // Reuse the same round-results viewer UI, and merge final standings into the same container.
+    const scores = Array.isArray(playerScores) ? playerScores : [];
+    const max = scores.reduce((m, s) => Math.max(m, s.score || 0), 0);
+    const winners = scores.filter(s => (s.score || 0) === max);
+    const isDraw = winners.length > 1;
+    const winnerNames = winners.map((s) => {
+      const pid = (s.user && s.user._id) ? s.user._id : s.user;
+      const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+      return pidStr === userId ? t('leaderboard.you') : `${t('gameplay.player')} ${pidStr.substring(0,5)}`;
+    });
+
+    // Find the player result we're viewing
+    const viewingResult = Array.isArray(roundResults)
+      ? roundResults.find(r => {
+          const pid = (r.user && r.user._id) ? r.user._id : r.user;
+          const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+          return pidStr === String(viewingPlayerId || '');
+        })
+      : null;
+
+    const viewingPlayer = viewingResult ? viewingResult.user : null;
+    const viewingAnswers = viewingResult?.answers;
+
+    const getPlayerName = (playerUser) => {
+      if (!playerUser) return t('gameplay.player');
+      const pid = (playerUser._id) ? playerUser._id : playerUser;
+      const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+      if (pidStr === String(userId || '')) return t('leaderboard.you');
+      return playerUser.displayName || playerUser.username || `${t('gameplay.player')} ${pidStr.substring(0, 5)}`;
+    };
+
+    const roundPoints = viewingAnswers?.categoryAnswers?.reduce((sum, ca) => sum + (ca.points || 0), 0) || 0;
+    const stopBonus = viewingAnswers?.stoppedFirst ? 5 : 0;
+    const totalRoundPoints = roundPoints + stopBonus;
+
+    return (
+      <View style={styles.endGameRoot}>
+        <ScrollView style={styles.endGameScroll} contentContainerStyle={styles.endGameScrollContent}>
+          <Card style={styles.card}>
+            <Card.Content>
+              <Text style={styles.phaseTitle}>{t('gameplay.finalScores')}</Text>
+              <Text style={styles.instruction}>
+                {isDraw ? `${winnerNames.join(', ')}` : `${t('gameplay.winner')}: ${winnerNames[0]}`}
+              </Text>
+
+              <View style={styles.standingsContainer}>
+                <Text style={styles.standingsTitle}>{t('gameplay.overallStandings')}</Text>
+                <View style={styles.scoresContainer}>
+                  {scores.map((s, idx) => {
+                    const pid = (s.user && s.user._id) ? s.user._id : s.user;
+                    const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+                    const name = getPlayerName(s.user);
+                    return (
+                      <View key={pidStr || String(idx)} style={styles.scoreItem}>
+                        <Text style={styles.playerName}>{name}</Text>
+                        <Text style={styles.playerScore}>{s.score} {t('leaderboard.pts')}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.sectionDivider} />
+
+              <Text style={styles.phaseTitle}>{t('gameplay.round')} {currentRound} {t('gameplay.roundResults')}</Text>
+
+              <View style={styles.playerNavigationContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.playerTabsScroll}>
+                  {Array.isArray(roundResults) && roundResults.map((result, idx) => {
+                    const pid = (result.user && result.user._id) ? result.user._id : result.user;
+                    const pidStr = typeof pid === 'string' ? pid : String(pid || '');
+                    const isSelected = pidStr === String(viewingPlayerId || '');
+                    const playerName = getPlayerName(result.user);
+                    return (
+                      <Button
+                        key={pidStr || String(idx)}
+                        mode={isSelected ? 'contained' : 'outlined'}
+                        onPress={() => setViewingPlayerId(pidStr)}
+                        style={[styles.playerTab, isSelected && styles.playerTabSelected]}
+                        labelStyle={isSelected ? styles.playerTabLabelSelected : styles.playerTabLabel}
+                        compact
+                      >
+                        {playerName}
+                      </Button>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {viewingAnswers && viewingAnswers.categoryAnswers && viewingAnswers.categoryAnswers.length > 0 ? (
+                <View style={styles.answerDetailsContainer}>
+                  <Text style={styles.answerDetailsTitle}>{getPlayerName(viewingPlayer)}</Text>
+                  <DataTable style={styles.dataTable}>
+                    <DataTable.Header>
+                      <DataTable.Title style={styles.tableHeaderCategory}>{t('gameplay.category')}</DataTable.Title>
+                      <DataTable.Title style={styles.tableHeaderAnswer}>{t('gameplay.answer')}</DataTable.Title>
+                      <DataTable.Title style={styles.tableHeaderPoints} numeric>{t('leaderboard.pts')}</DataTable.Title>
+                      <DataTable.Title style={styles.tableHeaderStatus}></DataTable.Title>
+                    </DataTable.Header>
+                    {viewingAnswers.categoryAnswers.map((ca, idx) => (
+                      <DataTable.Row key={idx} style={styles.tableRow}>
+                        <DataTable.Cell style={styles.tableCellCategory}>
+                          <Text style={styles.categoryText}>{ca.category}</Text>
+                        </DataTable.Cell>
+                        <DataTable.Cell style={styles.tableCellAnswer}>
+                          <Text style={styles.answerText} numberOfLines={1}>{ca.answer || '-'}</Text>
+                        </DataTable.Cell>
+                        <DataTable.Cell style={styles.tableCellPoints} numeric>
+                          <Text style={[styles.pointsText, ca.isValid && styles.pointsTextValid]}>
+                            {ca.points || 0}
+                          </Text>
+                        </DataTable.Cell>
+                        <DataTable.Cell style={styles.tableCellStatus}>
+                          <IconButton
+                            icon={ca.isValid ? 'check-circle' : 'close-circle'}
+                            iconColor={ca.isValid ? '#4CAF50' : '#F44336'}
+                            size={20}
+                            style={styles.validationIcon}
+                          />
+                        </DataTable.Cell>
+                      </DataTable.Row>
+                    ))}
+                  </DataTable>
+
+                  <View style={styles.roundSummary}>
+                    {viewingAnswers.stoppedFirst && (
+                      <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>{t('gameplay.stopBonus')}:</Text>
+                        <Text style={styles.summaryValue}>+5 {t('leaderboard.pts')}</Text>
+                      </View>
+                    )}
+                    <View style={[styles.summaryRow, styles.summaryTotal]}>
+                      <Text style={styles.summaryTotalLabel}>{t('gameplay.roundTotal')}:</Text>
+                      <Text style={styles.summaryTotalValue}>{totalRoundPoints} {t('leaderboard.pts')}</Text>
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                <Text style={styles.noAnswersText}>{getPlayerName(viewingPlayer)}</Text>
+              )}
+            </Card.Content>
+          </Card>
+        </ScrollView>
+
+        <View style={styles.endGameFooter}>
+          <Text style={styles.endGameFooterCounter}>{`(${rematchReady}/${rematchTotal}) ${t('gameplay.playAgain')}`}</Text>
+          <View style={styles.endGameFooterRow}>
+            <Button
+              mode="contained"
+              onPress={() => {
+                if (rematchTotal < 2) return;
+                if (!hasVotedRematch) {
+                  setHasVotedRematch(true);
+                  setRematchAborted(false);
+                  playAgainReady(gameId);
+                }
+              }}
+              disabled={hasVotedRematch || rematchTotal < 2}
+              style={[styles.endGameFooterButton, styles.endGameFooterButtonPrimary]}
+              labelStyle={styles.endGameFooterButtonLabel}
+            >
+              {(typeof rematchCountdown === 'number') ? `${t('common.start')} ${rematchCountdown}s...` : hasVotedRematch ? t('gameplay.waitingForPlayers') : t('gameplay.playAgain')}
+            </Button>
+            <Button
+              mode="contained"
+              onPress={handleLeaveGame}
+              style={[styles.endGameFooterButton, styles.endGameFooterButtonSecondary]}
+              labelStyle={styles.endGameFooterButtonLabel}
+            >
+              {t('gameplay.backToMenu')}
+            </Button>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   const renderFinalResults = () => {
     const scores = Array.isArray(playerScores) ? playerScores : [];
     const max = scores.reduce((m, s) => Math.max(m, s.score || 0), 0);
@@ -2420,12 +2613,16 @@ const GameplayScreen = ({ navigation, route }) => {
         </View>
       )}
       {showConfetti && (
-        <ConfettiCannon
-          ref={confettiRef}
-          count={200}
-          origin={{ x: -10, y: 0 }}
-          fadeOut
-        />
+        <Portal>
+          <View pointerEvents="none" style={styles.confettiOverlay}>
+            <ConfettiCannon
+              ref={confettiRef}
+              count={120}
+              origin={{ x: -10, y: 0 }}
+              fadeOut
+            />
+          </View>
+        </Portal>
       )}
       
       {phase === 'category-selection' && renderCategorySelection()}
@@ -2456,8 +2653,8 @@ const GameplayScreen = ({ navigation, route }) => {
           </Button>
         </View>
       )}
-      {phase === 'round-end' && renderRoundEnd()}
-      {isFinished && phase === 'round-end' && renderFinalResults()}
+      {phase === 'round-end' && !isFinished && renderRoundEnd()}
+      {phase === 'round-end' && isFinished && renderEndGame()}
     </View>
   );
 };
@@ -2494,6 +2691,66 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+  },
+  confettiOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  endGameRoot: {
+    flex: 1,
+  },
+  endGameScroll: {
+    flex: 1,
+  },
+  endGameScrollContent: {
+    paddingBottom: 120,
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: '#E0E0E0',
+    marginVertical: 16,
+  },
+  endGameFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
+    elevation: 12,
+  },
+  endGameFooterCounter: {
+    textAlign: 'center',
+    color: '#757575',
+    marginBottom: 10,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  endGameFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  endGameFooterButton: {
+    flex: 1,
+  },
+  endGameFooterButtonPrimary: {
+    marginRight: 10,
+  },
+  endGameFooterButtonSecondary: {
+    marginLeft: 10,
+  },
+  endGameFooterButtonLabel: {
+    color: '#FFFFFF',
   },
   card: {
     margin: 20,

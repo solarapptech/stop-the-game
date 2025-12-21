@@ -139,8 +139,11 @@ stop-the-game/
 Game end behavior:
 
 - Final results are shown automatically after the last round results (no extra confirmation tap).
+- "Back to Menu" from the end-game screen shows the same leave confirmation dialog as the in-game header back button.
+- The end-game view merges final standings and the last round breakdown into a single screen with a fixed footer for rematch actions.
 - Rematch readiness is based on **connected players only** and requires **at least 2 connected players**.
 - If a player disconnects/leaves while a rematch countdown is running, the countdown is canceled and players must re-confirm.
+- Confetti is triggered once per game finish and rendered as a top overlay to reduce lag.
 
 ## 🔧 API Endpoints
 
