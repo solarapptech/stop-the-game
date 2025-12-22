@@ -453,7 +453,9 @@ const GameplayScreen = ({ navigation, route }) => {
             setIsPlayerTurn(sid === String(userIdRef.current || ''));
             if (!data.selectorName && Array.isArray(g.players)) {
               const p = g.players.find(pp => String((pp.user && (pp.user._id || pp.user)) || '') === sid);
-              if (p && p.user && p.user.username) setLetterSelectorName(p.user.username);
+              if (p && p.user && (p.user.displayName || p.user.username)) {
+                setLetterSelectorName(p.user.displayName || p.user.username);
+              }
             }
           }
           if (typeof g?.currentRound === 'number') setCurrentRound(g.currentRound);

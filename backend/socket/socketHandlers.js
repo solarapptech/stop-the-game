@@ -225,7 +225,7 @@ module.exports = (io, socket) => {
       // Set up letter selection deadline
       const selectorId = (game.letterSelector || '').toString();
       const selectorPlayer = game.players.find(p => (p.user._id || p.user).toString() === selectorId);
-      const selectorName = selectorPlayer?.user?.username || 'Player';
+      const selectorName = selectorPlayer?.user?.displayName || selectorPlayer?.user?.username || 'Player';
       const letterDeadline = new Date(Date.now() + 12000);
       game.letterDeadline = letterDeadline;
       game.status = 'selecting_letter';
@@ -508,7 +508,7 @@ module.exports = (io, socket) => {
       // Immediately start letter selection phase with 12s deadline
       const selectorId = (game.letterSelector || '').toString();
       const selectorPlayer = game.players.find(p => (p.user._id || p.user).toString() === selectorId);
-      const selectorName = selectorPlayer?.user?.username || 'Player';
+      const selectorName = selectorPlayer?.user?.displayName || selectorPlayer?.user?.username || 'Player';
       const letterDeadline = new Date(Date.now() + 12000);
       game.letterDeadline = letterDeadline;
       await game.save();
@@ -2111,23 +2111,21 @@ module.exports = (io, socket) => {
   });
 
   // Chat message
-  socket.on('chat-message', async (data) => {
+  socket.on('send-message', async (data) => {
     try {
       const { roomId, message } = data;
-      
-      if (!socket.userId) {
-        return socket.emit('error', { message: 'Not authenticated' });
-      }
+      if (!socket.userId || !roomId || !message) return;
 
-      const User = require('../models/User');
-      const user = await User.findById(socket.userId).select('username');
+      const user = await User.findById(socket.userId).select('username displayName');
+      const displayName = user?.displayName || user?.username || 'Player';
 
       // Emit to all users including sender, with username
       io.to(roomId).emit('new-message', {
         userId: socket.userId,
         username: user?.username || 'Player',
+        displayName,
         message,
-        timestamp: new Date()
+        roomId
       });
     } catch (error) {
       console.error('Chat message socket error:', error);
@@ -2495,7 +2493,7 @@ module.exports = (io, socket) => {
               try {
                 const selectorId = (newGame.letterSelector || '').toString();
                 const selectorPlayer = room.players.find(p => (p.user._id || p.user).toString() === selectorId);
-                const selectorName = selectorPlayer?.user?.username || 'Player';
+                const selectorName = selectorPlayer?.user?.displayName || selectorPlayer?.user?.username || 'Player';
                 const letterDeadline = newGame.letterDeadline;
                 io.to(roomId).emit('letter-selection-started', {
                   gameId: newGame._id,

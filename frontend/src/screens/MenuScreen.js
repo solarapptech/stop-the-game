@@ -748,6 +748,7 @@ const MenuScreen = ({ navigation }) => {
               maxLength={30}
               disabled={savingName}
               autoFocus
+              style={styles.dialogInput}
             />
             <Text style={styles.helperText}>
               {t('menu.displayNameHelper')}
@@ -1144,6 +1145,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#757575',
     marginTop: 8,
+  },
+  dialogInput: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    marginBottom: 8,
   },
 });
 
