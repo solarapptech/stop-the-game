@@ -197,6 +197,12 @@ Quick Play:
 - If you leave/disconnect during an in-progress game, the backend marks you as **disconnected** (your score is preserved).
 - The Menu can show a **Reconnect** button when the backend detects an active game where you are disconnected.
 - If the game/room no longer exists (for example, it was cleaned up), the Reconnect UI will show **"Game ended"** and the Reconnect button will disappear.
+- If multiple active games match the reconnect criteria (rare edge case / leftover data), the backend returns the **most recently updated** one.
+
+### Socket cross-game safety
+
+- The backend includes `gameId` in all **game-scoped** socket event payloads.
+- The Gameplay screen **ignores any socket event whose `data.gameId` does not match the current game**. This prevents stale events from old games/rooms (leftover DB data or stale socket rooms) from affecting a new match.
 
 ### Rematch (Play Again)
 

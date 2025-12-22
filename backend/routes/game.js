@@ -600,6 +600,7 @@ router.post('/:gameId/next-round', authMiddleware, async (req, res) => {
         const io = req.app.get('io');
         if (io) {
           io.to(`game-${gameId}`).emit('game-finished', {
+            gameId,
             winner: (game.winner || null),
             standings
           });
@@ -636,7 +637,7 @@ router.get('/reconnect/check', authMiddleware, async (req, res) => {
         }
       },
       status: { $nin: ['finished'] }
-    }).populate('room', 'name inviteCode');
+    }).sort({ updatedAt: -1 }).populate('room', 'name inviteCode');
 
     if (!activeGame) {
       return res.json({ hasActiveGame: false });

@@ -283,6 +283,7 @@ module.exports = (io, socket) => {
       
       const revealDeadline = new Date(Date.now() + 3000);
       io.to(`game-${gameId}`).emit('letter-accepted', {
+        gameId,
         letter: letter,
         revealDeadline
       });
@@ -307,6 +308,7 @@ module.exports = (io, socket) => {
           console.log(`[ROUND START] Game ${gameId}, round ${gg.currentRound}, letter: ${letter}`);
           
           io.to(`game-${gameId}`).emit('letter-selected', {
+            gameId,
             letter: gg.currentLetter
           });
           
@@ -326,6 +328,7 @@ module.exports = (io, socket) => {
                 await g3.save();
                 
                 io.to(`game-${gameId}`).emit('round-ended', { 
+                  gameId,
                   reason: 'timeout', 
                   validationDeadline: g3.validationDeadline 
                 });
@@ -333,6 +336,7 @@ module.exports = (io, socket) => {
                   const roomId = g3.room ? g3.room.toString() : null;
                   if (roomId) {
                     io.to(roomId).emit('round-ended', { 
+                      gameId,
                       reason: 'timeout', 
                       validationDeadline: g3.validationDeadline 
                     });
@@ -496,6 +500,7 @@ module.exports = (io, socket) => {
       await game.save();
 
       io.to(`game-${gameId}`).emit('categories-confirmed', {
+        gameId,
         categories: game.categories,
         currentPlayer: (game.letterSelector || '').toString()
       });
@@ -531,6 +536,7 @@ module.exports = (io, socket) => {
 
             const revealDeadline = new Date(Date.now() + 3000);
             io.to(`game-${gameId}`).emit('letter-accepted', {
+              gameId,
               letter: g.currentLetter,
               revealDeadline
             });
@@ -545,6 +551,7 @@ module.exports = (io, socket) => {
               gg.roundStartTime = new Date();
               await gg.save();
               io.to(`game-${gameId}`).emit('letter-selected', {
+                gameId,
                 letter: gg.currentLetter
               });
               const existingRound = roundTimers.get(game._id.toString());
@@ -558,11 +565,11 @@ module.exports = (io, socket) => {
                     const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
                     g3.validationDeadline = new Date(Date.now() + graceMs);
                     await g3.save();
-                    io.to(`game-${gameId}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                    io.to(`game-${gameId}`).emit('round-ended', { gameId, reason: 'timeout', validationDeadline: g3.validationDeadline });
                     try {
                       const roomId = g3.room ? g3.room.toString() : null;
                       if (roomId) {
-                        io.to(roomId).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                        io.to(roomId).emit('round-ended', { gameId, reason: 'timeout', validationDeadline: g3.validationDeadline });
                       }
                     } catch (e) {}
                     const vt = validationTimers.get(game._id.toString());
@@ -725,6 +732,7 @@ module.exports = (io, socket) => {
         answers: p.answers.find(a => a.round === game.currentRound)
       }));
       io.to(`game-${gameId}`).emit('round-results', {
+        gameId,
         standings,
         results: roundResults,
         currentRound: game.currentRound,
@@ -883,6 +891,7 @@ module.exports = (io, socket) => {
       await game.save();
 
       io.to(`game-${gameId}`).emit('player-disconnected', {
+        gameId,
         odisconnectedPlayerId: userId.toString(),
         odisconnectedPlayerName: displayName,
         players: game.players.map(p => ({
@@ -908,6 +917,7 @@ module.exports = (io, socket) => {
           set.delete(userId.toString());
         }
         io.to(`game-${gameId}`).emit('rematch-update', {
+          gameId,
           ready: set ? set.size : 0,
           total: connectedPlayers.length
         });
@@ -919,7 +929,7 @@ module.exports = (io, socket) => {
             clearInterval(t);
             rematchCountdownTimers.delete(roomId);
           }
-          io.to(`game-${gameId}`).emit('rematch-aborted', { reason: 'not-enough-players' });
+          io.to(`game-${gameId}`).emit('rematch-aborted', { gameId, reason: 'not-enough-players' });
         }
       }
 
@@ -961,6 +971,7 @@ module.exports = (io, socket) => {
       await game.save();
 
       io.to(`game-${gameId}`).emit('player-reconnected', {
+        gameId,
         odisconnectedPlayerId: userId.toString(),
         odisconnectedPlayerName: playerInGame.user.displayName || playerInGame.user.username || 'Player',
         restoredScore,
@@ -1093,6 +1104,9 @@ module.exports = (io, socket) => {
 
       // Join socket room
       const wasInSocketRoom = socket.rooms && socket.rooms.has && socket.rooms.has(rid);
+      if (socket.roomId && socket.roomId.toString() !== rid.toString()) {
+        try { socket.leave(socket.roomId.toString()); } catch (e) {}
+      }
       socket.join(rid);
       socket.roomId = rid;
 
@@ -1396,13 +1410,21 @@ module.exports = (io, socket) => {
   // Game events
   socket.on('join-game', async (gameId) => {
     try {
-      socket.join(`game-${gameId}`);
-      socket.gameId = gameId;
-      socket.emit('game-joined', { gameId });
+      const nextGameIdStr = gameId?.toString?.() ? gameId.toString() : String(gameId);
+      if (socket.gameId && socket.gameId.toString() !== nextGameIdStr) {
+        try { socket.leave(`game-${socket.gameId.toString()}`); } catch (e) {}
+      }
+      // If a room was previously joined (lobby), leave it when switching games
+      if (socket.roomId) {
+        try { socket.leave(socket.roomId.toString()); } catch (e) {}
+      }
+      socket.join(`game-${nextGameIdStr}`);
+      socket.gameId = nextGameIdStr;
+      socket.emit('game-joined', { gameId: nextGameIdStr });
 
       try {
         if (socket.userId) {
-          const key = `${socket.userId.toString()}:${gameId.toString()}`;
+          const key = `${socket.userId.toString()}:${nextGameIdStr.toString()}`;
           const entry = appBackgroundTimers.get(key);
           if (entry && entry.timer) {
             clearTimeout(entry.timer);
@@ -1415,7 +1437,7 @@ module.exports = (io, socket) => {
 
       // Send current game state and handle reconnection
       try {
-        const game = await Game.findById(gameId).populate('players.user', 'username displayName');
+        const game = await Game.findById(nextGameIdStr).populate('players.user', 'username displayName');
         if (!game) return;
 
         const playerInGame = game.players.find(p => (p.user._id || p.user).toString() === socket.userId?.toString());
@@ -1427,7 +1449,7 @@ module.exports = (io, socket) => {
 
         // Check if this is a reconnecting player
         if (playerInGame && playerInGame.disconnected) {
-          console.log(`[RECONNECT] Player ${socket.userId} reconnecting to game ${gameId}`);
+          console.log(`[RECONNECT] Player ${socket.userId} reconnecting to game ${nextGameIdStr}`);
           
           // Restore player connection status and score
           playerInGame.disconnected = false;
@@ -1450,7 +1472,8 @@ module.exports = (io, socket) => {
           console.log(`[RECONNECT] Restored player ${socket.userId}, score: ${restoredScore}`);
 
           // Notify all players about reconnection
-          io.to(`game-${gameId}`).emit('player-reconnected', {
+          io.to(`game-${nextGameIdStr}`).emit('player-reconnected', {
+            gameId: nextGameIdStr,
             odisconnectedPlayerId: socket.userId.toString(),
             odisconnectedPlayerName: playerInGame.user.displayName || playerInGame.user.username || 'Player',
             restoredScore,
@@ -1467,7 +1490,8 @@ module.exports = (io, socket) => {
             const connectedPlayers = game.players.filter(p => !p.disconnected);
             const roomId = game.room.toString();
             const set = rematchReady.get(roomId);
-            io.to(`game-${gameId}`).emit('rematch-update', {
+            io.to(`game-${nextGameIdStr}`).emit('rematch-update', {
+              gameId: nextGameIdStr,
               ready: set ? set.size : 0,
               total: connectedPlayers.length
             });
@@ -1641,6 +1665,7 @@ module.exports = (io, socket) => {
       if (!updated) return;
 
       io.to(`game-${gameId}`).emit('category-selected', {
+        gameId,
         categories: updated.categories
       });
     } catch (error) {
@@ -1673,6 +1698,7 @@ module.exports = (io, socket) => {
         await finalizeCategories(game._id.toString());
       } else {
         io.to(`game-${gameId}`).emit('confirm-update', {
+          gameId,
           confirmed: game.confirmedPlayers.length,
           total: game.players.length
         });
@@ -1772,21 +1798,23 @@ module.exports = (io, socket) => {
 
       // Notify clients
       io.to(`game-${gameId}`).emit('player-stopped', {
+        gameId,
         playerId: socket.userId,
         username,
         timestamp: new Date()
       });
-      io.to(`game-${gameId}`).emit('round-ended', { reason: 'stopped', validationDeadline: g.validationDeadline });
+      io.to(`game-${gameId}`).emit('round-ended', { gameId, reason: 'stopped', validationDeadline: g.validationDeadline });
 
       try {
         const roomId = g.room ? g.room.toString() : null;
         if (roomId) {
           io.to(roomId).emit('player-stopped', {
+            gameId,
             playerId: socket.userId,
             username,
             timestamp: new Date()
           });
-          io.to(roomId).emit('round-ended', { reason: 'stopped', validationDeadline: g.validationDeadline });
+          io.to(roomId).emit('round-ended', { gameId, reason: 'stopped', validationDeadline: g.validationDeadline });
         }
       } catch (e) {}
       const vt = validationTimers.get(idStr);
@@ -1836,6 +1864,7 @@ module.exports = (io, socket) => {
       const { gameId, results } = data;
       
       io.to(`game-${gameId}`).emit('show-results', {
+        gameId,
         results,
         timestamp: new Date()
       });
@@ -1886,16 +1915,16 @@ module.exports = (io, socket) => {
       const game = await Game.findById(gameId).select('players status');
       if (!game) return;
       const total = (game.players || []).length;
-      io.to(`game-${gameId}`).emit('ready-update', { ready: set.size, total });
+      io.to(`game-${gameId}`).emit('ready-update', { gameId, ready: set.size, total });
 
       // Start 7s countdown if not already
       if (!nextRoundTimers.get(id)) {
         let seconds = 7;
-        io.to(`game-${gameId}`).emit('next-round-countdown', { seconds });
+        io.to(`game-${gameId}`).emit('next-round-countdown', { gameId, seconds });
         const timer = setInterval(async () => {
           seconds -= 1;
           if (seconds > 0) {
-            io.to(`game-${gameId}`).emit('next-round-countdown', { seconds });
+            io.to(`game-${gameId}`).emit('next-round-countdown', { gameId, seconds });
           }
           const everyoneReady = set.size >= total;
           if (seconds <= 0 || everyoneReady) {
@@ -2022,6 +2051,7 @@ module.exports = (io, socket) => {
           // Emit final standings and winner to all players in the current game
           console.log(`[SOCKET GAME FINISH] Emitting game-finished event to game-${gameId}`);
           io.to(`game-${gameId}`).emit('game-finished', {
+            gameId,
             winner: (game.winner || null),
             standings
           });
@@ -2029,6 +2059,7 @@ module.exports = (io, socket) => {
         } catch (e) {
           console.error('Finalize game finish error:', e);
           io.to(`game-${gameId}`).emit('game-finished', {
+            gameId,
             winner: (game.winner || null)
           });
         }
@@ -2347,13 +2378,13 @@ module.exports = (io, socket) => {
       const total = connectedPlayers.length;
       
       // Inform current game room about rematch readiness
-      io.to(`game-${gameId}`).emit('rematch-update', { ready: set.size, total });
+      io.to(`game-${gameId}`).emit('rematch-update', { gameId, ready: set.size, total });
 
       // Need at least 2 connected players for rematch
       if (total < 2) {
         console.log(`[REMATCH] Not enough connected players (${total}), aborting`);
         rematchReady.delete(roomId);
-        io.to(`game-${gameId}`).emit('rematch-aborted', { reason: 'not-enough-players' });
+        io.to(`game-${gameId}`).emit('rematch-aborted', { gameId, reason: 'not-enough-players' });
         return;
       }
 
@@ -2361,11 +2392,11 @@ module.exports = (io, socket) => {
         // Start a 5-second countdown if not already running
         if (!rematchCountdownTimers.get(roomId)) {
           let seconds = 5;
-          io.to(`game-${gameId}`).emit('rematch-countdown', { seconds });
+          io.to(`game-${gameId}`).emit('rematch-countdown', { gameId, seconds });
           const timer = setInterval(async () => {
             seconds -= 1;
             if (seconds > 0) {
-              io.to(`game-${gameId}`).emit('rematch-countdown', { seconds });
+              io.to(`game-${gameId}`).emit('rematch-countdown', { gameId, seconds });
               return;
             }
             // Countdown finished
@@ -2480,6 +2511,7 @@ module.exports = (io, socket) => {
 
                       const revealDeadline = new Date(Date.now() + 3000);
                       io.to(`game-${g._id}`).emit('letter-accepted', {
+                        gameId: g._id,
                         letter: g.currentLetter,
                         revealDeadline
                       });
@@ -2494,6 +2526,7 @@ module.exports = (io, socket) => {
                         gg.roundStartTime = new Date();
                         await gg.save();
                         io.to(`game-${gg._id}`).emit('letter-selected', {
+                          gameId: gg._id,
                           letter: gg.currentLetter
                         });
                         // start 60s round auto-end timer
@@ -2508,11 +2541,11 @@ module.exports = (io, socket) => {
                               const graceMs = parseInt(process.env.VALIDATION_GRACE_MS || '3000');
                               g3.validationDeadline = new Date(Date.now() + graceMs);
                               await g3.save();
-                              io.to(`game-${g3._id}`).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                              io.to(`game-${g3._id}`).emit('round-ended', { gameId: g3._id, reason: 'timeout', validationDeadline: g3.validationDeadline });
                               try {
                                 const roomId = g3.room ? g3.room.toString() : null;
                                 if (roomId) {
-                                  io.to(roomId).emit('round-ended', { reason: 'timeout', validationDeadline: g3.validationDeadline });
+                                  io.to(roomId).emit('round-ended', { gameId: g3._id, reason: 'timeout', validationDeadline: g3.validationDeadline });
                                 }
                               } catch (e) {}
                               const vt = validationTimers.get(g3._id.toString());

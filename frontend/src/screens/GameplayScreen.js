@@ -1208,7 +1208,19 @@ const GameplayScreen = ({ navigation, route }) => {
 
   const setupSocketListeners = () => {
     if (socket) {
+      const isForThisGame = (data) => {
+        try {
+          // Some events are not game-scoped. Only filter when gameId is present.
+          if (!data || typeof data !== 'object') return true;
+          if (!('gameId' in data)) return true;
+          return String(data.gameId) === String(gameId);
+        } catch (e) {
+          return true;
+        }
+      };
+
       socket.on('category-selection-started', (data) => {
+        if (!isForThisGame(data)) return;
         setPhase('category-selection');
         if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
         if (typeof data.confirmed === 'number') setConfirmedCount(data.confirmed);
@@ -1217,15 +1229,18 @@ const GameplayScreen = ({ navigation, route }) => {
       });
 
       socket.on('category-selected', (data) => {
+        if (!isForThisGame(data)) return;
         if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
       });
 
       socket.on('confirm-update', (data) => {
+        if (!isForThisGame(data)) return;
         if (typeof data.confirmed === 'number') setConfirmedCount(data.confirmed);
         if (typeof data.total === 'number') setTotalPlayers(data.total);
       });
 
       socket.on('categories-confirmed', (data) => {
+        if (!isForThisGame(data)) return;
         if (selectTimerRef.current) clearInterval(selectTimerRef.current);
         setSelectionDeadline(null);
         if (Array.isArray(data.categories)) setSelectedCategories(data.categories);
@@ -1239,6 +1254,7 @@ const GameplayScreen = ({ navigation, route }) => {
       });
 
       socket.on('letter-selection-started', (data) => {
+        // Keep existing behavior: if server indicates a different gameId, follow it.
         setPhase('letter-selection');
         if (data.selectorId) {
           setLetterSelectorId(data.selectorId);
@@ -1251,12 +1267,14 @@ const GameplayScreen = ({ navigation, route }) => {
       });
 
       socket.on('letter-accepted', (data) => {
+        if (!isForThisGame(data)) return;
         // Show 3-second reveal overlay for all players
         if (data.revealDeadline) startRevealTimer(new Date(data.revealDeadline));
         setShowReveal(true);
       });
 
       socket.on('letter-selected', (data) => {
+        if (!isForThisGame(data)) return;
         if (data.letter) setCurrentLetter(data.letter);
         setPhase('playing');
         startTimer();
@@ -1265,6 +1283,7 @@ const GameplayScreen = ({ navigation, route }) => {
       });
 
       socket.on('player-stopped', async (data) => {
+        if (!isForThisGame(data)) return;
         if (data.playerId !== userId) {
           setIsFrozen(true);
           setTimeLeft(0);
@@ -1277,6 +1296,7 @@ const GameplayScreen = ({ navigation, route }) => {
       });
 
       socket.on('round-ended', async (data) => {
+        if (!isForThisGame(data)) return;
         if (timerRef.current) clearInterval(timerRef.current);
         if (data && data.reason === 'stopped' && !stopShownRef.current) {
           stopShownRef.current = true;
@@ -1290,6 +1310,7 @@ const GameplayScreen = ({ navigation, route }) => {
       });
 
       socket.on('round-results', (data) => {
+        if (!isForThisGame(data)) return;
         if (timerRef.current) clearInterval(timerRef.current);
         setTimeLeft(0);
         setRoundResults(data.results);
