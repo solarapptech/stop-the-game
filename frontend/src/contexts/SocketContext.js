@@ -125,7 +125,7 @@ export const SocketProvider = ({ children }) => {
 
   const sendMessage = (roomId, message) => {
     if (socket && connected && isAuthenticated) {
-      socket.emit('chat-message', { roomId, message });
+      socket.emit('send-message', { roomId, message });
     }
   };
 

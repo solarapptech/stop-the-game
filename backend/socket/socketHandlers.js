@@ -1,5 +1,6 @@
 const Room = require('../models/Room');
 const Game = require('../models/Game');
+const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { validateBatchAnswersFast } = require('../utils/openai');
 const categoryTimers = new Map();
