@@ -477,7 +477,7 @@ module.exports = (io, socket) => {
   // Helper to finalize categories for a game (dedupe, fill to min 6, cap at 8)
   const finalizeCategories = async (gameId) => {
     try {
-      const game = await Game.findById(gameId).populate('players.user', 'username');
+      const game = await Game.findById(gameId).populate('players.user', 'username displayName');
       if (!game || game.status !== 'selecting_categories') return;
 
       const allowed = ['Name', 'Last Name', 'City/Country', 'Animal', 'Fruit/Food', 'Color', 'Object', 'Brand', 'Profession', 'Sports'];
@@ -1595,7 +1595,7 @@ module.exports = (io, socket) => {
   socket.on('category-phase-ready', async (gameId) => {
     try {
       if (!socket.userId) return;
-      const game = await Game.findById(gameId).populate('players.user', 'username');
+      const game = await Game.findById(gameId).populate('players.user', 'username displayName');
       if (!game) return;
       if (game.status !== 'selecting_categories') return;
 
