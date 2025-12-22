@@ -209,6 +209,7 @@ Quick Play:
 - The final results screen shows `(<ready>/<total>) Play Again` where `<total>` is the number of **connected** players.
 - A rematch only starts when **all connected players** confirm and there are **at least 2 connected players**.
 - If the connected player count changes (disconnect/leave) during the rematch countdown, the countdown is canceled.
+- When a rematch starts, the server creates a **new** `Game` document and deletes the **previous** game document shortly after (to keep the database clean).
 
 ### Background / swipe-kill during an in-progress game
 

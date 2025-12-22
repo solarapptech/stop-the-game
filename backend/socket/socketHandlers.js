@@ -2406,8 +2406,8 @@ module.exports = (io, socket) => {
 
             // Recreate game using existing room and original player order
             try {
-              const Room = require('../models/Room');
-              const room = await Room.findById(roomId).populate('players.user');
+              const RoomModel = require('../models/Room');
+              const room = await RoomModel.findById(roomId).populate('players.user');
               if (!room) return;
   
               // Load previous game to copy categories
@@ -2439,6 +2439,21 @@ module.exports = (io, socket) => {
               room.currentGame = newGame._id;
               room.expiresAt = new Date(Date.now() + TTL_15_MIN_MS);
               await room.save();
+
+              const oldGameIdStr = gameId.toString();
+              const deleteDelayMs = 15000;
+              setTimeout(async () => {
+                try {
+                  const latestRoom = await RoomModel.findById(roomId).select('currentGame');
+                  const currentGameIdStr = latestRoom?.currentGame ? latestRoom.currentGame.toString() : null;
+                  if (currentGameIdStr && currentGameIdStr === oldGameIdStr) return;
+                  try { cancelAbandonedGameCleanup(oldGameIdStr); } catch (e) {}
+                  try { clearGameTimers(oldGameIdStr); } catch (e) {}
+                  await Game.deleteOne({ _id: oldGameIdStr });
+                } catch (e) {
+                  console.error('[REMATCH] Failed to delete old game after rematch:', e);
+                }
+              }, deleteDelayMs);
   
               // Notify both the room and the old game room to transition to gameplay
               const payload = { roomId, gameId: newGame._id, language: newGame.language, countdown: 0 };
