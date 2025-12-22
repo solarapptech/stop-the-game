@@ -631,7 +631,7 @@ module.exports = (io, socket) => {
   // Run validation and broadcast results for the current round
   const runValidation = async (gameId) => {
     try {
-      const game = await Game.findById(gameId).populate('players.user', 'username');
+      const game = await Game.findById(gameId).populate('players.user', 'username displayName');
       if (!game || game.status !== 'validating') {
         try {
           await Game.updateOne({ _id: gameId }, { $set: { validationInProgress: false, validationStartedAt: null } });
@@ -1678,7 +1678,7 @@ module.exports = (io, socket) => {
   socket.on('confirm-categories', async (gameId) => {
     try {
       if (!socket.userId) return;
-      const game = await Game.findById(gameId).populate('players.user', 'username');
+      const game = await Game.findById(gameId).populate('players.user', 'username displayName');
       if (!game) return;
       if (game.status !== 'selecting_categories') return;
 
@@ -1882,7 +1882,7 @@ module.exports = (io, socket) => {
       
       console.log(`[ADVANCE-ROUND-TRIGGER] Received for game ${gameId}`);
       
-      const game = await Game.findById(gameId).populate('players.user', 'username');
+      const game = await Game.findById(gameId).populate('players.user', 'username displayName');
       if (!game) {
         console.log(`[ADVANCE-ROUND-TRIGGER] Game ${gameId} not found`);
         return;
@@ -1966,7 +1966,7 @@ module.exports = (io, socket) => {
       roundAdvancementLocks.set(gameIdStr, true);
       console.log(`[ROUND ADVANCEMENT] Starting for game ${gameIdStr}`);
       
-      const game = await Game.findById(gameId).populate('players.user', 'username');
+      const game = await Game.findById(gameId).populate('players.user', 'username displayName');
       if (!game) {
         console.log(`[ROUND ADVANCEMENT] Game ${gameIdStr} not found`);
         return;
