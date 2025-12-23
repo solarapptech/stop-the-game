@@ -38,6 +38,8 @@ const MenuScreen = ({ navigation }) => {
   const [reconnectStatus, setReconnectStatus] = useState('reconnecting'); // 'reconnecting' | 'joining'
   const [reconnectOptions, setReconnectOptions] = useState([]);
 
+  const [onlineCount, setOnlineCount] = useState(null);
+
   const reconnectCheckInFlightRef = useRef(false);
   const lastReconnectCheckAtRef = useRef(0);
   const reconnect429BackoffUntilRef = useRef(0);
@@ -69,6 +71,14 @@ const MenuScreen = ({ navigation }) => {
             style={{ marginLeft: 4 }}
           />
           <IconButton
+            icon={statsRefreshing ? 'reload' : 'refresh'}
+            size={22}
+            onPress={handleMenuRefresh}
+            disabled={statsRefreshing}
+            iconColor="#FFFFFF"
+            style={{ marginLeft: 4 }}
+          />
+          <IconButton
             icon="cog"
             size={22}
             onPress={() => navigation.navigate('Settings')}
@@ -78,7 +88,7 @@ const MenuScreen = ({ navigation }) => {
         </View>
       ),
     });
-  }, [navigation, user?.isSubscribed]);
+  }, [navigation, user?.isSubscribed, statsRefreshing]);
 
   // Update stats when user changes
   useEffect(() => {
@@ -255,6 +265,29 @@ const MenuScreen = ({ navigation }) => {
       socket.off('quickplay-error', handleQuickPlayError);
     };
   }, [socket, navigation, t, logout]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleOnlineCount = (data) => {
+      const count = (data && typeof data.count === 'number') ? data.count : null;
+      setOnlineCount(count);
+    };
+
+    socket.on('online-count', handleOnlineCount);
+    // Ask once when we have a socket available (no DB hit; server replies from memory).
+    socket.emit('online-count-request');
+
+    return () => {
+      socket.off('online-count', handleOnlineCount);
+    };
+  }, [socket]);
+
+  const handleOnlineCountRefresh = () => {
+    try {
+      if (socket) socket.emit('online-count-request');
+    } catch (e) {}
+  };
 
   useEffect(() => {
     if (!quickPlayVisible || matchmakingStatus !== 'searching') {
@@ -585,16 +618,6 @@ const MenuScreen = ({ navigation }) => {
 
         {/* Primary Menu Actions */}
         <View style={styles.menuContainer}>
-          <View style={styles.menuRefreshRow}>
-            <IconButton
-              icon={statsRefreshing ? 'reload' : 'refresh'}
-              size={20}
-              onPress={handleMenuRefresh}
-              disabled={statsRefreshing}
-              style={styles.menuRefreshIcon}
-              iconColor="#FFFFFF"
-            />
-          </View>
           <View style={styles.primaryActionsGrid}>
             <TouchableOpacity
               onPress={() => navigation.navigate('CreateRoom')}
@@ -643,13 +666,16 @@ const MenuScreen = ({ navigation }) => {
           </View>
         </View>
 
-        {/* Remove Ads helper text */}
+        {/* Players online */}
         {!user?.isSubscribed && (
           <TouchableOpacity
             style={styles.removeAdsLink}
-            onPress={() => navigation.navigate('Payment')}
+            onPress={handleOnlineCountRefresh}
+            activeOpacity={0.75}
           >
-            <Text style={styles.removeAdsText}>{t('menu.removeAdsHint')}</Text>
+            <Text style={styles.removeAdsText}>
+              {t('menu.playersOnline', { count: onlineCount == null ? '-' : onlineCount })}
+            </Text>
           </TouchableOpacity>
         )}
 
@@ -1062,15 +1088,6 @@ const styles = StyleSheet.create({
   },
   menuContainer: {
     padding: 20,
-  },
-  menuRefreshRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 6,
-  },
-  menuRefreshIcon: {
-    margin: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
   },
   removeAdsLink: {
     position: 'absolute',

@@ -124,7 +124,7 @@ export default {
     notConnected: 'No conectado al servidor',
     matchmakingFailed: 'No se pudo encontrar una partida',
     quickPlayError: 'No se pudo encontrar una partida',
-    removeAdsHint: '¿Eliminar Anuncios?',
+    playersOnline: 'Jugadores en línea: {{count}}',
     reconnect: 'Reconectar',
     reconnectDesc: 'Volver a tu partida',
     reconnecting: 'Reconectando...',

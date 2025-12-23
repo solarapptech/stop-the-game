@@ -23,6 +23,19 @@ const TTL_15_MIN_MS = 15 * 60 * 1000;
 const VALIDATION_LOCK_STALE_MS = parseInt(process.env.VALIDATION_LOCK_STALE_MS || '30000');
 
 module.exports = (io, socket) => {
+  const emitOnlineCount = (target) => {
+    try {
+      const payload = { count: activeUserSockets.size };
+      if (target && typeof target.emit === 'function') {
+        target.emit('online-count', payload);
+        return;
+      }
+      io.emit('online-count', payload);
+    } catch (e) {
+      // best-effort
+    }
+  };
+
   // Helper to clean up empty rooms - CRITICAL for preventing orphaned rooms
   const cleanupEmptyRoom = async (roomId) => {
     try {
@@ -759,9 +772,14 @@ module.exports = (io, socket) => {
       } catch (e) {}
 
       socket.emit('authenticated', { success: true });
+      emitOnlineCount();
     } catch (error) {
       socket.emit('authenticated', { success: false, error: 'Invalid token' });
     }
+  });
+
+  socket.on('online-count-request', () => {
+    emitOnlineCount(socket);
   });
 
   socket.on('room-background', async (data) => {
@@ -2150,6 +2168,10 @@ module.exports = (io, socket) => {
           hasAnotherActiveSocket = !!(remaining && remaining.size > 0);
         }
       } catch (e) {}
+
+      if (!hasAnotherActiveSocket && socket.userId) {
+        emitOnlineCount();
+      }
 
       // Clear any pending app-background timers associated with this socket
       try {

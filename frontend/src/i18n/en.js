@@ -125,7 +125,7 @@ export default {
     notConnected: 'Not connected to server',
     matchmakingFailed: 'Failed to find a match',
     quickPlayError: 'Failed to find a match',
-    removeAdsHint: 'Remove Ads?',
+    playersOnline: 'Players Online: {{count}}',
     reconnect: 'Reconnect',
     reconnectDesc: 'Return to your game',
     reconnecting: 'Reconnecting...',

@@ -12,6 +12,7 @@ A multiplayer word game built with React Native (Expo) and Node.js, featuring re
 - **Payment Integration**: Stripe and PayPal support
 - **AI Validation**: OpenAI integration for answer validation
 - **Reliable STOP + Validation Sync**: Clients show a validating spinner until results are ready and periodically resync game state to avoid missed STOP/round-end events
+- **Players Online Indicator**: Menu screen shows the number of currently connected users using Socket.IO in-memory counting (no database reads)
 - **Beautiful UI**: React Native Paper components with custom theming
 
 ## 🚀 Quick Start
