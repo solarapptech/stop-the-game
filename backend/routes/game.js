@@ -23,6 +23,7 @@ async function runValidationAndBroadcast(app, gameId) {
       if (answer) {
         for (const catAnswer of answer.categoryAnswers) {
           const a = String(catAnswer.answer || '').trim();
+          if (!a) continue;
           const key = `${catAnswer.category}|${game.currentLetter}|${a.toLowerCase()}`;
           if (!seen.has(key)) {
             seen.add(key);

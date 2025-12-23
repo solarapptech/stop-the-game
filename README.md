@@ -264,6 +264,15 @@ Client-side recovery:
 
 This prevents infinite refresh loops when a client misses a socket event or validation results don’t arrive.
 
+## 🤖 Answer Validation Notes (AI)
+
+To reduce false positives/negatives during AI validation:
+
+- **Empty / placeholder answers are always invalid**
+  - Examples: empty string, whitespace, `-`, `--`, `—`
+- **Spanish accent tolerance**
+  - For Spanish games, **vowel accents are treated as optional** (e.g., `García` and `Garcia` are considered the same for validation purposes).
+
 Environment variable:
 
 - `VALIDATION_LOCK_STALE_MS` (default: `30000`)

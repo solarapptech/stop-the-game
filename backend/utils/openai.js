@@ -7,6 +7,16 @@ const openai = new OpenAI({
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const cache = new Map();
 
+const isPlaceholderAnswer = (answer) => {
+  const a = String(answer || '').trim();
+  if (!a) return true;
+  const compact = a.replace(/\s+/g, '');
+  if (!compact) return true;
+  // Treat common placeholder / empty markers as invalid
+  if (/^[-–—_]+$/.test(compact)) return true;
+  return false;
+};
+
 const normalizeSpanishVowelAccents = (s) => {
   const str = String(s || '');
   return str
@@ -70,7 +80,7 @@ const validateAnswers = async (category, letter, answer, options = {}) => {
   try {
     const language = (options && options.language) || 'en';
     const a = String(answer || '').trim();
-    if (!a || a.length < 2) {
+    if (isPlaceholderAnswer(a) || a.length < 2) {
       return false;
     }
     if (!startsWithLetter(a, letter, language)) {
@@ -88,10 +98,11 @@ const validateAnswers = async (category, letter, answer, options = {}) => {
 The answer must:
 1) Start with the letter "${String(letter || '').toUpperCase()}" (case-insensitive)
 2) Be a real word or name that fits the category
-3) Be spelled correctly (NO minor spelling variants)
+3) Be spelled correctly (minor typos/spelling mistakes should be false)
 4) Be in ${languageName}, except:
    - Proper nouns (people/place names), brands, and globally-used terms may be accepted even if they are not translated.
-   - For Spanish: vowel accents (á, é, í, ó, ú, ü) may be omitted.
+   - For Spanish: vowel accents (á, é, í, ó, ú, ü) may be omitted (e.g., "García" == "Garcia").
+5) Must NOT be empty or a placeholder like "-" or "—".
 
 Respond with only "true" or "false".`;
 
@@ -107,7 +118,7 @@ Respond with only "true" or "false".`;
           content: prompt
         }
       ],
-      temperature: 0.1,
+      temperature: 0,
       max_tokens: 10
     });
 
@@ -119,7 +130,8 @@ Respond with only "true" or "false".`;
   } catch (error) {
     console.error('OpenAI validation error:', error);
     const a = String(answer || '').trim();
-    return a.length >= 2 && startsWithLetter(a, letter, (options && options.language) || 'en');
+    if (isPlaceholderAnswer(a) || a.length < 2) return false;
+    return startsWithLetter(a, letter, (options && options.language) || 'en');
   }
 };
 
@@ -154,6 +166,14 @@ const validateBatchAnswersFast = async (items, letter, options = {}) => {
       const a = String(item?.answer || '').trim();
       const baseKey = `${String(item?.category || '')}|${String(letter || '')}|${a.toLowerCase()}`;
       const cacheKey = `${language}|${String(item?.category || '')}|${String(letter || '')}|${normalizeAnswerForKey(a, language)}`;
+
+      // Never call the model for placeholders/empty markers.
+      if (isPlaceholderAnswer(a) || a.length < 2 || !startsWithLetter(a, letter, language)) {
+        result[baseKey] = false;
+        cache.set(cacheKey, { value: false, expires: Date.now() + 10 * 60 * 1000 });
+        continue;
+      }
+
       const cached = cache.get(cacheKey);
       if (cached && cached.expires > Date.now()) {
         result[baseKey] = cached.value;
@@ -170,7 +190,7 @@ const validateBatchAnswersFast = async (items, letter, options = {}) => {
     }
     const listLines = toValidate.map((it, i) => `${i + 1}) category: "${it.category}", answer: "${it.answer}"`).join('\n');
     const languageName = language === 'es' ? 'Spanish' : 'English';
-    const userContent = `Required language: ${languageName}\nLetter: "${String(letter || '').toUpperCase()}"\nFor each item below, reply with a JSON array of booleans in the same order.\nRules:\n- Must start with the letter (case-insensitive).\n- Must fit the category.\n- Must be a real word/name.\n- Must be spelled correctly (NO minor spelling variants).\n- Must be in ${languageName}, except: proper nouns (people/place names), brands, and globally-used terms may be accepted even if not translated.\n- Spanish only: vowel accents (á, é, í, ó, ú, ü) may be omitted (e.g., "camion" for "camión").\n\nItems:\n${listLines}`;
+    const userContent = `Required language: ${languageName}\nLetter: "${String(letter || '').toUpperCase()}"\nFor each item below, reply with a JSON array of booleans in the same order.\nRules:\n- Must start with the letter (case-insensitive).\n- Must fit the category.\n- Must be a real word/name.\n- Must be spelled correctly (minor typos/spelling mistakes should be false).\n- Must NOT be empty or a placeholder like "-" or "—".\n- Must be in ${languageName}, except: proper nouns (people/place names), brands, and globally-used terms may be accepted even if not translated.\n- Spanish only: vowel accents (á, é, í, ó, ú, ü) may be omitted (e.g., "camion" for "camión", "García" == "Garcia").\n\nItems:\n${listLines}`;
     const payload = {
       model: MODEL,
       messages: [
@@ -188,7 +208,7 @@ const validateBatchAnswersFast = async (items, letter, options = {}) => {
       console.error('[AI] Batch validation error/timeout, falling back to heuristic:', err && err.message ? err.message : err);
       for (let i = 0; i < toValidate.length; i++) {
         const it = toValidate[i];
-        const v = it.answer && it.answer.length >= 2 && startsWithLetter(it.answer, letter, language);
+        const v = !(isPlaceholderAnswer(it.answer) || it.answer.length < 2) && startsWithLetter(it.answer, letter, language);
         const k = indexMap[i];
         result[k.baseKey] = v;
         cache.set(k.cacheKey, { value: v, expires: Date.now() + 10 * 60 * 1000 });
@@ -228,7 +248,7 @@ const validateBatchAnswersFast = async (items, letter, options = {}) => {
       console.error('[AI] Batch parse error, falling back to heuristic:', parseErr && parseErr.message ? parseErr.message : parseErr, 'content=', content);
       for (let i = 0; i < toValidate.length; i++) {
         const it = toValidate[i];
-        const v = it.answer && it.answer.length >= 2 && startsWithLetter(it.answer, letter, language);
+        const v = !(isPlaceholderAnswer(it.answer) || it.answer.length < 2) && startsWithLetter(it.answer, letter, language);
         const k = indexMap[i];
         result[k.baseKey] = v;
         cache.set(k.cacheKey, { value: v, expires: Date.now() + 10 * 60 * 1000 });
@@ -243,7 +263,7 @@ const validateBatchAnswersFast = async (items, letter, options = {}) => {
       const language = (options && options.language) || 'en';
       const a = String(item?.answer || '').trim();
       const k = `${String(item?.category || '')}|${String(letter || '')}|${a.toLowerCase()}`;
-      const v = a && a.length >= 2 && startsWithLetter(a, letter, language);
+      const v = !(isPlaceholderAnswer(a) || a.length < 2) && startsWithLetter(a, letter, language);
       out[k] = v;
       const cacheKey = `${language}|${String(item?.category || '')}|${String(letter || '')}|${normalizeAnswerForKey(a, language)}`;
       cache.set(cacheKey, { value: v, expires: Date.now() + 10 * 60 * 1000 });
