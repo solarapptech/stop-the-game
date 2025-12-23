@@ -90,6 +90,8 @@ export default {
     joinRoom: 'Unirse a Sala',
     joinRoomSubtitle: 'Entrar a una sala existente',
     joinRoomDesc: 'Entrar a una sala existente',
+    chatZone: 'Zona de Chat',
+    chatZoneDesc: 'Chat general para todos',
     leaderboard: 'Tabla de Posiciones',
     leaderboardSubtitle: 'Ver los mejores jugadores',
     leaderboardDesc: 'Ver los mejores jugadores',
@@ -141,6 +143,14 @@ export default {
     switchLanguageToJoin: 'Para continuar, debes cambiar tu idioma a {{language}}.',
     switchLanguageAndContinue: 'Cambiar idioma y continuar',
     languageSwitchFailed: 'No se pudo cambiar el idioma'
+  },
+
+  chatZone: {
+    title: 'Zona de Chat',
+    welcome: 'Chat Global',
+    empty: 'Aún no hay mensajes. ¡Di hola!',
+    typeMessage: 'Escribe un mensaje...',
+    notConnectedHint: 'Conéctate al servidor para chatear.'
   },
 
   // Create Room Screen
@@ -374,6 +384,7 @@ export default {
     deleteAccountFailed: 'Error al eliminar cuenta',
     failedToDelete: 'Error al eliminar cuenta',
     change: 'Cambiar',
+    delete: 'Eliminar',
     editDisplayName: 'Editar Nombre Visible',
     displayNameHelper: 'Este es el nombre que verán otros jugadores (3-30 caracteres)',
     edit: 'Editar',

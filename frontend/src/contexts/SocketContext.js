@@ -129,6 +129,24 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
+  const joinGlobalChat = () => {
+    if (socket && connected && isAuthenticated) {
+      socket.emit('join-global-chat');
+    }
+  };
+
+  const leaveGlobalChat = () => {
+    if (socket && connected && isAuthenticated) {
+      socket.emit('leave-global-chat');
+    }
+  };
+
+  const sendGlobalMessage = (message) => {
+    if (socket && connected && isAuthenticated) {
+      socket.emit('global-send-message', { message });
+    }
+  };
+
   const setPlayerReady = (roomId, isReady) => {
     if (socket && connected && isAuthenticated) {
       socket.emit('player-ready', { roomId, isReady });
@@ -210,6 +228,9 @@ export const SocketProvider = ({ children }) => {
       leaveRoom,
       joinGame,
       sendMessage,
+      joinGlobalChat,
+      leaveGlobalChat,
+      sendGlobalMessage,
       setPlayerReady,
       startGame,
       selectCategory,

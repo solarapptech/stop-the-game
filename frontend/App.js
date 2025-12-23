@@ -21,6 +21,7 @@ import GameplayScreen from './src/screens/GameplayScreen';
 import LeaderboardScreen from './src/screens/LeaderboardScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import PaymentScreen from './src/screens/PaymentScreen';
+import ChatZoneScreen from './src/screens/ChatZoneScreen';
 
 // Contexts
 import { AuthProvider } from './src/contexts/AuthContext';
@@ -180,6 +181,11 @@ export default function App() {
                   name="Payment" 
                   component={PaymentScreen} 
                   options={{ title: 'Subscribe' }}
+                />
+                <Stack.Screen 
+                  name="ChatZone" 
+                  component={ChatZoneScreen} 
+                  options={{ title: 'Chat Zone' }}
                 />
               </Stack.Navigator>
             </NavigationContainer>

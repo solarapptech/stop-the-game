@@ -13,6 +13,7 @@ A multiplayer word game built with React Native (Expo) and Node.js, featuring re
 - **AI Validation**: OpenAI integration for answer validation
 - **Reliable STOP + Validation Sync**: Clients show a validating spinner until results are ready and periodically resync game state to avoid missed STOP/round-end events
 - **Players Online Indicator**: Menu screen shows the number of currently connected users using Socket.IO in-memory counting (no database reads)
+- **Chat Zone (Global Chat)**: Menu includes a global chat where any logged-in user can talk (no persistence yet)
 - **Beautiful UI**: React Native Paper components with custom theming
 
 ## 🚀 Quick Start
@@ -127,6 +128,7 @@ stop-the-game/
 1. **Registration/Login**: Users create an account or sign in
 2. **Email Verification**: Verify email to activate account
 3. **Main Menu**: Access game rooms, leaderboard, settings
+   - Includes **Chat Zone** (global chat)
 4. **Create/Join Room**: Start a new game or join existing
 5. **Room Lobby**: Wait for players, chat, ready up (the chat keyboard stays open while interacting/scrolling inside the chat area; tap outside the chat area to dismiss it)
 6. **Gameplay**:
@@ -168,6 +170,20 @@ Game end behavior:
 
 ### User
 - `PUT /api/user/language` - Update user's UI language
+
+## 💬 Socket Events (Chat)
+
+### Room chat
+
+- `send-message` payload: `{ roomId, message }`
+- `new-message` payload: `{ userId, username, displayName, message, roomId }`
+
+### Global chat (Chat Zone)
+
+- `join-global-chat` payload: none
+- `leave-global-chat` payload: none
+- `global-send-message` payload: `{ message }`
+- `global-new-message` payload: `{ userId, username, displayName, message, ts }`
 
 ## 🌍 Room Language Enforcement
 

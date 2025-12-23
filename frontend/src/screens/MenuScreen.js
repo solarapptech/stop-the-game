@@ -71,14 +71,6 @@ const MenuScreen = ({ navigation }) => {
             style={{ marginLeft: 4 }}
           />
           <IconButton
-            icon={statsRefreshing ? 'reload' : 'refresh'}
-            size={22}
-            onPress={handleMenuRefresh}
-            disabled={statsRefreshing}
-            iconColor="#FFFFFF"
-            style={{ marginLeft: 4 }}
-          />
-          <IconButton
             icon="cog"
             size={22}
             onPress={() => navigation.navigate('Settings')}
@@ -88,7 +80,7 @@ const MenuScreen = ({ navigation }) => {
         </View>
       ),
     });
-  }, [navigation, user?.isSubscribed, statsRefreshing]);
+  }, [navigation, user?.isSubscribed]);
 
   // Update stats when user changes
   useEffect(() => {
@@ -282,12 +274,6 @@ const MenuScreen = ({ navigation }) => {
       socket.off('online-count', handleOnlineCount);
     };
   }, [socket]);
-
-  const handleOnlineCountRefresh = () => {
-    try {
-      if (socket) socket.emit('online-count-request');
-    } catch (e) {}
-  };
 
   useEffect(() => {
     if (!quickPlayVisible || matchmakingStatus !== 'searching') {
@@ -577,13 +563,23 @@ const MenuScreen = ({ navigation }) => {
                 </Text>
               </View>
             </View>
-            <IconButton
-              icon="logout"
-              size={24}
-              onPress={handleLogout}
-              style={styles.logoutButton}
-              iconColor="#FFFFFF"
-            />
+            <View style={styles.headerRightButtons}>
+              <IconButton
+                icon={statsRefreshing ? 'reload' : 'refresh'}
+                size={24}
+                onPress={handleMenuRefresh}
+                disabled={statsRefreshing}
+                style={styles.logoutButton}
+                iconColor="#FFFFFF"
+              />
+              <IconButton
+                icon="logout"
+                size={24}
+                onPress={handleLogout}
+                style={styles.logoutButton}
+                iconColor="#FFFFFF"
+              />
+            </View>
           </View>
 
           {/* Stats */}
@@ -664,19 +660,29 @@ const MenuScreen = ({ navigation }) => {
               </TouchableOpacity>
             )}
           </View>
+
+          <TouchableOpacity
+            onPress={() => navigation.navigate('ChatZone')}
+            activeOpacity={0.85}
+            style={[styles.primaryActionCard, styles.chatZoneCard]}
+          >
+            <Avatar.Icon
+              size={48}
+              icon="chat"
+              style={[styles.primaryActionIcon, { backgroundColor: '#9C27B0' }]}
+            />
+            <Text style={styles.primaryActionTitle}>{t('menu.chatZone')}</Text>
+            <Text style={styles.primaryActionSubtitle}>{t('menu.chatZoneDesc')}</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Players online */}
         {!user?.isSubscribed && (
-          <TouchableOpacity
-            style={styles.removeAdsLink}
-            onPress={handleOnlineCountRefresh}
-            activeOpacity={0.75}
-          >
+          <View style={styles.removeAdsLink}>
             <Text style={styles.removeAdsText}>
               {t('menu.playersOnline', { count: onlineCount == null ? '-' : onlineCount })}
             </Text>
-          </TouchableOpacity>
+          </View>
         )}
 
       </ScrollView>
@@ -1033,6 +1039,10 @@ const styles = StyleSheet.create({
   logoutButton: {
     backgroundColor: 'rgba(0, 0, 0, 0.1)',
   },
+  headerRightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -1092,7 +1102,7 @@ const styles = StyleSheet.create({
   removeAdsLink: {
     position: 'absolute',
     right: 20,
-    bottom: '20%',
+    bottom: '5%',
   },
   removeAdsText: {
     fontSize: 12,
@@ -1122,6 +1132,10 @@ const styles = StyleSheet.create({
   primaryActionCardThird: {
     width: '30%',
     minWidth: 90,
+  },
+  chatZoneCard: {
+    marginTop: 12,
+    width: '100%',
   },
   primaryActionCardLeft: {
     marginRight: 8,

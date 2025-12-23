@@ -21,6 +21,7 @@ const activeUserSockets = new Map();
 
 const TTL_15_MIN_MS = 15 * 60 * 1000;
 const VALIDATION_LOCK_STALE_MS = parseInt(process.env.VALIDATION_LOCK_STALE_MS || '30000');
+const GLOBAL_CHAT_ROOM = 'global-chat';
 
 module.exports = (io, socket) => {
   const emitOnlineCount = (target) => {
@@ -2148,6 +2149,43 @@ module.exports = (io, socket) => {
       });
     } catch (error) {
       console.error('Chat message socket error:', error);
+    }
+  });
+
+  socket.on('join-global-chat', async () => {
+    try {
+      if (!socket.userId) return;
+      socket.join(GLOBAL_CHAT_ROOM);
+    } catch (e) {
+    }
+  });
+
+  socket.on('leave-global-chat', async () => {
+    try {
+      socket.leave(GLOBAL_CHAT_ROOM);
+    } catch (e) {
+    }
+  });
+
+  socket.on('global-send-message', async (data) => {
+    try {
+      const raw = data && typeof data.message === 'string' ? data.message : '';
+      const message = raw.trim();
+      if (!socket.userId || !message) return;
+
+      const safeMessage = message.length > 300 ? message.slice(0, 300) : message;
+      const user = await User.findById(socket.userId).select('username displayName');
+      const displayName = user?.displayName || user?.username || 'Player';
+
+      io.to(GLOBAL_CHAT_ROOM).emit('global-new-message', {
+        userId: socket.userId,
+        username: user?.username || 'Player',
+        displayName,
+        message: safeMessage,
+        ts: Date.now()
+      });
+    } catch (error) {
+      console.error('Global chat message socket error:', error);
     }
   });
 

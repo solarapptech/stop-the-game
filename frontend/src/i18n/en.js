@@ -90,6 +90,8 @@ export default {
     joinRoom: 'Join Room',
     joinRoomSubtitle: 'Enter an existing room',
     joinRoomDesc: 'Enter an existing room',
+    chatZone: 'Chat Zone',
+    chatZoneDesc: 'General chat for everyone',
     leaderboard: 'Leaderboard',
     leaderboardSubtitle: 'View top players',
     leaderboardDesc: 'View top players',
@@ -142,6 +144,14 @@ export default {
     switchLanguageToJoin: 'To continue, you need to switch your language to {{language}}.',
     switchLanguageAndContinue: 'Switch language and continue',
     languageSwitchFailed: 'Failed to switch language'
+  },
+
+  chatZone: {
+    title: 'Chat Zone',
+    welcome: 'Global Chat',
+    empty: 'No messages yet. Say hi!',
+    typeMessage: 'Type a message...',
+    notConnectedHint: 'Connect to the server to chat.'
   },
 
   // Create Room Screen
@@ -376,6 +386,7 @@ export default {
     deleteAccountFailed: 'Failed to delete account',
     failedToDelete: 'Failed to delete account',
     change: 'Change',
+    delete: 'Delete',
     editDisplayName: 'Edit Display Name',
     displayNameHelper: 'This is the name other players will see (3-30 characters)',
     edit: 'Edit',
