@@ -36,6 +36,7 @@ const MenuScreen = ({ navigation }) => {
   const [activeGameData, setActiveGameData] = useState(null);
   const [reconnectVisible, setReconnectVisible] = useState(false);
   const [reconnectStatus, setReconnectStatus] = useState('reconnecting'); // 'reconnecting' | 'joining'
+  const [reconnectOptions, setReconnectOptions] = useState([]);
 
   useLayoutEffect(() => {
     const crownColor = user?.isSubscribed ? '#FFC107' : '#BDBDBD';
@@ -356,6 +357,7 @@ const MenuScreen = ({ navigation }) => {
 
     setReconnectVisible(true);
     setReconnectStatus('reconnecting');
+    setReconnectOptions([]);
 
     try {
       // Verify game still exists
@@ -373,6 +375,15 @@ const MenuScreen = ({ navigation }) => {
         return;
       }
 
+      const options = Array.isArray(data?.games) ? data.games : [];
+      if (options.length > 1) {
+        setReconnectOptions(options);
+        setReconnectStatus('select');
+        return;
+      }
+
+      const chosen = (options.length === 1) ? options[0] : data;
+
       // Game exists, show "Joining..." status
       setReconnectStatus('joining');
 
@@ -381,21 +392,72 @@ const MenuScreen = ({ navigation }) => {
         setReconnectVisible(false);
         setReconnectStatus('reconnecting');
 
+        setReconnectOptions([]);
+
         try {
-          if (typeof joinRoomSocket === 'function') joinRoomSocket(data.roomId);
-          if (typeof joinGame === 'function') joinGame(data.gameId);
+          if (typeof joinRoomSocket === 'function') joinRoomSocket(chosen.roomId);
+          if (typeof joinGame === 'function') joinGame(chosen.gameId);
         } catch (e) {}
 
         // Navigate to gameplay
         navigation.navigate('Gameplay', { 
-          gameId: data.gameId,
-          roomId: data.roomId 
+          gameId: chosen.gameId,
+          roomId: chosen.roomId 
         });
       }, 1000);
     } catch (error) {
       console.error('[MenuScreen] Reconnect error:', error);
       setReconnectVisible(false);
       setReconnectStatus('reconnecting');
+      setReconnectOptions([]);
+      Alert.alert(t('common.error'), t('menu.reconnectFailed'));
+    }
+  };
+
+  const handleReconnectToOption = async (option) => {
+    if (!option || !connected) {
+      Alert.alert(t('common.error'), t('menu.notConnected'));
+      return;
+    }
+
+    setReconnectStatus('joining');
+
+    try {
+      const response = await axios.get('game/reconnect/check', { params: { gameId: option.gameId, _: Date.now() } });
+      const data = response.data;
+
+      if (!data?.hasActiveGame) {
+        setHasActiveGame(false);
+        setActiveGameData(null);
+        setReconnectStatus('gameEnded');
+        setTimeout(() => {
+          setReconnectVisible(false);
+          setReconnectStatus('reconnecting');
+          setReconnectOptions([]);
+        }, 1000);
+        return;
+      }
+
+      setTimeout(() => {
+        setReconnectVisible(false);
+        setReconnectStatus('reconnecting');
+        setReconnectOptions([]);
+
+        try {
+          if (typeof joinRoomSocket === 'function') joinRoomSocket(data.roomId);
+          if (typeof joinGame === 'function') joinGame(data.gameId);
+        } catch (e) {}
+
+        navigation.navigate('Gameplay', {
+          gameId: data.gameId,
+          roomId: data.roomId
+        });
+      }, 850);
+    } catch (error) {
+      console.error('[MenuScreen] Reconnect option error:', error);
+      setReconnectVisible(false);
+      setReconnectStatus('reconnecting');
+      setReconnectOptions([]);
       Alert.alert(t('common.error'), t('menu.reconnectFailed'));
     }
   };
@@ -403,6 +465,7 @@ const MenuScreen = ({ navigation }) => {
   const handleCancelReconnect = () => {
     setReconnectVisible(false);
     setReconnectStatus('reconnecting');
+    setReconnectOptions([]);
   };
 
   const handleLogout = () => {
@@ -688,41 +751,99 @@ const MenuScreen = ({ navigation }) => {
         onRequestClose={handleCancelReconnect}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            {reconnectStatus === 'reconnecting' ? (
-              <ActivityIndicator size="large" color={theme.colors.primary} style={styles.spinner} />
-            ) : reconnectStatus === 'joining' ? (
-              <MaterialCommunityIcons 
-                name="check-circle" 
-                size={50} 
-                color="#4CAF50" 
-                style={styles.spinner} 
-              />
+          <View style={[styles.modalContainer, reconnectStatus === 'select' && styles.reconnectSelectModal]}>
+            {reconnectStatus === 'select' ? (
+              <>
+                <Text style={styles.modalTitle}>{t('menu.chooseGameToReconnect')}</Text>
+                <ScrollView
+                  style={styles.reconnectOptionsList}
+                  contentContainerStyle={styles.reconnectOptionsListContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {(reconnectOptions || []).map((opt, idx) => {
+                    const players = Array.isArray(opt?.connectedPlayers) ? opt.connectedPlayers : [];
+                    const names = players
+                      .map(p => p?.displayName || p?.username || t('common.unknown'))
+                      .filter(Boolean);
+                    const connectedCount = (typeof opt?.connectedCount === 'number') ? opt.connectedCount : players.length;
+                    const totalPlayers = (typeof opt?.totalPlayers === 'number') ? opt.totalPlayers : null;
+
+                    return (
+                      <View key={String(opt?.gameId || idx)} style={styles.reconnectOptionCard}>
+                        <Text style={styles.reconnectOptionTitle} numberOfLines={1}>
+                          {opt?.roomName || t('common.unknown')}
+                        </Text>
+                        <Text style={styles.reconnectOptionMeta}>
+                          {t('menu.connectedPlayers')}{' '}
+                          {totalPlayers != null ? `(${connectedCount}/${totalPlayers})` : `(${connectedCount})`}
+                        </Text>
+                        {names.length > 0 && (
+                          <Text style={styles.reconnectOptionPlayers} numberOfLines={2}>
+                            {names.join(', ')}
+                          </Text>
+                        )}
+                        <Button
+                          mode="contained"
+                          onPress={() => handleReconnectToOption(opt)}
+                          buttonColor={theme.colors.primary}
+                          style={styles.reconnectOptionButton}
+                          contentStyle={styles.reconnectOptionButtonContent}
+                        >
+                          {t('menu.connect')}
+                        </Button>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+
+                <Button
+                  mode="outlined"
+                  onPress={handleCancelReconnect}
+                  style={styles.cancelButton}
+                  textColor={theme.colors.primary}
+                  contentStyle={styles.cancelButtonContent}
+                >
+                  {t('common.cancel')}
+                </Button>
+              </>
             ) : (
-              <MaterialCommunityIcons 
-                name="close-circle" 
-                size={50} 
-                color="#F44336" 
-                style={styles.spinner} 
-              />
-            )}
-            <Text style={styles.modalTitle}>
-              {reconnectStatus === 'reconnecting'
-                ? t('menu.reconnecting')
-                : reconnectStatus === 'joining'
-                  ? t('menu.joining')
-                  : t('menu.gameEnded')}
-            </Text>
-            {reconnectStatus === 'reconnecting' && (
-              <Button
-                mode="outlined"
-                onPress={handleCancelReconnect}
-                style={styles.cancelButton}
-                textColor={theme.colors.primary}
-                contentStyle={styles.cancelButtonContent}
-              >
-                {t('common.cancel')}
-              </Button>
+              <>
+                {reconnectStatus === 'reconnecting' ? (
+                  <ActivityIndicator size="large" color={theme.colors.primary} style={styles.spinner} />
+                ) : reconnectStatus === 'joining' ? (
+                  <MaterialCommunityIcons
+                    name="check-circle"
+                    size={50}
+                    color="#4CAF50"
+                    style={styles.spinner}
+                  />
+                ) : (
+                  <MaterialCommunityIcons
+                    name="close-circle"
+                    size={50}
+                    color="#F44336"
+                    style={styles.spinner}
+                  />
+                )}
+                <Text style={styles.modalTitle}>
+                  {reconnectStatus === 'reconnecting'
+                    ? t('menu.reconnecting')
+                    : reconnectStatus === 'joining'
+                      ? t('menu.joining')
+                      : t('menu.gameEnded')}
+                </Text>
+                {reconnectStatus === 'reconnecting' && (
+                  <Button
+                    mode="outlined"
+                    onPress={handleCancelReconnect}
+                    style={styles.cancelButton}
+                    textColor={theme.colors.primary}
+                    contentStyle={styles.cancelButtonContent}
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                )}
+              </>
             )}
           </View>
         </View>
@@ -1032,6 +1153,50 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: 280,
     elevation: 10,
+  },
+  reconnectSelectModal: {
+    width: '86%',
+    maxHeight: '80%',
+    padding: 22,
+    alignItems: 'stretch',
+  },
+  reconnectOptionsList: {
+    width: '100%',
+    maxHeight: 300,
+    marginBottom: 14,
+  },
+  reconnectOptionsListContent: {
+    paddingBottom: 4,
+  },
+  reconnectOptionCard: {
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    backgroundColor: '#FAFAFA',
+  },
+  reconnectOptionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#212121',
+    marginBottom: 4,
+  },
+  reconnectOptionMeta: {
+    fontSize: 12,
+    color: '#616161',
+    marginBottom: 4,
+  },
+  reconnectOptionPlayers: {
+    fontSize: 12,
+    color: '#424242',
+    marginBottom: 10,
+  },
+  reconnectOptionButton: {
+    borderRadius: 8,
+  },
+  reconnectOptionButtonContent: {
+    minHeight: 38,
   },
   quickPlayModalContainer: {
     width: '86%',

@@ -6,6 +6,7 @@ const Room = require('../models/Room');
 const User = require('../models/User');
 const { authMiddleware } = require('../middleware/auth');
 const { validateAnswers, validateBatchAnswersFast } = require('../utils/openai');
+const mongoose = require('mongoose');
 
 const VALIDATION_LOCK_STALE_MS = parseInt(process.env.VALIDATION_LOCK_STALE_MS || '30000');
 const TTL_15_MIN_MS = 15 * 60 * 1000;
@@ -627,9 +628,13 @@ router.get('/reconnect/check', authMiddleware, async (req, res) => {
   try {
     const userId = req.user._id;
 
+    const requestedGameIdRaw = req.query?.gameId;
+    const requestedGameId = (typeof requestedGameIdRaw === 'string' && mongoose.Types.ObjectId.isValid(requestedGameIdRaw))
+      ? new mongoose.Types.ObjectId(requestedGameIdRaw)
+      : null;
+
     // Find games where user is a player, marked as disconnected, and game is still active
-    const activeGame = await Game.findOne({
-      'players.user': userId,
+    const query = {
       'players': {
         $elemMatch: {
           user: userId,
@@ -637,38 +642,79 @@ router.get('/reconnect/check', authMiddleware, async (req, res) => {
         }
       },
       status: { $nin: ['finished'] }
-    }).sort({ updatedAt: -1 }).populate('room', 'name inviteCode');
+    };
 
-    if (!activeGame) {
+    if (requestedGameId) {
+      query._id = requestedGameId;
+    }
+
+    const reconnectableGames = await Game.find(query)
+      .sort({ updatedAt: -1 })
+      .limit(10)
+      .populate('room', 'name inviteCode')
+      .populate('players.user', 'username displayName');
+
+    const payloads = [];
+    for (const g of reconnectableGames) {
+      const roomDoc = g.room;
+      if (!roomDoc || !roomDoc._id) {
+        try {
+          await Game.deleteOne({ _id: g._id });
+        } catch (e) {}
+        continue;
+      }
+
+      const connectedPlayers = (g.players || [])
+        .filter(p => !p.disconnected)
+        .map(p => {
+          const u = p.user || {};
+          const id = (u && (u._id || u)) || null;
+          return {
+            id: id ? String(id) : null,
+            displayName: u.displayName || null,
+            username: u.username || null,
+          };
+        })
+        .filter(p => p.id);
+
+      payloads.push({
+        gameId: g._id,
+        roomId: roomDoc._id,
+        roomName: roomDoc.name,
+        inviteCode: roomDoc.inviteCode,
+        status: g.status,
+        currentRound: g.currentRound,
+        totalRounds: g.rounds,
+        connectedCount: connectedPlayers.length,
+        totalPlayers: (g.players || []).length,
+        connectedPlayers,
+        updatedAt: g.updatedAt
+      });
+    }
+
+    if (payloads.length === 0) {
       return res.json({ hasActiveGame: false });
     }
 
-    const roomRef = activeGame.room;
-    const roomId = roomRef ? (roomRef._id || roomRef) : null;
-    if (!roomId) {
-      try {
-        await Game.deleteOne({ _id: activeGame._id });
-      } catch (e) {}
-      return res.json({ hasActiveGame: false, reason: 'room_missing' });
+    // Backward compatible: keep the original top-level fields for the single-game case.
+    // When multiple games exist, expose a list so the client can choose.
+    if (payloads.length === 1) {
+      const one = payloads[0];
+      return res.json({
+        hasActiveGame: true,
+        gameId: one.gameId,
+        roomId: one.roomId,
+        roomName: one.roomName,
+        status: one.status,
+        currentRound: one.currentRound,
+        totalRounds: one.totalRounds,
+        games: payloads
+      });
     }
 
-    // Check if the room still exists
-    const room = await Room.findById(roomId);
-    if (!room) {
-      try {
-        await Game.deleteOne({ _id: activeGame._id });
-      } catch (e) {}
-      return res.json({ hasActiveGame: false, reason: 'room_missing' });
-    }
-
-    res.json({
+    return res.json({
       hasActiveGame: true,
-      gameId: activeGame._id,
-      roomId: roomId,
-      roomName: room.name,
-      status: activeGame.status,
-      currentRound: activeGame.currentRound,
-      totalRounds: activeGame.rounds
+      games: payloads
     });
   } catch (error) {
     console.error('Check reconnect error:', error);

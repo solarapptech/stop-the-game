@@ -163,7 +163,7 @@ Game end behavior:
 - `POST /api/game/start` - Start game
 - `POST /api/game/submit-answers` - Submit round answers
 - `POST /api/game/validate` - Validate answers with AI
-- `GET /api/game/reconnect/check` - Check if the authenticated user has an active in-progress game they can reconnect to
+- `GET /api/game/reconnect/check` - Check if the authenticated user has one (or more) active in-progress games they can reconnect to
 
 ### User
 - `PUT /api/user/language` - Update user's UI language
@@ -197,7 +197,14 @@ Quick Play:
 - If you leave/disconnect during an in-progress game, the backend marks you as **disconnected** (your score is preserved).
 - The Menu can show a **Reconnect** button when the backend detects an active game where you are disconnected.
 - If the game/room no longer exists (for example, it was cleaned up), the Reconnect UI will show **"Game ended"** and the Reconnect button will disappear.
-- If multiple active games match the reconnect criteria (rare edge case / leftover data), the backend returns the **most recently updated** one.
+- If multiple active games match the reconnect criteria (rare edge case / leftover data), the Reconnect UI will prompt you to **choose which game** to reconnect to.
+
+Endpoint details:
+
+- `GET /api/game/reconnect/check`
+  - If exactly 1 reconnectable game exists, the response includes top-level fields like `gameId`, `roomId`, `roomName` (backward compatible) and also a `games` array with 1 entry.
+  - If multiple reconnectable games exist, the response includes `games: [...]` and the client must select one.
+  - Optional query: `?gameId=<id>` to check a specific reconnect target.
 
 ### Socket cross-game safety
 
@@ -246,6 +253,16 @@ This prevents orphaned rooms/games from lingering indefinitely while still keepi
 ## ✅ Validation Hang Protection
 
 If answer validation gets stuck (e.g., a server crash or a stale `validationInProgress` flag), a new validation attempt can take over after a short timeout.
+
+Client-side recovery:
+
+- During the **Validation** phase, the Gameplay screen periodically retries fetching validation results.
+- If it fails to obtain results after **more than 2 retries**, the app automatically runs the same **Reconnect** flow used on the Menu:
+  - calls `GET /api/game/reconnect/check`
+  - rejoins the room/game socket rooms
+  - reloads the Gameplay screen
+
+This prevents infinite refresh loops when a client misses a socket event or validation results don’t arrive.
 
 Environment variable:
 

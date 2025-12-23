@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator, TouchableOpacity, Dimensions, AppState } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
+import { View, StyleSheet, ScrollView, TextInput, Alert, Animated, KeyboardAvoidingView, Platform, FlatList, BackHandler, ActivityIndicator, TouchableOpacity, Dimensions, AppState, LayoutAnimation, UIManager } from 'react-native';
 import { Text, Button, Card, IconButton, Chip, ProgressBar, DataTable, Portal, Modal, Dialog } from 'react-native-paper';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -11,6 +11,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import theme from '../theme';
 import SettingsScreen from './SettingsScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 // Helper function to get icon for category
 const getCategoryIcon = (category) => {
@@ -159,7 +160,7 @@ const GameplayScreen = ({ navigation, route }) => {
   const { gameId } = route.params;
   const { user, refreshUser, updateUser, markStatsDirty, updateLanguage: updateUserLanguage } = useAuth();
   const { t, language, changeLanguage } = useLanguage();
-  const { socket, connected, isAuthenticated, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound, playAgainReady, leaveRoom: socketLeaveRoom } = useSocket();
+  const { socket, connected, isAuthenticated, joinRoom, joinGame, selectCategory, selectLetter, stopRound, confirmCategories, categoryPhaseReady, readyNextRound, playAgainReady, leaveRoom: socketLeaveRoom } = useSocket();
   const userId = (user && (user.id || user._id)) || null;
   const { 
     gameState, 
@@ -241,6 +242,9 @@ const GameplayScreen = ({ navigation, route }) => {
   const categoryStuckCountRef = useRef(0);
   const autoManualReloadTriggeredRef = useRef(false);
   const letterTimerRef = useRef(null);
+  const letterAutoSubmittedRef = useRef(false);
+  const letterInputRef = useRef('');
+  const isPlayerTurnRef = useRef(false);
   const revealTimerRef = useRef(null);
   const confettiRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -248,6 +252,11 @@ const GameplayScreen = ({ navigation, route }) => {
   const stopShownRef = useRef(false);
   const phaseRef = useRef(phase);
   const userIdRef = useRef(userId);
+  const lastPhaseValueRef = useRef(null);
+  const validationFailCountRef = useRef(0);
+  const validationRecoveryInProgressRef = useRef(false);
+  const validationAutoRetryDisabledRef = useRef(false);
+  const lastValidationRecoveryAtRef = useRef(0);
   const isLeavingRef = useRef(false);
   const backgroundLeaveTriggeredRef = useRef(false);
   const lastAppStateRef = useRef(AppState.currentState);
@@ -256,6 +265,14 @@ const GameplayScreen = ({ navigation, route }) => {
   const { height: winH, width: winW } = Dimensions.get('window');
   const HEADER_HEIGHT = Math.max(56, Math.round(winH * 0.07));
   const CIRCLE_SIZE = Math.max(28, Math.min(64, Math.round(HEADER_HEIGHT * 0.70)));
+
+  useEffect(() => {
+    try {
+      if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+        UIManager.setLayoutAnimationEnabledExperimental(true);
+      }
+    } catch (e) {}
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -310,6 +327,35 @@ const GameplayScreen = ({ navigation, route }) => {
 
   useEffect(() => {
     phaseRef.current = phase;
+  }, [phase]);
+
+  useEffect(() => {
+    letterInputRef.current = String(letterInput || '');
+  }, [letterInput]);
+
+  useEffect(() => {
+    isPlayerTurnRef.current = !!isPlayerTurn;
+  }, [isPlayerTurn]);
+
+  useEffect(() => {
+    const prev = lastPhaseValueRef.current;
+    lastPhaseValueRef.current = phase;
+    if (phase === 'validation' && prev !== 'validation') {
+      validationFailCountRef.current = 0;
+      validationAutoRetryDisabledRef.current = false;
+      validationRecoveryInProgressRef.current = false;
+      lastValidationRecoveryAtRef.current = 0;
+      setRetryAttempt(0);
+      setRefreshError(null);
+    }
+    if (phase !== 'validation' && prev === 'validation') {
+      validationFailCountRef.current = 0;
+      validationAutoRetryDisabledRef.current = false;
+      validationRecoveryInProgressRef.current = false;
+      lastValidationRecoveryAtRef.current = 0;
+      setRetryAttempt(0);
+      setRefreshError(null);
+    }
   }, [phase]);
 
   useEffect(() => {
@@ -410,6 +456,7 @@ const GameplayScreen = ({ navigation, route }) => {
     };
     const onLetterSelectionStarted = async (data) => {
       setPhase('letter-selection');
+      letterAutoSubmittedRef.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
       if (data.gameId && String(data.gameId) !== String(gameId)) {
         setIsFinished(false);
@@ -1008,29 +1055,6 @@ const GameplayScreen = ({ navigation, route }) => {
     }
   }, [phase, showManualReload, selectionDeadline, isReloadingCategories]);
 
-  const playersForHeader = React.useMemo(() => {
-    const fromGame = Array.isArray(gameState?.players) ? gameState.players : [];
-    if (fromGame.length > 0) {
-      return fromGame.map((p, idx) => {
-        const u = p.user || {};
-        const id = (u && (u._id || u)) || idx.toString();
-        const name = (u && (u.displayName || u.username)) || p.displayName || p.username || t('gameplay.player');
-        return { id: String(id), name: String(name) };
-      });
-    }
-    if (Array.isArray(playerScores) && playerScores.length > 0) {
-      return playerScores.map((s, idx) => {
-        const u = s.user || {};
-        const id = (u && (u._id || u)) || idx.toString();
-        const name = (u && (u.displayName || u.username)) || s.displayName || s.username || t('gameplay.player');
-        return { id: String(id), name: String(name) };
-      });
-    }
-    const meName = user?.displayName || user?.username || t('leaderboard.you');
-    const meId = String(user?.id || user?._id || 'me');
-    return [{ id: meId, name: meName }];
-  }, [gameState, playerScores, user, t]);
-
   const pointsById = React.useMemo(() => {
     const map = {};
     const src = Array.isArray(playerScores) && playerScores.length > 0
@@ -1045,6 +1069,65 @@ const GameplayScreen = ({ navigation, route }) => {
     });
     return map;
   }, [playerScores, gameState]);
+
+  const playersForHeader = React.useMemo(() => {
+    const fromGame = Array.isArray(gameState?.players) ? gameState.players : [];
+    if (fromGame.length > 0) {
+      return fromGame.map((p, idx) => {
+        const u = p.user || {};
+        const id = (u && (u._id || u)) || idx.toString();
+        const name = (u && (u.displayName || u.username)) || p.displayName || p.username || t('gameplay.player');
+        return { id: String(id), name: String(name), baseIndex: idx };
+      });
+    }
+    if (Array.isArray(playerScores) && playerScores.length > 0) {
+      return playerScores.map((s, idx) => {
+        const u = s.user || {};
+        const id = (u && (u._id || u)) || idx.toString();
+        const name = (u && (u.displayName || u.username)) || s.displayName || s.username || t('gameplay.player');
+        return { id: String(id), name: String(name), baseIndex: idx };
+      });
+    }
+    const meName = user?.displayName || user?.username || t('leaderboard.you');
+    const meId = String(user?.id || user?._id || 'me');
+    return [{ id: meId, name: meName, baseIndex: 0 }];
+  }, [gameState, playerScores, user, t]);
+
+  const sortedPlayersForHeader = React.useMemo(() => {
+    const scoreFor = (pid) => {
+      try {
+        const v = pointsById && Object.prototype.hasOwnProperty.call(pointsById, pid) ? pointsById[pid] : 0;
+        return Number(v) || 0;
+      } catch (e) {
+        return 0;
+      }
+    };
+    const list = Array.isArray(playersForHeader) ? playersForHeader : [];
+    return [...list].sort((a, b) => {
+      const sa = scoreFor(a.id);
+      const sb = scoreFor(b.id);
+      if (sb !== sa) return sb - sa;
+      const ia = typeof a.baseIndex === 'number' ? a.baseIndex : 0;
+      const ib = typeof b.baseIndex === 'number' ? b.baseIndex : 0;
+      return ia - ib;
+    });
+  }, [playersForHeader, pointsById]);
+
+  const headerOrderKey = React.useMemo(
+    () => (Array.isArray(sortedPlayersForHeader) ? sortedPlayersForHeader.map(p => p.id).join('|') : ''),
+    [sortedPlayersForHeader]
+  );
+
+  useLayoutEffect(() => {
+    try {
+      LayoutAnimation.configureNext({
+        duration: 1000,
+        update: { type: LayoutAnimation.Types.easeInEaseOut },
+        create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+        delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+      });
+    } catch (e) {}
+  }, [headerOrderKey]);
 
   // Determine the player with the highest score (only if not tied)
   const leaderPlayerId = React.useMemo(() => {
@@ -1169,6 +1252,17 @@ const GameplayScreen = ({ navigation, route }) => {
       const secs = Math.max(0, Math.ceil(ms / 1000));
       setLetterTimeLeft(secs);
       if (secs === 0) {
+        // Time expired: if the selector typed a letter but didn't confirm, submit it.
+        // If input is empty, do nothing and let the server choose randomly.
+        if (!letterAutoSubmittedRef.current) {
+          letterAutoSubmittedRef.current = true;
+          try {
+            const typed = (letterInputRef.current || '').trim();
+            if (isPlayerTurnRef.current && typed) {
+              selectLetter(gameId, typed);
+            }
+          } catch (e) {}
+        }
         clearInterval(letterTimerRef.current);
         setLetterDeadline(null);
       }
@@ -1258,6 +1352,7 @@ const GameplayScreen = ({ navigation, route }) => {
       socket.on('letter-selection-started', (data) => {
         // Keep existing behavior: if server indicates a different gameId, follow it.
         setPhase('letter-selection');
+        letterAutoSubmittedRef.current = false;
         if (data.selectorId) {
           setLetterSelectorId(data.selectorId);
           setIsPlayerTurn(data.selectorId === userId);
@@ -1436,11 +1531,62 @@ const GameplayScreen = ({ navigation, route }) => {
   const handleValidation = async () => {
     const result = await validateAnswers(gameId);
     if (result.success) {
+      validationFailCountRef.current = 0;
+      setRetryAttempt(0);
       if (timerRef.current) clearInterval(timerRef.current);
       setTimeLeft(0);
       setRoundResults(result.roundResults);
       setPlayerScores(result.standings);
       setPhase('round-end');
+    }
+  };
+
+  const hardReconnectFromValidation = async () => {
+    try {
+      if (validationRecoveryInProgressRef.current) return;
+      const now = Date.now();
+      if (now - (lastValidationRecoveryAtRef.current || 0) < 8000) return;
+      lastValidationRecoveryAtRef.current = now;
+      validationRecoveryInProgressRef.current = true;
+
+      try {
+        if (autoRetryTimerRef.current) {
+          clearInterval(autoRetryTimerRef.current);
+          autoRetryTimerRef.current = null;
+        }
+      } catch (e) {}
+
+      setIsRefreshing(true);
+      setRefreshError(null);
+
+      const response = await axios.get('game/reconnect/check', { params: { gameId, _: Date.now() } });
+      const data = response?.data;
+
+      if (!data || !data.hasActiveGame || !data.gameId) {
+        validationAutoRetryDisabledRef.current = true;
+        setRefreshError(t('gameplay.couldNotSyncState'));
+        setIsRefreshing(false);
+        return;
+      }
+
+      try {
+        if (typeof joinRoom === 'function' && data.roomId) joinRoom(data.roomId);
+      } catch (e) {}
+      try {
+        if (typeof joinGame === 'function') joinGame(data.gameId);
+      } catch (e) {}
+
+      validationFailCountRef.current = 0;
+      setRetryAttempt(0);
+      setRefreshError(null);
+
+      navigation.replace('Gameplay', { gameId: data.gameId, roomId: data.roomId });
+    } catch (error) {
+      validationAutoRetryDisabledRef.current = true;
+      setRefreshError(t('gameplay.refreshErrorGeneric'));
+      setIsRefreshing(false);
+    } finally {
+      validationRecoveryInProgressRef.current = false;
     }
   };
 
@@ -1522,6 +1668,9 @@ const GameplayScreen = ({ navigation, route }) => {
   };
 
   const handleRefreshValidation = async (isAutoRetry = false) => {
+    if (validationAutoRetryDisabledRef.current || validationRecoveryInProgressRef.current) {
+      return;
+    }
     setIsRefreshing(true);
     setRefreshError(null);
     
@@ -1538,6 +1687,8 @@ const GameplayScreen = ({ navigation, route }) => {
       // First attempt: Try to validate answers
       const result = await validateAnswers(gameId);
       if (result?.success && result?.roundResults) {
+        validationFailCountRef.current = 0;
+        setRetryAttempt(0);
         if (timerRef.current) clearInterval(timerRef.current);
         setTimeLeft(0);
         setRoundResults(result.roundResults);
@@ -1556,6 +1707,8 @@ const GameplayScreen = ({ navigation, route }) => {
         if (game?.status === 'round_ended') {
           const retryResult = await validateAnswers(gameId);
           if (retryResult?.success && retryResult?.roundResults) {
+            validationFailCountRef.current = 0;
+            setRetryAttempt(0);
             if (timerRef.current) clearInterval(timerRef.current);
             setTimeLeft(0);
             setRoundResults(retryResult.roundResults);
@@ -1585,13 +1738,23 @@ const GameplayScreen = ({ navigation, route }) => {
       
       // If all else fails, set error message and increment retry
       setRefreshError(t('gameplay.couldNotFetchResults'));
-      setRetryAttempt(prev => prev + 1);
+      const next = (validationFailCountRef.current || 0) + 1;
+      validationFailCountRef.current = next;
+      setRetryAttempt(next);
       setIsRefreshing(false);
+      if (next > 2) {
+        await hardReconnectFromValidation();
+      }
     } catch (error) {
       console.error('Error refreshing validation:', error);
       setRefreshError(t('gameplay.refreshErrorGeneric'));
-      setRetryAttempt(prev => prev + 1);
+      const next = (validationFailCountRef.current || 0) + 1;
+      validationFailCountRef.current = next;
+      setRetryAttempt(next);
       setIsRefreshing(false);
+      if (next > 2) {
+        await hardReconnectFromValidation();
+      }
     }
   };
 
@@ -1606,7 +1769,7 @@ const GameplayScreen = ({ navigation, route }) => {
         
         // Retry every 2 seconds
         autoRetryTimerRef.current = setInterval(() => {
-          if (phaseRef.current === 'validation' && !isRefreshing) {
+          if (phaseRef.current === 'validation' && !isRefreshing && !validationAutoRetryDisabledRef.current && !validationRecoveryInProgressRef.current) {
             handleRefreshValidation(true);
           }
         }, 2000);
@@ -2060,7 +2223,7 @@ const GameplayScreen = ({ navigation, route }) => {
                 ref={(ref) => { cardRefs.current[category] = ref; }}
                 collapsable={false}
               >
-                <Card style={styles.answerCard}>
+                <Card style={[styles.answerCard, isLastInput && styles.lastAnswerCard]}>
                 <Card.Content>
                   <View style={styles.categoryLabelContainer}>
                     <MaterialCommunityIcons 
@@ -2543,7 +2706,7 @@ const GameplayScreen = ({ navigation, route }) => {
           <MaterialCommunityIcons name="arrow-left" size={24} color="#424242" />
         </TouchableOpacity>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.headerScroll} contentContainerStyle={styles.headerCenter}>
-          {playersForHeader.map((p) => {
+          {sortedPlayersForHeader.map((p) => {
             const isLeader = leaderPlayerId && p.id === leaderPlayerId;
             const gain = roundGainMap && roundGainMap[p.id];
             const gainAnim = roundGainAnimMapRef.current && roundGainAnimMapRef.current[p.id];
@@ -3224,6 +3387,9 @@ const styles = StyleSheet.create({
   answerCard: {
     marginBottom: 15,
     elevation: 2,
+  },
+  lastAnswerCard: {
+    marginBottom: 35,
   },
   categoryLabelContainer: {
     flexDirection: 'row',
