@@ -149,6 +149,7 @@ export default {
     title: 'Zona de Chat',
     welcome: 'Chat Global',
     empty: 'Aún no hay mensajes. ¡Di hola!',
+    loadPrevious: 'Cargar anteriores',
     typeMessage: 'Escribe un mensaje...',
     notConnectedHint: 'Conéctate al servidor para chatear.'
   },

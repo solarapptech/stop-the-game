@@ -171,6 +171,9 @@ Game end behavior:
 ### User
 - `PUT /api/user/language` - Update user's UI language
 
+### Chat
+- `GET /api/chat/global?language=en|es&limit=50&before=<ISO date>` - Get global chat history (latest 50 by default, use `before` to paginate older)
+
 ## 💬 Socket Events (Chat)
 
 ### Room chat
@@ -180,10 +183,10 @@ Game end behavior:
 
 ### Global chat (Chat Zone)
 
-- `join-global-chat` payload: none
-- `leave-global-chat` payload: none
-- `global-send-message` payload: `{ message }`
-- `global-new-message` payload: `{ userId, username, displayName, message, ts }`
+- `join-global-chat` payload: `{ language: 'en' | 'es' }`
+- `leave-global-chat` payload: `{ language: 'en' | 'es' }`
+- `global-send-message` payload: `{ language: 'en' | 'es', message }`
+- `global-new-message` payload: `{ id, userId, username, displayName, message, language, createdAt }`
 
 ## 🌍 Room Language Enforcement
 

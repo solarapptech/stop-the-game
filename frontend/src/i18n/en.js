@@ -150,6 +150,7 @@ export default {
     title: 'Chat Zone',
     welcome: 'Global Chat',
     empty: 'No messages yet. Say hi!',
+    loadPrevious: 'Load previous',
     typeMessage: 'Type a message...',
     notConnectedHint: 'Connect to the server to chat.'
   },

@@ -129,21 +129,21 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
-  const joinGlobalChat = () => {
+  const joinGlobalChat = (language) => {
     if (socket && connected && isAuthenticated) {
-      socket.emit('join-global-chat');
+      socket.emit('join-global-chat', { language });
     }
   };
 
-  const leaveGlobalChat = () => {
+  const leaveGlobalChat = (language) => {
     if (socket && connected && isAuthenticated) {
-      socket.emit('leave-global-chat');
+      socket.emit('leave-global-chat', { language });
     }
   };
 
-  const sendGlobalMessage = (message) => {
+  const sendGlobalMessage = (language, message) => {
     if (socket && connected && isAuthenticated) {
-      socket.emit('global-send-message', { message });
+      socket.emit('global-send-message', { language, message });
     }
   };
 

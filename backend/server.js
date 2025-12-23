@@ -20,6 +20,7 @@ const roomRoutes = require('./routes/room');
 const gameRoutes = require('./routes/game');
 const paymentRoutes = require('./routes/payment');
 const leaderboardRoutes = require('./routes/leaderboard');
+const chatRoutes = require('./routes/chat');
 
 // Import socket handlers
 const socketHandlers = require('./socket/socketHandlers');
@@ -141,6 +142,7 @@ app.use('/api/room', roomLimiter, roomRoutes);
 app.use('/api/game', gameLimiter, gameRoutes);
 app.use('/api/payment', defaultLimiter, paymentRoutes);
 app.use('/api/leaderboard', defaultLimiter, leaderboardRoutes);
+app.use('/api/chat', defaultLimiter, chatRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

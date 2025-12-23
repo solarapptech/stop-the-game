@@ -1,6 +1,7 @@
 const Room = require('../models/Room');
 const Game = require('../models/Game');
 const User = require('../models/User');
+const ChatMessage = require('../models/ChatMessage');
 const jwt = require('jsonwebtoken');
 const { validateBatchAnswersFast } = require('../utils/openai');
 const categoryTimers = new Map();
@@ -21,7 +22,8 @@ const activeUserSockets = new Map();
 
 const TTL_15_MIN_MS = 15 * 60 * 1000;
 const VALIDATION_LOCK_STALE_MS = parseInt(process.env.VALIDATION_LOCK_STALE_MS || '30000');
-const GLOBAL_CHAT_ROOM = 'global-chat';
+const getGlobalChatRoom = (language) => `global-chat:${language}`;
+const getGlobalChatChannel = (language) => `global:${language}`;
 
 module.exports = (io, socket) => {
   const emitOnlineCount = (target) => {
@@ -2152,17 +2154,19 @@ module.exports = (io, socket) => {
     }
   });
 
-  socket.on('join-global-chat', async () => {
+  socket.on('join-global-chat', async (data) => {
     try {
       if (!socket.userId) return;
-      socket.join(GLOBAL_CHAT_ROOM);
+      const lang = (data && (data.language === 'es' || data.language === 'en')) ? data.language : 'en';
+      socket.join(getGlobalChatRoom(lang));
     } catch (e) {
     }
   });
 
-  socket.on('leave-global-chat', async () => {
+  socket.on('leave-global-chat', async (data) => {
     try {
-      socket.leave(GLOBAL_CHAT_ROOM);
+      const lang = (data && (data.language === 'es' || data.language === 'en')) ? data.language : 'en';
+      socket.leave(getGlobalChatRoom(lang));
     } catch (e) {
     }
   });
@@ -2173,16 +2177,29 @@ module.exports = (io, socket) => {
       const message = raw.trim();
       if (!socket.userId || !message) return;
 
+      const lang = (data && (data.language === 'es' || data.language === 'en')) ? data.language : 'en';
+
       const safeMessage = message.length > 300 ? message.slice(0, 300) : message;
       const user = await User.findById(socket.userId).select('username displayName');
       const displayName = user?.displayName || user?.username || 'Player';
 
-      io.to(GLOBAL_CHAT_ROOM).emit('global-new-message', {
+      const saved = await ChatMessage.create({
+        channel: getGlobalChatChannel(lang),
+        language: lang,
+        user: socket.userId,
+        usernameSnapshot: user?.username || 'Player',
+        displayNameSnapshot: displayName,
+        message: safeMessage
+      });
+
+      io.to(getGlobalChatRoom(lang)).emit('global-new-message', {
+        id: saved?._id ? String(saved._id) : undefined,
         userId: socket.userId,
         username: user?.username || 'Player',
         displayName,
         message: safeMessage,
-        ts: Date.now()
+        language: lang,
+        createdAt: saved?.createdAt || new Date()
       });
     } catch (error) {
       console.error('Global chat message socket error:', error);
