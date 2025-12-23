@@ -199,6 +199,33 @@ Quick Play:
 - If the game/room no longer exists (for example, it was cleaned up), the Reconnect UI will show **"Game ended"** and the Reconnect button will disappear.
 - If multiple active games match the reconnect criteria (rare edge case / leftover data), the Reconnect UI will prompt you to **choose which game** to reconnect to.
 
+Rate limiting note:
+
+- The backend has a global request rate limiter.
+- The Menu reconnect check is **throttled** and uses a short **backoff** after HTTP **429** to avoid spamming `/api/game/reconnect/check`.
+
+## 🚦 HTTP Rate Limiting (Production Safety)
+
+The backend uses `express-rate-limit` for **HTTP routes only** (Socket.IO traffic is not affected).
+
+Keying behavior:
+
+- If a request includes a valid `Authorization: Bearer <JWT>` header, the limiter key is **per-user** (`userId`).
+- Otherwise, it falls back to **per-IP**.
+
+Per-route limits:
+
+- `/api/auth/*` is **strict** (to reduce brute force risk).
+- `/api/game/*` and `/api/room/*` are **relaxed** (to avoid blocking normal gameplay, especially when multiple players share the same Wi-Fi/public IP).
+
+Environment variables:
+
+- `RATE_LIMIT_WINDOW_MS` (default: `900000`)
+- `RATE_LIMIT_AUTH_MAX` (default: `30`)
+- `RATE_LIMIT_DEFAULT_MAX` (default: `300`)
+- `RATE_LIMIT_GAME_MAX` (default: `2000`)
+- `RATE_LIMIT_ROOM_MAX` (default: `2000`)
+
 Endpoint details:
 
 - `GET /api/game/reconnect/check`

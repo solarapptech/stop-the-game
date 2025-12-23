@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useLayoutEffect } from 'react';
+import React, { useEffect, useState, useLayoutEffect, useRef } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Text, Button, Avatar, IconButton, ActivityIndicator, TextInput, RadioButton } from 'react-native-paper';
@@ -37,6 +37,10 @@ const MenuScreen = ({ navigation }) => {
   const [reconnectVisible, setReconnectVisible] = useState(false);
   const [reconnectStatus, setReconnectStatus] = useState('reconnecting'); // 'reconnecting' | 'joining'
   const [reconnectOptions, setReconnectOptions] = useState([]);
+
+  const reconnectCheckInFlightRef = useRef(false);
+  const lastReconnectCheckAtRef = useRef(0);
+  const reconnect429BackoffUntilRef = useRef(0);
 
   useLayoutEffect(() => {
     const crownColor = user?.isSubscribed ? '#FFC107' : '#BDBDBD';
@@ -123,8 +127,22 @@ const MenuScreen = ({ navigation }) => {
       let cancelled = false;
       const checkActiveGame = async () => {
         if (!token) return;
+
+        const now = Date.now();
+        // If we're currently rate-limited, don't spam the server.
+        if (reconnect429BackoffUntilRef.current && now < reconnect429BackoffUntilRef.current) {
+          return;
+        }
+        // Throttle calls on repeated focus events / hot reloads.
+        if (reconnectCheckInFlightRef.current) return;
+        if (lastReconnectCheckAtRef.current && (now - lastReconnectCheckAtRef.current) < 5000) {
+          return;
+        }
+
+        reconnectCheckInFlightRef.current = true;
+        lastReconnectCheckAtRef.current = now;
         try {
-          const response = await axios.get('game/reconnect/check');
+          const response = await axios.get('game/reconnect/check', { params: { _: Date.now() } });
           const data = response.data;
           if (!cancelled) {
             if (data.hasActiveGame) {
@@ -137,19 +155,24 @@ const MenuScreen = ({ navigation }) => {
             }
           }
         } catch (error) {
-          console.error('[MenuScreen] Error checking for active game:', error);
+          const status = error?.response?.status;
+          if (status === 429) {
+            // Back off for a bit to respect server-side rate limiting.
+            reconnect429BackoffUntilRef.current = Date.now() + 60 * 1000;
+            console.warn('[MenuScreen] Reconnect check rate-limited (429); backing off for 60s');
+          } else {
+            console.error('[MenuScreen] Error checking for active game:', error);
+          }
           if (!cancelled) {
             setHasActiveGame(false);
             setActiveGameData(null);
           }
+        } finally {
+          reconnectCheckInFlightRef.current = false;
         }
       };
-      let retryTimer = null;
       checkActiveGame();
-      retryTimer = setTimeout(() => {
-        if (!cancelled) checkActiveGame();
-      }, 1500);
-      return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
+      return () => { cancelled = true; };
     }, [token])
   );
 

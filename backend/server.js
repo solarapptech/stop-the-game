@@ -8,6 +8,7 @@ const { Server } = require('socket.io');
 const session = require('express-session');
 const passport = require('passport');
 const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
 
 // Load environment variables
 dotenv.config();
@@ -47,11 +48,46 @@ const io = new Server(server, {
 // Expose io to routes via app instance
 app.set('io', io);
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+// Rate limiting (HTTP only)
+// - Key by authenticated userId when a valid JWT is present, otherwise fall back to IP.
+// - Apply per-route limits so core gameplay is not impacted.
+const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || String(15 * 60 * 1000));
+const RATE_LIMIT_AUTH_MAX = parseInt(process.env.RATE_LIMIT_AUTH_MAX || '30');
+const RATE_LIMIT_DEFAULT_MAX = parseInt(process.env.RATE_LIMIT_DEFAULT_MAX || '300');
+const RATE_LIMIT_GAME_MAX = parseInt(process.env.RATE_LIMIT_GAME_MAX || '2000');
+const RATE_LIMIT_ROOM_MAX = parseInt(process.env.RATE_LIMIT_ROOM_MAX || '2000');
+
+const getRateLimitKey = (req) => {
+  try {
+    const raw = req.header('Authorization');
+    const token = raw && raw.startsWith('Bearer ') ? raw.slice('Bearer '.length) : null;
+    if (!token) return `ip:${req.ip}`;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = decoded && decoded.userId ? String(decoded.userId) : null;
+    if (!userId) return `ip:${req.ip}`;
+    return `user:${userId}`;
+  } catch (e) {
+    return `ip:${req.ip}`;
+  }
+};
+
+const makeLimiter = (max) => rateLimit({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  skip: (req) => {
+    // Skip preflight requests
+    if (req.method === 'OPTIONS') return true;
+    return false;
+  }
 });
+
+const authLimiter = makeLimiter(RATE_LIMIT_AUTH_MAX);
+const defaultLimiter = makeLimiter(RATE_LIMIT_DEFAULT_MAX);
+const roomLimiter = makeLimiter(RATE_LIMIT_ROOM_MAX);
+const gameLimiter = makeLimiter(RATE_LIMIT_GAME_MAX);
 
 // Middleware
 app.use(helmet());
@@ -66,12 +102,6 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// Exempt lightweight profile reads from global limiter
-app.use((req, res, next) => {
-  const path = req.path || '';
-  if (path.startsWith('/api/user/profile')) return next();
-  return limiter(req, res, next);
-});
 
 // Session configuration
 app.use(session({
@@ -105,12 +135,12 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/stop-the-
 });
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/user', userRoutes);
-app.use('/api/room', roomRoutes);
-app.use('/api/game', gameRoutes);
-app.use('/api/payment', paymentRoutes);
-app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/user', defaultLimiter, userRoutes);
+app.use('/api/room', roomLimiter, roomRoutes);
+app.use('/api/game', gameLimiter, gameRoutes);
+app.use('/api/payment', defaultLimiter, paymentRoutes);
+app.use('/api/leaderboard', defaultLimiter, leaderboardRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
