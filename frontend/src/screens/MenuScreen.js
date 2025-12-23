@@ -511,7 +511,7 @@ const MenuScreen = ({ navigation }) => {
 
   return (
     <LinearGradient
-      colors={['#4CAF50', '#45a049']}
+      colors={['#95C159', '#45a049']}
       style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -538,7 +538,7 @@ const MenuScreen = ({ navigation }) => {
                 />
               </View>
               <View style={styles.connectionStatus}>
-                <View style={[styles.statusDot, { backgroundColor: connected ? '#4CAF50' : '#F44336' }]} />
+                <View style={[styles.statusDot, { backgroundColor: connected ? '#95C159' : '#F44336' }]} />
                 <Text style={styles.statusText}>
                   {connected ? t('menu.connected') : t('menu.disconnected')}
                 </Text>
@@ -604,7 +604,7 @@ const MenuScreen = ({ navigation }) => {
               <Avatar.Icon
                 size={48}
                 icon="plus-circle"
-                style={[styles.primaryActionIcon, { backgroundColor: '#4CAF50' }]}
+                style={[styles.primaryActionIcon, { backgroundColor: '#95C159' }]}
               />
               <Text style={styles.primaryActionTitle}>{t('menu.createRoom')}</Text>
               <Text style={styles.primaryActionSubtitle}>{t('menu.createRoomDesc')}</Text>
@@ -837,7 +837,7 @@ const MenuScreen = ({ navigation }) => {
                   <MaterialCommunityIcons
                     name="check-circle"
                     size={50}
-                    color="#4CAF50"
+                    color="#95C159"
                     style={styles.spinner}
                   />
                 ) : (

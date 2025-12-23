@@ -546,7 +546,7 @@ const RoomScreen = ({ navigation, route }) => {
                         <IconButton
                           icon={player.isReady ? 'check-circle' : 'circle-outline'}
                           size={20}
-                          iconColor={player.isReady ? '#4CAF50' : '#757575'}
+                          iconColor={player.isReady ? '#95C159' : '#757575'}
                         />
                       </View>
                     )}
@@ -857,7 +857,7 @@ const styles = StyleSheet.create({
   },
   startButton: {
     flex: 1,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#95C159',
   },
 });
 

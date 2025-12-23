@@ -7,7 +7,7 @@
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash.png",
-      "backgroundColor": "#4CAF50",
+      "backgroundColor": "#95C159",
       "resizeMode": "contain"
     },
     "scheme": "stopthegame",
@@ -21,7 +21,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#4CAF50"
+        "backgroundColor": "#95C159"
       },
       "package": "com.stopthegame.app",
       "softwareKeyboardLayoutMode": "resize",

@@ -2282,7 +2282,7 @@ const GameplayScreen = ({ navigation, route }) => {
       <Button
         mode="contained"
         onPress={handleStop}
-        style={[styles.stopButton, { backgroundColor: canFinish ? '#4CAF50' : '#9E9E9E' }]}
+        style={[styles.stopButton, { backgroundColor: canFinish ? '#95C159' : '#9E9E9E' }]}
         disabled={timeLeft === 0 || hasStoppedFirst || !canFinish || isFrozen}
       >
         {t('gameplay.stop')}
@@ -2379,7 +2379,7 @@ const GameplayScreen = ({ navigation, route }) => {
                       <DataTable.Cell style={styles.tableCellStatus}>
                         <IconButton
                           icon={ca.isValid ? 'check-circle' : 'close-circle'}
-                          iconColor={ca.isValid ? '#4CAF50' : '#F44336'}
+                          iconColor={ca.isValid ? '#95C159' : '#F44336'}
                           size={20}
                           style={styles.validationIcon}
                         />
@@ -3079,7 +3079,7 @@ const styles = StyleSheet.create({
   },
   categoryBoxSelected: {
     backgroundColor: '#F5F5F5',
-    borderColor: '#4CAF50',
+    borderColor: '#95C159',
     opacity: 0.7,
   },
   categoryBoxDisabled: {
@@ -3277,7 +3277,7 @@ const styles = StyleSheet.create({
   },
   roundGainText: {
     fontSize: 72,
-    color: '#4CAF50',
+    color: '#95C159',
     fontWeight: '900',
     textShadowColor: 'rgba(0,0,0,0.35)',
     textShadowOffset: { width: 0, height: 2 },
