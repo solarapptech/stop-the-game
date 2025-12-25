@@ -121,14 +121,17 @@ export const SocketProvider = ({ children }) => {
           if (terminatedAlertShownRef.current) return;
           terminatedAlertShownRef.current = true;
 
+          try {
+            await logout();
+          } catch (e) {}
+
           Alert.alert(
             'Disconnected',
             'Your session was disconnected because this account logged in on another device.',
             [
               {
                 text: 'OK',
-                onPress: async () => {
-                  try { await logout(); } catch (e) {}
+                onPress: () => {
                   terminatedAlertShownRef.current = false;
                 }
               }
