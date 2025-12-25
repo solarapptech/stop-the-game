@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Text, Card, List, Switch, Button, TextInput, Dialog, Portal, IconButton, RadioButton } from 'react-native-paper';
+import { Text, Card, List, Switch, Button, TextInput, Dialog, Portal, IconButton, RadioButton, ActivityIndicator } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import axios from 'axios';
@@ -14,6 +14,30 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
       return await refreshUser(opts);
     }
     return { success: false, noContext: true };
+  };
+
+  const handleLanguageChange = async (value) => {
+    if (isSwitchingLanguage) return;
+    if (!value || value === language) return;
+
+    const start = Date.now();
+    setIsSwitchingLanguage(true);
+    setSwitchingToLanguage(value);
+
+    try {
+      await changeLanguage(value);
+      if (updateUserLanguage) {
+        await updateUserLanguage(value);
+      }
+    } finally {
+      const elapsed = Date.now() - start;
+      const remaining = 1000 - elapsed;
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
+      setIsSwitchingLanguage(false);
+      setSwitchingToLanguage(null);
+    }
   };
   const updateUserSafe = async (updates = {}) => {
     if (typeof updateUser === 'function') {
@@ -50,6 +74,8 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
   const [editDisplayNameVisible, setEditDisplayNameVisible] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState(user?.displayName || user?.username || '');
   const [savingName, setSavingName] = useState(false);
+  const [isSwitchingLanguage, setIsSwitchingLanguage] = useState(false);
+  const [switchingToLanguage, setSwitchingToLanguage] = useState(null);
 
   useEffect(() => {
     // Ensure we have the latest email/verified fields for display
@@ -264,29 +290,40 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
               <Card.Content>
                 <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
                 <RadioButton.Group 
-                  onValueChange={async (value) => {
-                    await changeLanguage(value);
-                    if (updateUserLanguage) {
-                      await updateUserLanguage(value);
-                    }
-                  }} 
+                  onValueChange={handleLanguageChange}
                   value={language}
                 >
                   <List.Item
                     title={t('settings.english')}
-                    left={() => <RadioButton value="en" color={theme.colors.primary} />}
-                    onPress={() => {
-                      changeLanguage('en');
-                      if (updateUserLanguage) updateUserLanguage('en');
-                    }}
+                    left={() => (
+                      <RadioButton
+                        value="en"
+                        color={theme.colors.primary}
+                        disabled={isSwitchingLanguage}
+                      />
+                    )}
+                    right={() => (
+                      isSwitchingLanguage && switchingToLanguage === 'en' ? (
+                        <ActivityIndicator size="small" color={theme.colors.primary} />
+                      ) : null
+                    )}
+                    onPress={() => handleLanguageChange('en')}
                   />
                   <List.Item
                     title={t('settings.spanish')}
-                    left={() => <RadioButton value="es" color={theme.colors.primary} />}
-                    onPress={() => {
-                      changeLanguage('es');
-                      if (updateUserLanguage) updateUserLanguage('es');
-                    }}
+                    left={() => (
+                      <RadioButton
+                        value="es"
+                        color={theme.colors.primary}
+                        disabled={isSwitchingLanguage}
+                      />
+                    )}
+                    right={() => (
+                      isSwitchingLanguage && switchingToLanguage === 'es' ? (
+                        <ActivityIndicator size="small" color={theme.colors.primary} />
+                      ) : null
+                    )}
+                    onPress={() => handleLanguageChange('es')}
                   />
                 </RadioButton.Group>
               </Card.Content>

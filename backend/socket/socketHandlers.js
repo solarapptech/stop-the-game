@@ -765,10 +765,28 @@ module.exports = (io, socket) => {
   socket.on('authenticate', async (token) => {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      socket.userId = decoded.userId;
+      const nextUserId = decoded.userId;
+      const key = nextUserId.toString();
+
+      let otherSocketIds = [];
+      try {
+        const existing = activeUserSockets.get(key);
+        if (existing && existing.size > 0) {
+          otherSocketIds = Array.from(existing).filter((id) => id !== socket.id);
+        }
+      } catch (e) {}
+
+      if (otherSocketIds.length > 0) {
+        socket.pendingUserId = nextUserId;
+        socket.emit('duplicate-session', {
+          message: 'This account is already connected. Press OK to disconnect the other session and continue.'
+        });
+        return;
+      }
+
+      socket.userId = nextUserId;
 
       try {
-        const key = socket.userId.toString();
         const set = activeUserSockets.get(key) || new Set();
         set.add(socket.id);
         activeUserSockets.set(key, set);
@@ -778,6 +796,44 @@ module.exports = (io, socket) => {
       emitOnlineCount();
     } catch (error) {
       socket.emit('authenticated', { success: false, error: 'Invalid token' });
+    }
+  });
+
+  socket.on('duplicate-session-confirm', async () => {
+    try {
+      if (socket.userId) return;
+      if (!socket.pendingUserId) return;
+
+      const userId = socket.pendingUserId;
+      const key = userId.toString();
+
+      const set = activeUserSockets.get(key) || new Set();
+      const otherSocketIds = Array.from(set).filter((id) => id !== socket.id);
+
+      for (const otherId of otherSocketIds) {
+        try {
+          const otherSocket = io.sockets.sockets.get(otherId);
+          if (otherSocket) {
+            try {
+              otherSocket.emit('session-terminated', {
+                reason: 'duplicate-session'
+              });
+            } catch (e) {}
+            try { otherSocket.disconnect(true); } catch (e) {}
+          }
+        } catch (e) {}
+        try { set.delete(otherId); } catch (e) {}
+      }
+
+      set.add(socket.id);
+      activeUserSockets.set(key, set);
+      socket.userId = userId;
+      socket.pendingUserId = null;
+
+      socket.emit('authenticated', { success: true });
+      emitOnlineCount();
+    } catch (e) {
+      socket.emit('authenticated', { success: false, error: 'Failed to disconnect other session' });
     }
   });
 

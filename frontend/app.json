@@ -50,9 +50,9 @@
       "apiUrl": "https://stop-the-game-backend.onrender.com/api",
       "socketUrl": "https://stop-the-game-backend.onrender.com",
       "eas": {
-        "projectId": "1a29a193-402e-43c9-8121-e03678326ea1"
+        "projectId": "58f54bff-555b-45f2-8dab-c988b9841988"
       }
     },
-    "owner": "vrestudio"
+    "owner": "antoniob77"
   }
 }

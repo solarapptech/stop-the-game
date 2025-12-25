@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
-import { Platform } from 'react-native';
+import { Alert, Platform } from 'react-native';
 import { useAuth } from './AuthContext';
 
 const SocketContext = createContext({});
@@ -52,7 +52,9 @@ export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const { token } = useAuth();
+  const { token, logout } = useAuth();
+  const duplicateAlertShownRef = useRef(false);
+  const terminatedAlertShownRef = useRef(false);
 
   useEffect(() => {
     if (token) {
@@ -86,6 +88,58 @@ export const SocketProvider = ({ children }) => {
         }
       });
 
+      newSocket.on('duplicate-session', (payload) => {
+        try {
+          setIsAuthenticated(false);
+          if (duplicateAlertShownRef.current) return;
+          duplicateAlertShownRef.current = true;
+
+          const msg = payload?.message || 'This account is already connected.';
+          Alert.alert(
+            'Already connected',
+            msg,
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  try {
+                    newSocket.emit('duplicate-session-confirm');
+                  } catch (e) {}
+                  duplicateAlertShownRef.current = false;
+                }
+              }
+            ],
+            { cancelable: false }
+          );
+        } catch (e) {
+          duplicateAlertShownRef.current = false;
+        }
+      });
+
+      newSocket.on('session-terminated', async (payload) => {
+        try {
+          if (terminatedAlertShownRef.current) return;
+          terminatedAlertShownRef.current = true;
+
+          Alert.alert(
+            'Disconnected',
+            'Your session was disconnected because this account logged in on another device.',
+            [
+              {
+                text: 'OK',
+                onPress: async () => {
+                  try { await logout(); } catch (e) {}
+                  terminatedAlertShownRef.current = false;
+                }
+              }
+            ],
+            { cancelable: false }
+          );
+        } catch (e) {
+          terminatedAlertShownRef.current = false;
+        }
+      });
+
       // Bridge server broadcast to server handler: re-emit to server
       newSocket.on('advance-round-trigger', (payload) => {
         try {
@@ -100,6 +154,11 @@ export const SocketProvider = ({ children }) => {
 
       return () => {
         try { newSocket.off('advance-round-trigger'); } catch (e) {}
+        try { newSocket.off('duplicate-session'); } catch (e) {}
+        try { newSocket.off('session-terminated'); } catch (e) {}
+        try { newSocket.off('authenticated'); } catch (e) {}
+        try { newSocket.off('disconnect'); } catch (e) {}
+        try { newSocket.off('connect'); } catch (e) {}
         newSocket.close();
       };
     }

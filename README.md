@@ -15,6 +15,7 @@ A multiplayer word game built with React Native (Expo) and Node.js, featuring re
 - **Players Online Indicator**: Menu screen shows the number of currently connected users using Socket.IO in-memory counting (no database reads)
 - **Chat Zone (Global Chat)**: Menu includes a global chat where any logged-in user can talk (no persistence yet)
 - **Beautiful UI**: React Native Paper components with custom theming
+ - **Debounced Language Switching**: Changing the app language in Settings shows a short spinner and prevents repeated toggles for at least 1 second to avoid duplicate updates
 
 ## 🚀 Quick Start
 
@@ -187,6 +188,22 @@ Game end behavior:
 - `leave-global-chat` payload: `{ language: 'en' | 'es' }`
 - `global-send-message` payload: `{ language: 'en' | 'es', message }`
 - `global-new-message` payload: `{ id, userId, username, displayName, message, language, createdAt }`
+
+## 🔐 Single Active Session (Socket)
+
+Only **one Socket.IO session per account** is allowed at a time.
+
+Behavior:
+
+- If a second device/app instance connects and tries to authenticate while the account is already connected, the server will block authentication and emit `duplicate-session`.
+- When the user presses **OK**, the client emits `duplicate-session-confirm` and the server will disconnect the other session, then authenticate the new one.
+- The disconnected (kicked) client receives `session-terminated` and should log the user out.
+
+Related socket events:
+
+- `duplicate-session` payload: `{ message }`
+- `duplicate-session-confirm` payload: none
+- `session-terminated` payload: `{ reason }`
 
 ## 🌍 Room Language Enforcement
 
