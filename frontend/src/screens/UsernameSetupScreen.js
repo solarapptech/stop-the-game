@@ -16,8 +16,9 @@ const UsernameSetupScreen = ({ navigation }) => {
 
   const handleLanguageChange = async (value) => {
     if (isSwitchingLanguage) return;
-    if (value === language) return;
+    if (!value || value === language) return;
 
+    const start = Date.now();
     setIsSwitchingLanguage(true);
     setSwitchingToLanguage(value);
 
@@ -27,6 +28,11 @@ const UsernameSetupScreen = ({ navigation }) => {
         await updateUserLanguage(value);
       }
     } finally {
+      const elapsed = Date.now() - start;
+      const remaining = 1000 - elapsed;
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
       setIsSwitchingLanguage(false);
       setSwitchingToLanguage(null);
     }

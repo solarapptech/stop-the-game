@@ -1559,30 +1559,47 @@ const GameplayScreen = ({ navigation, route }) => {
       setIsRefreshing(true);
       setRefreshError(null);
 
-      const response = await axios.get('game/reconnect/check', { params: { gameId, _: Date.now() } });
-      const data = response?.data;
+      try {
+        if (typeof joinGame === 'function') joinGame(gameId);
+      } catch (e) {}
 
-      if (!data || !data.hasActiveGame || !data.gameId) {
-        validationAutoRetryDisabledRef.current = true;
-        setRefreshError(t('gameplay.couldNotSyncState'));
-        setIsRefreshing(false);
-        return;
+      const gs = await getGameState(gameId);
+      if (gs?.success) {
+        const g = gs.game;
+        if (g?.status === 'round_ended' || g?.status === 'finished') {
+          const vr = await validateAnswers(gameId);
+          if (vr?.success && vr?.roundResults) {
+            validationFailCountRef.current = 0;
+            setRetryAttempt(0);
+            if (timerRef.current) clearInterval(timerRef.current);
+            setTimeLeft(0);
+            setRoundResults(vr.roundResults);
+            setPlayerScores(vr.standings);
+            setPhase('round-end');
+            setIsRefreshing(false);
+            return;
+          }
+        }
+
+        if (g?.status === 'playing') {
+          setPhase('playing');
+          if (g?.currentLetter) setCurrentLetter(g.currentLetter);
+          setIsFrozen(false);
+          startTimer();
+          setIsRefreshing(false);
+          return;
+        }
+
+        if (g?.status === 'selecting_letter') {
+          setPhase('letter-selection');
+          setIsRefreshing(false);
+          return;
+        }
       }
 
-      try {
-        if (typeof joinRoom === 'function' && data.roomId) joinRoom(data.roomId);
-      } catch (e) {}
-      try {
-        if (typeof joinGame === 'function') joinGame(data.gameId);
-      } catch (e) {}
-
-      validationFailCountRef.current = 0;
-      setRetryAttempt(0);
-      setRefreshError(null);
-
-      navigation.replace('Gameplay', { gameId: data.gameId, roomId: data.roomId });
+      setRefreshError(t('gameplay.couldNotSyncState'));
+      setIsRefreshing(false);
     } catch (error) {
-      validationAutoRetryDisabledRef.current = true;
       setRefreshError(t('gameplay.refreshErrorGeneric'));
       setIsRefreshing(false);
     } finally {
@@ -1684,6 +1701,10 @@ const GameplayScreen = ({ navigation, route }) => {
     }
     
     try {
+      try {
+        if (typeof joinGame === 'function') joinGame(gameId);
+      } catch (e) {}
+
       // First attempt: Try to validate answers
       const result = await validateAnswers(gameId);
       if (result?.success && result?.roundResults) {
@@ -2253,13 +2274,6 @@ const GameplayScreen = ({ navigation, route }) => {
                         </View>
                       )}
                     </View>
-                    <IconButton
-                      icon={isHidden ? 'eye-off' : 'eye'}
-                      size={20}
-                      onPress={() => toggleInputVisibility(category)}
-                      style={styles.eyeIcon}
-                      iconColor={theme.colors.primary}
-                    />
                   </View>
                   {(() => { const err = getAnswerError(answers[category] || ''); return err ? (<Text style={styles.errorText}>{err}</Text>) : null; })()}
                   {!isLastInput && (
@@ -3438,9 +3452,11 @@ const styles = StyleSheet.create({
     color: '#000000',
     letterSpacing: 2,
   },
-  eyeIcon: {
-    margin: 0,
-    marginLeft: 4,
+  maskedLetter: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000000',
+    letterSpacing: 2,
   },
   downArrowButton: {
     alignSelf: 'center',

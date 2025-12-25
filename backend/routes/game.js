@@ -449,8 +449,17 @@ router.post('/:gameId/validate', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Game not found' });
     }
 
+    if (game.status === 'round_ended' || game.status === 'finished') {
+      const standings = game.getStandings();
+      const roundResults = game.players.map(p => ({
+        user: p.user,
+        answers: p.answers.find(a => a.round === game.currentRound)
+      }));
+      return res.json({ message: 'Validation complete', standings, roundResults });
+    }
+
     if (game.status !== 'validating') {
-      return res.status(400).json({ message: 'Not in validation phase' });
+      return res.json({ message: 'Not in validation phase', status: game.status });
     }
 
     const allSubmitted = game.players.every(p => p.answers.some(a => a.round === game.currentRound));

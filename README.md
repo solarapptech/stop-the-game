@@ -164,9 +164,11 @@ Game end behavior:
 - `POST /api/room/join/:roomId` - Join game room
 - `POST /api/room/join-by-code` - Join game room by invite code
 - `GET /api/room/:roomId` - Get room details
-- `POST /api/game/start` - Start game
-- `POST /api/game/submit-answers` - Submit round answers
-- `POST /api/game/validate` - Validate answers with AI
+- `POST /api/game/start/:roomId` - Start a game for a room
+- `POST /api/game/:gameId/submit` - Submit round answers
+- `POST /api/game/:gameId/validate` - Validate answers with AI (idempotent: also returns results if the game is already `round_ended` or `finished`)
+- `POST /api/game/:gameId/next-round` - Start next round (or finish game if no rounds remain)
+- `GET /api/game/:gameId` - Get authoritative game state
 - `GET /api/game/reconnect/check` - Check if the authenticated user has one (or more) active in-progress games they can reconnect to
 
 ### User
