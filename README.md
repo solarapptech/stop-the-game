@@ -65,7 +65,8 @@ GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 
 # URLs
-CLIENT_URL=http://localhost:19006
+# Allowed frontend origins for CORS (comma-separated). Include Expo Web dev origin when running on web.
+CLIENT_URLS=http://localhost:19006,http://localhost:8081
 PORT=5000
 ```
 

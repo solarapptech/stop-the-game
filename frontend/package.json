@@ -41,7 +41,10 @@
     "@stripe/stripe-react-native": "0.45.0",
     "react-native-webview": "13.13.5",
     "react-native-confetti-cannon": "^1.5.2",
-    "expo-dev-client": "~5.2.4"
+    "expo-dev-client": "~5.2.4",
+    "react-dom": "19.0.0",
+    "react-native-web": "^0.20.0",
+    "@expo/metro-runtime": "~5.0.5"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"

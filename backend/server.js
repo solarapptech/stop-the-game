@@ -38,10 +38,27 @@ const server = http.createServer(app);
 const rawClientUrls = process.env.CLIENT_URLS || process.env.CLIENT_URL || 'http://localhost:8081';
 const CLIENT_URLS = rawClientUrls.split(',').map(u => u.trim()).filter(Boolean);
 
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+
+    // Always allow configured origins
+    if (CLIENT_URLS.includes(origin)) return callback(null, true);
+
+    // In non-production, allow any origin to reduce local-dev friction (especially Expo Web ports)
+    if (process.env.NODE_ENV !== 'production') return callback(null, true);
+
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
 const io = new Server(server, {
   cors: {
-    // origin: CLIENT_URLS,
-    origin: '*',
+    origin: corsOptions.origin,
     credentials: true
   }
 });
@@ -92,15 +109,10 @@ const gameLimiter = makeLimiter(RATE_LIMIT_GAME_MAX);
 
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
-    if (CLIENT_URLS.includes(origin)) return callback(null, true);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true
-}));
+
+// CORS must be registered before routes so preflight (OPTIONS) requests succeed.
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
