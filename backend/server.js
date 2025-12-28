@@ -58,8 +58,15 @@ const corsOptions = {
 
 const io = new Server(server, {
   cors: {
-    origin: corsOptions.origin,
-    credentials: true
+    // Socket.IO is used by native clients (Expo Go) that may provide an origin like
+    // 'null' or a LAN dev-server URL. HTTP routes remain protected by corsOptions.
+    origin: (origin, callback) => {
+      if (!origin || origin === 'null') return callback(null, true);
+      if (CLIENT_URLS.includes(origin)) return callback(null, true);
+      // Allow unknown origins for sockets to avoid blocking native clients.
+      return callback(null, true);
+    },
+    credentials: false
   }
 });
 
