@@ -17,6 +17,10 @@ const theme = {
     placeholder: '#9E9E9E',
     backdrop: 'rgba(0, 0, 0, 0.5)',
   },
+  layout: {
+    maxContentWidth: 800,
+    maxFormWidth: 420,
+  },
   // Use DefaultTheme fonts so valid font variants (regular, medium, light,
   // thin) are present. This avoids referencing local Roboto font files while
   // keeping react-native-paper typography functional.

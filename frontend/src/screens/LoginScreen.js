@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
 import { TextInput, Button, Text, ActivityIndicator } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as WebBrowser from 'expo-web-browser';
@@ -70,72 +70,74 @@ const LoginScreen = ({ navigation }) => {
       colors={['#4CAF50', '#45a049']}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.logoContainer}>
-          <Text style={styles.title}>Stop!</Text>
-          <Text style={styles.subtitle}>The Game</Text>
-        </View>
-
-        <View style={styles.formContainer}>
-          <TextInput
-            label={t('auth.usernameOrEmail')}
-            value={username}
-            onChangeText={setUsername}
-            style={styles.input}
-            mode="outlined"
-            autoCapitalize="none"
-            left={<TextInput.Icon icon="account" />}
-          />
-
-          <TextInput
-            label={t('auth.password')}
-            value={password}
-            onChangeText={setPassword}
-            style={styles.input}
-            mode="outlined"
-            secureTextEntry={!showPassword}
-            left={<TextInput.Icon icon="lock" />}
-            right={
-              <TextInput.Icon 
-                icon={showPassword ? "eye-off" : "eye"}
-                onPress={() => setShowPassword(!showPassword)}
-              />
-            }
-          />
-
-          <Button
-            mode="contained"
-            onPress={handleLogin}
-            style={styles.loginButton}
-            loading={loading}
-            disabled={loading}
-            contentStyle={styles.buttonContent}
-          >
-            {t('auth.login')}
-          </Button>
-
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>{t('common.or')}</Text>
-            <View style={styles.dividerLine} />
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.maxWidthContent}>
+          <View style={styles.logoContainer}>
+            <Text style={styles.title}>Stop!</Text>
+            <Text style={styles.subtitle}>The Game</Text>
           </View>
 
-          <Button
-            mode="outlined"
-            onPress={() => promptAsync()}
-            style={styles.googleButton}
-            disabled={!request || loading}
-            icon="google"
-            contentStyle={styles.buttonContent}
-          >
-            {t('auth.continueWithGoogle')}
-          </Button>
+          <View style={styles.formContainer}>
+            <TextInput
+              label={t('auth.usernameOrEmail')}
+              value={username}
+              onChangeText={setUsername}
+              style={styles.input}
+              mode="outlined"
+              autoCapitalize="none"
+              left={<TextInput.Icon icon="account" />}
+            />
 
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>{t('auth.dontHaveAccount')}</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-              <Text style={styles.linkText}>{t('auth.signUp')}</Text>
-            </TouchableOpacity>
+            <TextInput
+              label={t('auth.password')}
+              value={password}
+              onChangeText={setPassword}
+              style={styles.input}
+              mode="outlined"
+              secureTextEntry={!showPassword}
+              left={<TextInput.Icon icon="lock" />}
+              right={
+                <TextInput.Icon 
+                  icon={showPassword ? "eye-off" : "eye"}
+                  onPress={() => setShowPassword(!showPassword)}
+                />
+              }
+            />
+
+            <Button
+              mode="contained"
+              onPress={handleLogin}
+              style={styles.loginButton}
+              loading={loading}
+              disabled={loading}
+              contentStyle={styles.buttonContent}
+            >
+              {t('auth.login')}
+            </Button>
+
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>{t('common.or')}</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <Button
+              mode="outlined"
+              onPress={() => promptAsync()}
+              style={styles.googleButton}
+              disabled={!request || loading}
+              icon="google"
+              contentStyle={styles.buttonContent}
+            >
+              {t('auth.continueWithGoogle')}
+            </Button>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>{t('auth.dontHaveAccount')}</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                <Text style={styles.linkText}>{t('auth.signUp')}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -147,10 +149,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollView: {
+    flex: 1,
+    ...(Platform.OS === 'web' && { overflowY: 'auto' }),
+  },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
+  },
+  maxWidthContent: {
+    width: '100%',
+    maxWidth: theme.layout?.maxFormWidth || 520,
+    alignSelf: 'center',
   },
   logoContainer: {
     alignItems: 'center',

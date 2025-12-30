@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { Text, Card, Button, List, Chip } from 'react-native-paper';
 import { WebView } from 'react-native-webview';
 import { useAuth } from '../contexts/AuthContext';
@@ -115,91 +115,93 @@ const PaymentScreen = ({ navigation }) => {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-      {/* Premium Banner */}
-      <Card style={styles.premiumCard}>
-        <Card.Content>
-          <Text style={styles.premiumTitle}>{t('payment.goPremium')}</Text>
-          <Text style={styles.premiumSubtitle}>{t('payment.oneTimePayment')}</Text>
-          <View style={styles.priceContainer}>
-            <Text style={styles.priceSymbol}>$</Text>
-            <Text style={styles.priceAmount}>{SUBSCRIPTION_PRICE}</Text>
-            <Text style={styles.priceLabel}>USD</Text>
-          </View>
-          <Chip style={styles.lifetimeChip} icon="infinity">{t('payment.lifetimeAccess')}</Chip>
-        </Card.Content>
-      </Card>
-
-      {/* Features */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Text style={styles.sectionTitle}>{t('payment.premiumFeatures')}</Text>
-          <List.Section>
-            {getFeatures().map((feature, index) => (
-              <List.Item
-                key={index}
-                title={feature.text}
-                description={feature.description}
-                left={(props) => (
-                  <List.Icon {...props} icon={feature.icon} color={theme.colors.primary} />
-                )}
-                titleStyle={styles.featureTitle}
-                descriptionStyle={styles.featureDescription}
-              />
-            ))}
-          </List.Section>
-        </Card.Content>
-      </Card>
-
-      {/* Payment Methods */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Text style={styles.sectionTitle}>{t('payment.choosePaymentMethod')}</Text>
-          
-          <Button
-            mode="contained"
-            onPress={handleStripePayment}
-            style={styles.paymentButton}
-            loading={loading && paymentMethod === 'stripe'}
-            disabled={loading}
-            icon="credit-card"
-          >
-            {t('payment.payWithCard')}
-          </Button>
-
-          <Button
-            mode="contained"
-            onPress={handlePayPalPayment}
-            style={[styles.paymentButton, styles.paypalButton]}
-            loading={loading && paymentMethod === 'paypal'}
-            disabled={loading}
-            icon="paypal"
-          >
-            {t('payment.payWithPayPal')}
-          </Button>
-        </Card.Content>
-      </Card>
-
-      {/* Terms */}
-      <Card style={styles.card}>
-        <Card.Content>
-          <Text style={styles.termsTitle}>{t('payment.termsTitle')}</Text>
-          <Text style={styles.termsText}>
-            {t('payment.termsText')}
-          </Text>
-        </Card.Content>
-      </Card>
-
-      {/* Already Subscribed */}
-      {user?.isSubscribed && (
-        <Card style={[styles.card, styles.subscribedCard]}>
+      <View style={styles.maxWidthContent}>
+        {/* Premium Banner */}
+        <Card style={styles.premiumCard}>
           <Card.Content>
-            <Text style={styles.subscribedTitle}>{t('payment.alreadyPremium')}</Text>
-            <Text style={styles.subscribedText}>
-              {t('payment.thankYou')}
+            <Text style={styles.premiumTitle}>{t('payment.goPremium')}</Text>
+            <Text style={styles.premiumSubtitle}>{t('payment.oneTimePayment')}</Text>
+            <View style={styles.priceContainer}>
+              <Text style={styles.priceSymbol}>$</Text>
+              <Text style={styles.priceAmount}>{SUBSCRIPTION_PRICE}</Text>
+              <Text style={styles.priceLabel}>USD</Text>
+            </View>
+            <Chip style={styles.lifetimeChip} icon="infinity">{t('payment.lifetimeAccess')}</Chip>
+          </Card.Content>
+        </Card>
+
+        {/* Features */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>{t('payment.premiumFeatures')}</Text>
+            <List.Section>
+              {getFeatures().map((feature, index) => (
+                <List.Item
+                  key={index}
+                  title={feature.text}
+                  description={feature.description}
+                  left={(props) => (
+                    <List.Icon {...props} icon={feature.icon} color={theme.colors.primary} />
+                  )}
+                  titleStyle={styles.featureTitle}
+                  descriptionStyle={styles.featureDescription}
+                />
+              ))}
+            </List.Section>
+          </Card.Content>
+        </Card>
+
+        {/* Payment Methods */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>{t('payment.choosePaymentMethod')}</Text>
+            
+            <Button
+              mode="contained"
+              onPress={handleStripePayment}
+              style={styles.paymentButton}
+              loading={loading && paymentMethod === 'stripe'}
+              disabled={loading}
+              icon="credit-card"
+            >
+              {t('payment.payWithCard')}
+            </Button>
+
+            <Button
+              mode="contained"
+              onPress={handlePayPalPayment}
+              style={[styles.paymentButton, styles.paypalButton]}
+              loading={loading && paymentMethod === 'paypal'}
+              disabled={loading}
+              icon="paypal"
+            >
+              {t('payment.payWithPayPal')}
+            </Button>
+          </Card.Content>
+        </Card>
+
+        {/* Terms */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.termsTitle}>{t('payment.termsTitle')}</Text>
+            <Text style={styles.termsText}>
+              {t('payment.termsText')}
             </Text>
           </Card.Content>
         </Card>
-      )}
+
+        {/* Already Subscribed */}
+        {user?.isSubscribed && (
+          <Card style={[styles.card, styles.subscribedCard]}>
+            <Card.Content>
+              <Text style={styles.subscribedTitle}>{t('payment.alreadyPremium')}</Text>
+              <Text style={styles.subscribedText}>
+                {t('payment.thankYou')}
+              </Text>
+            </Card.Content>
+          </Card>
+        )}
+      </View>
     </ScrollView>
   );
 };
@@ -208,10 +210,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+    ...(Platform.OS === 'web' && { overflowY: 'auto' }),
   },
   scrollContent: {
     padding: 20,
     paddingBottom: 30,
+  },
+  maxWidthContent: {
+    width: '100%',
+    maxWidth: theme.layout?.maxContentWidth || 1100,
+    alignSelf: 'center',
   },
   premiumCard: {
     marginBottom: 20,

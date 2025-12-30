@@ -2878,37 +2878,39 @@ const GameplayScreen = ({ navigation, route }) => {
           </View>
         </Portal>
       )}
-      
-      {phase === 'category-selection' && renderCategorySelection()}
-      {phase === 'letter-selection' && renderLetterSelection()}
-      {phase === 'playing' && renderGameplay()}
-      {phase === 'validation' && (
-        <View style={styles.validationContainer}>
-          <Text style={styles.validationText}>{t('gameplay.validatingAnswers')}</Text>
-          <ActivityIndicator 
-            size="large" 
-            color={theme.colors.primary} 
-            style={{ marginTop: 20 }}
-          />
-          {retryAttempt > 0 && (
-            <Text style={styles.retryAttemptText}>{t('gameplay.attempt')} {retryAttempt}</Text>
-          )}
-          {refreshError && (
-            <Text style={styles.refreshErrorText}>{refreshError}</Text>
-          )}
-          <Button 
-            mode="contained" 
-            onPress={() => handleRefreshValidation(false)} 
-            disabled={isRefreshing}
-            loading={isRefreshing}
-            style={[styles.refreshButton, isRefreshing && styles.refreshButtonDisabled]}
-          >
-            {isRefreshing ? t('common.loading') : t('common.refresh')}
-          </Button>
-        </View>
-      )}
-      {phase === 'round-end' && !isFinished && renderRoundEnd()}
-      {phase === 'round-end' && isFinished && renderEndGame()}
+
+      <View style={styles.maxWidthContent}>
+        {phase === 'category-selection' && renderCategorySelection()}
+        {phase === 'letter-selection' && renderLetterSelection()}
+        {phase === 'playing' && renderGameplay()}
+        {phase === 'validation' && (
+          <View style={styles.validationContainer}>
+            <Text style={styles.validationText}>{t('gameplay.validatingAnswers')}</Text>
+            <ActivityIndicator 
+              size="large" 
+              color={theme.colors.primary} 
+              style={{ marginTop: 20 }}
+            />
+            {retryAttempt > 0 && (
+              <Text style={styles.retryAttemptText}>{t('gameplay.attempt')} {retryAttempt}</Text>
+            )}
+            {refreshError && (
+              <Text style={styles.refreshErrorText}>{refreshError}</Text>
+            )}
+            <Button 
+              mode="contained" 
+              onPress={() => handleRefreshValidation(false)} 
+              disabled={isRefreshing}
+              loading={isRefreshing}
+              style={[styles.refreshButton, isRefreshing && styles.refreshButtonDisabled]}
+            >
+              {isRefreshing ? t('common.loading') : t('common.refresh')}
+            </Button>
+          </View>
+        )}
+        {phase === 'round-end' && !isFinished && renderRoundEnd()}
+        {phase === 'round-end' && isFinished && renderEndGame()}
+      </View>
     </View>
   );
 };
@@ -2945,6 +2947,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+  },
+  maxWidthContent: {
+    flex: 1,
+    width: '100%',
+    maxWidth: theme.layout?.maxContentWidth || 1100,
+    alignSelf: 'center',
   },
   confettiOverlay: {
     position: 'absolute',
@@ -3238,6 +3246,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    ...(Platform.OS === 'web' && {
+      position: 'fixed',
+    }),
   },
   headerIconBtn: {
     width: 44,

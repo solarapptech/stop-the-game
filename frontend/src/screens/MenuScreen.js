@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useLayoutEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Platform } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Text, Button, Avatar, IconButton, ActivityIndicator, TextInput, RadioButton } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -533,7 +533,8 @@ const MenuScreen = ({ navigation }) => {
       colors={['#95C159', '#45a049']}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.maxWidthContent}>
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.userInfo}>
@@ -685,6 +686,7 @@ const MenuScreen = ({ navigation }) => {
           </View>
         )}
 
+        </View>
       </ScrollView>
 
       {/* Quick Play Modal */}
@@ -970,10 +972,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollView: {
+    flex: 1,
+    ...(Platform.OS === 'web' && { overflowY: 'auto' }),
+  },
   scrollContent: {
     flexGrow: 1,
     paddingBottom: 20,
     paddingTop: 0,
+  },
+  maxWidthContent: {
+    width: '100%',
+    maxWidth: theme.layout?.maxContentWidth || 1100,
+    alignSelf: 'center',
   },
   titleRow: {
     flexDirection: 'row',

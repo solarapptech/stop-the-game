@@ -148,6 +148,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 30,
     elevation: 3,
+    width: '100%',
+    maxWidth: theme.layout?.maxFormWidth || 520,
+    alignSelf: 'center',
   },
   title: {
     fontSize: 24,

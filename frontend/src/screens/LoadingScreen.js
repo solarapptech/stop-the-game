@@ -69,7 +69,8 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
-    width: '80%',
+    width: '100%',
+    maxWidth: theme.layout?.maxFormWidth || 520,
   },
   logo: {
     width: 150,

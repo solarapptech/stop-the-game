@@ -17,6 +17,20 @@ A multiplayer word game built with React Native (Expo) and Node.js, featuring re
 - **Beautiful UI**: React Native Paper components with custom theming
  - **Debounced Language Switching**: Changing the app language in Settings shows a short spinner and prevents repeated toggles for at least 1 second to avoid duplicate updates
 
+## Web / Tablet Layout
+
+The app uses a **full-width background** while constraining most screen content to a **centered max width** on wide screens (web/iPad/tablets) so the UI doesn't stretch too far.
+
+- **Max-width content**: Most screens are wrapped in a centered container with a `maxWidth`.
+- **Full-width headers**: Screens that require it (notably the in-game `Gameplay` header and the Settings header) remain full width.
+- **Mouse-wheel scrolling (web)**: Root `ScrollView` containers include `overflowY: 'auto'` for web via `Platform.OS === 'web'` conditionals, and `frontend/public/index.html` ensures proper root element heights (`height: 100%` on html/body/#root).
+
+You can adjust width limits in:
+
+- `frontend/src/theme/index.js`:
+  - `theme.layout.maxContentWidth` (default: `1100`) for general screens
+  - `theme.layout.maxFormWidth` (default: `520`) for auth/forms
+
 ## 🚀 Quick Start
 
 ### Prerequisites

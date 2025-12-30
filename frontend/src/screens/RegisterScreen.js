@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { TextInput, Button, Text, Checkbox } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -91,67 +91,69 @@ const RegisterScreen = ({ navigation }) => {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-      <View style={styles.formContainer}>
-        <Text style={styles.title}>{t('auth.createAccount')}</Text>
-        <Text style={styles.subtitle}>{t('auth.joinTheFun')}</Text>
+      <View style={styles.maxWidthContent}>
+        <View style={styles.formContainer}>
+          <Text style={styles.title}>{t('auth.createAccount')}</Text>
+          <Text style={styles.subtitle}>{t('auth.joinTheFun')}</Text>
 
-        <TextInput
-          label={t('auth.email')}
-          value={email}
-          onChangeText={setEmail}
-          style={styles.input}
-          mode="outlined"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          left={<TextInput.Icon icon="email" />}
-        />
-
-        <TextInput
-          label={t('auth.password')}
-          value={password}
-          onChangeText={setPassword}
-          style={styles.input}
-          mode="outlined"
-          secureTextEntry={!showPassword}
-          left={<TextInput.Icon icon="lock" />}
-          right={
-            <TextInput.Icon 
-              icon={showPassword ? "eye-off" : "eye"}
-              onPress={() => setShowPassword(!showPassword)}
-            />
-          }
-        />
-
-        <View style={styles.checkboxContainer}>
-          <Checkbox
-            status={agreeTerms ? 'checked' : 'unchecked'}
-            onPress={() => setAgreeTerms(!agreeTerms)}
-            color={theme.colors.primary}
+          <TextInput
+            label={t('auth.email')}
+            value={email}
+            onChangeText={setEmail}
+            style={styles.input}
+            mode="outlined"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            left={<TextInput.Icon icon="email" />}
           />
-          <Text style={styles.checkboxText}>
-            {t('auth.agreeTerms')}
-          </Text>
+
+          <TextInput
+            label={t('auth.password')}
+            value={password}
+            onChangeText={setPassword}
+            style={styles.input}
+            mode="outlined"
+            secureTextEntry={!showPassword}
+            left={<TextInput.Icon icon="lock" />}
+            right={
+              <TextInput.Icon 
+                icon={showPassword ? "eye-off" : "eye"}
+                onPress={() => setShowPassword(!showPassword)}
+              />
+            }
+          />
+
+          <View style={styles.checkboxContainer}>
+            <Checkbox
+              status={agreeTerms ? 'checked' : 'unchecked'}
+              onPress={() => setAgreeTerms(!agreeTerms)}
+              color={theme.colors.primary}
+            />
+            <Text style={styles.checkboxText}>
+              {t('auth.agreeTerms')}
+            </Text>
+          </View>
+
+          <Button
+            mode="contained"
+            onPress={handleRegister}
+            style={styles.registerButton}
+            loading={loading}
+            disabled={loading}
+            contentStyle={styles.buttonContent}
+          >
+            {t('auth.createAccount')}
+          </Button>
+
+          <Button
+            mode="text"
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+            disabled={loading}
+          >
+            {t('auth.alreadyHaveAccount')}
+          </Button>
         </View>
-
-        <Button
-          mode="contained"
-          onPress={handleRegister}
-          style={styles.registerButton}
-          loading={loading}
-          disabled={loading}
-          contentStyle={styles.buttonContent}
-        >
-          {t('auth.createAccount')}
-        </Button>
-
-        <Button
-          mode="text"
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-          disabled={loading}
-        >
-          {t('auth.alreadyHaveAccount')}
-        </Button>
       </View>
     </ScrollView>
   );
@@ -161,11 +163,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+    ...(Platform.OS === 'web' && { overflowY: 'auto' }),
   },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
+  },
+  maxWidthContent: {
+    width: '100%',
+    maxWidth: theme.layout?.maxFormWidth || 520,
+    alignSelf: 'center',
   },
   formContainer: {
     backgroundColor: '#FFFFFF',

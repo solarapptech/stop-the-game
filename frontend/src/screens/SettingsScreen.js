@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, Platform } from 'react-native';
 import { Text, Card, List, Switch, Button, TextInput, Dialog, Portal, IconButton, RadioButton, ActivityIndicator } from 'react-native-paper';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import axios from 'axios';
@@ -170,204 +171,209 @@ const SettingsScreen = ({ navigation, onClose, inGame }) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.settingsHeader}>
+      <View style={styles.header}>
         <IconButton 
-          icon="close" 
+          icon={inGame ? "arrow-left" : "close"} 
+          size={24}
           onPress={handleClose}
-          accessibilityLabel={t('settings.closeAccessibilityLabel')}
+          style={styles.headerIcon}
         />
+        <Text style={styles.headerTitle}>{t('settings.title')}</Text>
+        <View style={styles.headerPlaceholder} />
       </View>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {!inGame && (
-          <Card style={styles.card}>
-            <Card.Content>
-              <Text style={styles.sectionTitle}>{t('settings.accountInfo')}</Text>
-            <List.Item
-              title={t('settings.username')}
-              description={user?.username}
-              left={(props) => <List.Icon {...props} icon="account" />}
-            />
-            <List.Item
-              title={t('settings.displayName')}
-              description={user?.displayName || user?.username}
-              left={(props) => <List.Icon {...props} icon="card-account-details" />}
-              right={() => (
-                <Button
-                  mode="text"
-                  onPress={() => {
-                    setNewDisplayName(user?.displayName || user?.username || '');
-                    setEditDisplayNameVisible(true);
-                  }}
-                >
-                  {t('settings.edit')}
-                </Button>
-              )}
-            />
-            <List.Item
-              title={t('settings.email')}
-              description={user?.email || t('settings.notProvided')}
-              left={(props) => <List.Icon {...props} icon="email" />}
-              right={() => (
-                !user?.verified ? (
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.maxWidthContent}>
+          {!inGame && (
+            <Card style={styles.card}>
+              <Card.Content>
+                <Text style={styles.sectionTitle}>{t('settings.accountInfo')}</Text>
+              <List.Item
+                title={t('settings.username')}
+                description={user?.username}
+                left={(props) => <List.Icon {...props} icon="account" />}
+              />
+              <List.Item
+                title={t('settings.displayName')}
+                description={user?.displayName || user?.username}
+                left={(props) => <List.Icon {...props} icon="card-account-details" />}
+                right={() => (
                   <Button
                     mode="text"
-                    onPress={async () => {
-                      try {
-                        await resendVerificationCodeSafe();
-                      } catch (e) {
-                        // ignore errors; Verify screen can retry
-                      }
-                      navigation.navigate('Verify');
+                    onPress={() => {
+                      setNewDisplayName(user?.displayName || user?.username || '');
+                      setEditDisplayNameVisible(true);
                     }}
                   >
-                    {t('settings.verifyEmail')}
+                    {t('settings.edit')}
                   </Button>
-                ) : null
-              )}
-            />
-            <List.Item
-              title={t('settings.accountType')}
-              description={user?.isSubscribed ? t('settings.premium') : t('settings.free')}
-              left={(props) => <List.Icon {...props} icon="crown" />}
-              right={() => !user?.isSubscribed && (
-                <Button
-                  mode="contained"
-                  onPress={() => navigation.navigate('Payment')}
-                  compact
-                >
-                  {t('settings.upgrade')}
-                </Button>
-              )}
-            />
+                )}
+              />
+              <List.Item
+                title={t('settings.email')}
+                description={user?.email || t('settings.notProvided')}
+                left={(props) => <List.Icon {...props} icon="email" />}
+                right={() => (
+                  !user?.verified ? (
+                    <Button
+                      mode="text"
+                      onPress={async () => {
+                        try {
+                          await resendVerificationCodeSafe();
+                        } catch (e) {
+                          // ignore errors; Verify screen can retry
+                        }
+                        navigation.navigate('Verify');
+                      }}
+                    >
+                      {t('settings.verifyEmail')}
+                    </Button>
+                  ) : null
+                )}
+              />
+              <List.Item
+                title={t('settings.accountType')}
+                description={user?.isSubscribed ? t('settings.premium') : t('settings.free')}
+                left={(props) => <List.Icon {...props} icon="crown" />}
+                right={() => !user?.isSubscribed && (
+                  <Button
+                    mode="contained"
+                    onPress={() => navigation.navigate('Payment')}
+                    compact
+                  >
+                    {t('settings.upgrade')}
+                  </Button>
+                )}
+              />
+              </Card.Content>
+            </Card>
+          )}
+
+          {/* Game Settings */}
+          <Card style={styles.card}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>{t('settings.gameSettings')}</Text>
+              <List.Item
+                title={t('settings.soundEffects')}
+                left={(props) => <List.Icon {...props} icon="volume-high" />}
+                right={() => (
+                  <Switch
+                    value={soundEnabled}
+                    onValueChange={setSoundEnabled}
+                    color={theme.colors.primary}
+                  />
+                )}
+              />
+              <List.Item
+                title={t('settings.notifications')}
+                left={(props) => <List.Icon {...props} icon="bell" />}
+                right={() => (
+                  <Switch
+                    value={notificationsEnabled}
+                    onValueChange={setNotificationsEnabled}
+                    color={theme.colors.primary}
+                  />
+                )}
+              />
+              <List.Item
+                title={t('settings.vibration')}
+                left={(props) => <List.Icon {...props} icon="vibrate" />}
+                right={() => (
+                  <Switch
+                    value={vibrationEnabled}
+                    onValueChange={setVibrationEnabled}
+                    color={theme.colors.primary}
+                  />
+                )}
+              />
             </Card.Content>
           </Card>
-        )}
 
-        {/* Game Settings */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>{t('settings.gameSettings')}</Text>
-            <List.Item
-              title={t('settings.soundEffects')}
-              left={(props) => <List.Icon {...props} icon="volume-high" />}
-              right={() => (
-                <Switch
-                  value={soundEnabled}
-                  onValueChange={setSoundEnabled}
-                  color={theme.colors.primary}
-                />
-              )}
-            />
-            <List.Item
-              title={t('settings.notifications')}
-              left={(props) => <List.Icon {...props} icon="bell" />}
-              right={() => (
-                <Switch
-                  value={notificationsEnabled}
-                  onValueChange={setNotificationsEnabled}
-                  color={theme.colors.primary}
-                />
-              )}
-            />
-            <List.Item
-              title={t('settings.vibration')}
-              left={(props) => <List.Icon {...props} icon="vibrate" />}
-              right={() => (
-                <Switch
-                  value={vibrationEnabled}
-                  onValueChange={setVibrationEnabled}
-                  color={theme.colors.primary}
-                />
-              )}
-            />
-          </Card.Content>
-        </Card>
+          {!inGame && (
+            <>
+              {/* Language Settings */}
+              <Card style={styles.card}>
+                <Card.Content>
+                  <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
+                  <RadioButton.Group 
+                    onValueChange={handleLanguageChange}
+                    value={language}
+                  >
+                    <List.Item
+                      title={t('settings.english')}
+                      left={() => (
+                        <RadioButton
+                          value="en"
+                          color={theme.colors.primary}
+                          disabled={isSwitchingLanguage}
+                        />
+                      )}
+                      right={() => (
+                        isSwitchingLanguage && switchingToLanguage === 'en' ? (
+                          <ActivityIndicator size="small" color={theme.colors.primary} />
+                        ) : null
+                      )}
+                      onPress={() => handleLanguageChange('en')}
+                    />
+                    <List.Item
+                      title={t('settings.spanish')}
+                      left={() => (
+                        <RadioButton
+                          value="es"
+                          color={theme.colors.primary}
+                          disabled={isSwitchingLanguage}
+                        />
+                      )}
+                      right={() => (
+                        isSwitchingLanguage && switchingToLanguage === 'es' ? (
+                          <ActivityIndicator size="small" color={theme.colors.primary} />
+                        ) : null
+                      )}
+                      onPress={() => handleLanguageChange('es')}
+                    />
+                  </RadioButton.Group>
+                </Card.Content>
+              </Card>
 
-        {!inGame && (
-          <>
-            {/* Language Settings */}
-            <Card style={styles.card}>
-              <Card.Content>
-                <Text style={styles.sectionTitle}>{t('settings.language')}</Text>
-                <RadioButton.Group 
-                  onValueChange={handleLanguageChange}
-                  value={language}
-                >
+              {/* Security */}
+              <Card style={styles.card}>
+                <Card.Content>
+                  <Text style={styles.sectionTitle}>{t('settings.security')}</Text>
                   <List.Item
-                    title={t('settings.english')}
-                    left={() => (
-                      <RadioButton
-                        value="en"
-                        color={theme.colors.primary}
-                        disabled={isSwitchingLanguage}
-                      />
-                    )}
-                    right={() => (
-                      isSwitchingLanguage && switchingToLanguage === 'en' ? (
-                        <ActivityIndicator size="small" color={theme.colors.primary} />
-                      ) : null
-                    )}
-                    onPress={() => handleLanguageChange('en')}
+                    title={t('settings.changePassword')}
+                    description={t('settings.changePasswordDesc')}
+                    left={(props) => <List.Icon {...props} icon="lock-reset" />}
+                    onPress={() => setChangePasswordDialog(true)}
                   />
+                </Card.Content>
+              </Card>
+
+              {/* Danger Zone */}
+              <Card style={[styles.card, styles.dangerCard]}>
+                <Card.Content>
+                  <Text style={[styles.sectionTitle, styles.dangerTitle]}>{t('settings.dangerZone')}</Text>
                   <List.Item
-                    title={t('settings.spanish')}
-                    left={() => (
-                      <RadioButton
-                        value="es"
-                        color={theme.colors.primary}
-                        disabled={isSwitchingLanguage}
-                      />
-                    )}
-                    right={() => (
-                      isSwitchingLanguage && switchingToLanguage === 'es' ? (
-                        <ActivityIndicator size="small" color={theme.colors.primary} />
-                      ) : null
-                    )}
-                    onPress={() => handleLanguageChange('es')}
+                    title={t('settings.deleteAccount')}
+                    description={t('settings.deleteAccountDesc')}
+                    titleStyle={styles.dangerText}
+                    left={(props) => <List.Icon {...props} icon="delete-forever" color="#F44336" />}
+                    onPress={handleDeleteAccount}
                   />
-                </RadioButton.Group>
-              </Card.Content>
-            </Card>
+                </Card.Content>
+              </Card>
+            </>
+          )}
 
-            {/* Security */}
-            <Card style={styles.card}>
-              <Card.Content>
-                <Text style={styles.sectionTitle}>{t('settings.security')}</Text>
-                <List.Item
-                  title={t('settings.changePassword')}
-                  description={t('settings.changePasswordDesc')}
-                  left={(props) => <List.Icon {...props} icon="lock-reset" />}
-                  onPress={() => setChangePasswordDialog(true)}
-                />
-              </Card.Content>
-            </Card>
-
-            {/* Danger Zone */}
-            <Card style={[styles.card, styles.dangerCard]}>
-              <Card.Content>
-                <Text style={[styles.sectionTitle, styles.dangerTitle]}>{t('settings.dangerZone')}</Text>
-                <List.Item
-                  title={t('settings.deleteAccount')}
-                  description={t('settings.deleteAccountDesc')}
-                  titleStyle={styles.dangerText}
-                  left={(props) => <List.Icon {...props} icon="delete-forever" color="#F44336" />}
-                  onPress={handleDeleteAccount}
-                />
-              </Card.Content>
-            </Card>
-          </>
-        )}
-
-        {/* Save Button */}
-        <Button
-          mode="contained"
-          onPress={handleSaveSettings}
-          style={styles.saveButton}
-          loading={loading}
-          disabled={loading}
-        >
-          {t('settings.saveSettings')}
-        </Button>
+          {/* Save Button */}
+          <Button
+            mode="contained"
+            onPress={handleSaveSettings}
+            style={styles.saveButton}
+            loading={loading}
+            disabled={loading}
+          >
+            {t('settings.saveSettings')}
+          </Button>
+        </View>
       </ScrollView>
 
       {/* Dialogs */}
@@ -476,15 +482,54 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F5F5',
   },
+  scrollView: {
+    flex: 1,
+    marginTop: 56,
+    ...(Platform.OS === 'web' && { overflowY: 'auto' }),
+  },
   scrollContent: {
     padding: 20,
     paddingBottom: 30,
   },
-  settingsHeader: {
-    alignItems: 'flex-end',
-    paddingTop: 8,
-    paddingRight: 8,
+  maxWidthContent: {
+    width: '100%',
+    maxWidth: theme.layout?.maxContentWidth || 1100,
+    alignSelf: 'center',
+  },
+  header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    zIndex: 20,
+    elevation: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    height: 56,
+    ...(Platform.OS === 'web' && {
+      position: 'fixed',
+    }),
+  },
+  headerIcon: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#212121',
+    textAlign: 'center',
+    marginHorizontal: 16,
+  },
+  headerPlaceholder: {
+    width: 44,
   },
   card: {
     marginBottom: 20,

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, ScrollView, Alert, Clipboard, KeyboardAvoidingView, Platform, Keyboard, BackHandler, AppState, Pressable } from 'react-native';
 import { Text, Button, Card, List, Avatar, Chip, IconButton, TextInput, Portal, Dialog, ActivityIndicator } from 'react-native-paper';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useSocket } from '../contexts/SocketContext';
 import { useGame } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -469,195 +470,211 @@ const RoomScreen = ({ navigation, route }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
     >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="always"
-        keyboardDismissMode="none"
-        nestedScrollEnabled
-      >
-        <Pressable
-          onPress={() => {
-            setIsChatActive(false);
-            Keyboard.dismiss();
-          }}
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <IconButton
+            icon="arrow-left"
+            size={24}
+            onPress={() => navigation.goBack()}
+            style={styles.headerIcon}
+          />
+          <Text style={styles.headerTitle}>{t('room.title')}</Text>
+          <View style={styles.headerPlaceholder} />
+        </View>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="none"
+          nestedScrollEnabled
         >
-          {/* Room Info */}
-          <Card style={styles.card}>
-            <Card.Content>
-              <View style={styles.roomHeader}>
-                <View style={styles.roomInfo}>
-                  <Text style={styles.roomName}>{activeRoom?.name || t('room.title')}</Text>
-                  <View style={styles.roomDetails}>
-                    <Chip style={styles.chip}>{activeRoom?.rounds || 3} {t('joinRoom.rounds')}</Chip>
-                    <Chip style={styles.chip}>
-                      {players.length}/{activeRoom?.maxPlayers || 8} {t('joinRoom.players')}
-                    </Chip>
+          <View style={styles.maxWidthContent}>
+          <Pressable
+            onPress={() => {
+              setIsChatActive(false);
+              Keyboard.dismiss();
+            }}
+          >
+            {/* Room Info */}
+            <Card style={styles.card}>
+              <Card.Content>
+                <View style={styles.roomHeader}>
+                  <View style={styles.roomInfo}>
+                    <Text style={styles.roomName}>{activeRoom?.name || t('room.title')}</Text>
+                    <View style={styles.roomDetails}>
+                      <Chip style={styles.chip}>{activeRoom?.rounds || 3} {t('joinRoom.rounds')}</Chip>
+                      <Chip style={styles.chip}>
+                        {players.length}/{activeRoom?.maxPlayers || 8} {t('joinRoom.players')}
+                      </Chip>
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: 'row' }}>
+                    {showInviteCode && (
+                      <IconButton
+                        icon="content-copy"
+                        onPress={copyInviteCode}
+                        style={styles.copyButton}
+                      />
+                    )}
+                    {isOwner && (
+                      <IconButton
+                        icon="delete"
+                        onPress={handleDeleteRoom}
+                        iconColor="#F44336"
+                        style={styles.copyButton}
+                      />
+                    )}
                   </View>
                 </View>
-                <View style={{ flexDirection: 'row' }}>
-                  {showInviteCode && (
-                    <IconButton
-                      icon="content-copy"
-                      onPress={copyInviteCode}
-                      style={styles.copyButton}
-                    />
-                  )}
-                  {isOwner && (
-                    <IconButton
-                      icon="delete"
-                      onPress={handleDeleteRoom}
-                      iconColor="#F44336"
-                      style={styles.copyButton}
-                    />
-                  )}
-                </View>
-              </View>
-              {showInviteCode && (
-                <View style={styles.inviteContainer}>
-                  <Text style={styles.inviteLabel}>{t('room.inviteCode')}:</Text>
-                  <Text style={styles.inviteCode}>{inviteCode || 'XXXXXX'}</Text>
-                </View>
-              )}
-            </Card.Content>
-          </Card>
+                {showInviteCode && (
+                  <View style={styles.inviteContainer}>
+                    <Text style={styles.inviteLabel}>{t('room.inviteCode')}:</Text>
+                    <Text style={styles.inviteCode}>{inviteCode || 'XXXXXX'}</Text>
+                  </View>
+                )}
+              </Card.Content>
+            </Card>
 
-          {/* Players */}
+            {/* Players */}
+            <Card style={styles.card}>
+              <Card.Content>
+                <Text style={styles.sectionTitle}>{t('room.players')}</Text>
+                <List.Section>
+                  {players.map((player, index) => (
+                    <List.Item
+                      key={player.id}
+                      title={player.displayName}
+                      description={player.isOwner ? t('room.owner') : player.isReady ? t('room.ready') : t('room.notReady')}
+                      left={() => (
+                        <Avatar.Text
+                          size={40}
+                          label={player.displayName.substring(0, 2).toUpperCase()}
+                          style={{ backgroundColor: theme.colors.primary }}
+                        />
+                      )}
+                      right={() => (
+                        <View style={styles.playerStatus}>
+                          {player.isOwner && (
+                            <IconButton icon="crown" size={20} iconColor="#FFC107" />
+                          )}
+                          <IconButton
+                            icon={player.isReady ? 'check-circle' : 'circle-outline'}
+                            size={20}
+                            iconColor={player.isReady ? '#95C159' : '#757575'}
+                          />
+                        </View>
+                      )}
+                    />
+                  ))}
+                </List.Section>
+              </Card.Content>
+            </Card>
+          </Pressable>
+
+          {/* Chat */}
           <Card style={styles.card}>
             <Card.Content>
-              <Text style={styles.sectionTitle}>{t('room.players')}</Text>
-              <List.Section>
-                {players.map((player, index) => (
-                  <List.Item
-                    key={player.id}
-                    title={player.displayName}
-                    description={player.isOwner ? t('room.owner') : player.isReady ? t('room.ready') : t('room.notReady')}
-                    left={() => (
-                      <Avatar.Text
-                        size={40}
-                        label={player.displayName.substring(0, 2).toUpperCase()}
-                        style={{ backgroundColor: theme.colors.primary }}
-                      />
-                    )}
-                    right={() => (
-                      <View style={styles.playerStatus}>
-                        {player.isOwner && (
-                          <IconButton icon="crown" size={20} iconColor="#FFC107" />
+              <Pressable onPress={() => {}}>
+                <Text style={styles.sectionTitle}>{t('room.chat')}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {}}
+                onPressIn={() => setIsChatActive(true)}
+                style={[styles.chatContainer, isChatActive && styles.chatContainerActive]}
+              >
+                  <ScrollView
+                    ref={messagesRef}
+                    style={styles.messagesContainer}
+                    contentContainerStyle={styles.messagesContentContainer}
+                    keyboardShouldPersistTaps="always"
+                    keyboardDismissMode="none"
+                    nestedScrollEnabled
+                    onTouchStart={() => {
+                      if (inputFocused) {
+                        inputRef.current?.focus?.();
+                      }
+                    }}
+                    onScroll={handleMessagesScroll}
+                    scrollEventThrottle={16}
+                    onContentSizeChange={handleMessagesContentSizeChange}
+                    onScrollBeginDrag={() => setIsChatActive(true)}
+                    showsVerticalScrollIndicator
+                  >
+                    {messages.map((msg, index) => (
+                      <View key={index} style={styles.message}>
+                        {msg.type === 'system' ? (
+                          <Text style={styles.systemMessage}>{msg.text}</Text>
+                        ) : (
+                          <Text style={styles.chatMessage}>
+                            <Text style={styles.chatUsername}>{msg.displayName || msg.username}: </Text>
+                            {msg.text}
+                          </Text>
                         )}
-                        <IconButton
-                          icon={player.isReady ? 'check-circle' : 'circle-outline'}
-                          size={20}
-                          iconColor={player.isReady ? '#95C159' : '#757575'}
-                        />
                       </View>
-                    )}
-                  />
-                ))}
-              </List.Section>
+                    ))}
+                  </ScrollView>
+                  <View style={styles.chatInput}>
+                    <TextInput
+                      ref={inputRef}
+                      value={messageInput}
+                      onChangeText={setMessageInput}
+                      onFocus={() => setInputFocused(true)}
+                      onBlur={() => setInputFocused(false)}
+                      placeholder={t('room.typeMessage')}
+                      style={styles.messageInput}
+                      mode="outlined"
+                      dense
+                      blurOnSubmit={false}
+                      returnKeyType="send"
+                      onSubmitEditing={handleSendMessage}
+                      right={
+                        <TextInput.Icon
+                          icon="send"
+                          onPress={handleSendMessage}
+                          disabled={!messageInput.trim()}
+                        />
+                      }
+                    />
+                  </View>
+              </Pressable>
             </Card.Content>
           </Card>
-        </Pressable>
-
-        {/* Chat */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Pressable onPress={() => {}}>
-              <Text style={styles.sectionTitle}>{t('room.chat')}</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {}}
-              onPressIn={() => setIsChatActive(true)}
-              style={[styles.chatContainer, isChatActive && styles.chatContainerActive]}
-            >
-                <ScrollView
-                  ref={messagesRef}
-                  style={styles.messagesContainer}
-                  contentContainerStyle={styles.messagesContentContainer}
-                  keyboardShouldPersistTaps="always"
-                  keyboardDismissMode="none"
-                  nestedScrollEnabled
-                  onTouchStart={() => {
-                    if (inputFocused) {
-                      inputRef.current?.focus?.();
-                    }
-                  }}
-                  onScroll={handleMessagesScroll}
-                  scrollEventThrottle={16}
-                  onContentSizeChange={handleMessagesContentSizeChange}
-                  onScrollBeginDrag={() => setIsChatActive(true)}
-                  showsVerticalScrollIndicator
-                >
-                  {messages.map((msg, index) => (
-                    <View key={index} style={styles.message}>
-                      {msg.type === 'system' ? (
-                        <Text style={styles.systemMessage}>{msg.text}</Text>
-                      ) : (
-                        <Text style={styles.chatMessage}>
-                          <Text style={styles.chatUsername}>{msg.displayName || msg.username}: </Text>
-                          {msg.text}
-                        </Text>
-                      )}
-                    </View>
-                  ))}
-                </ScrollView>
-                <View style={styles.chatInput}>
-                  <TextInput
-                    ref={inputRef}
-                    value={messageInput}
-                    onChangeText={setMessageInput}
-                    onFocus={() => setInputFocused(true)}
-                    onBlur={() => setInputFocused(false)}
-                    placeholder={t('room.typeMessage')}
-                    style={styles.messageInput}
-                    mode="outlined"
-                    dense
-                    blurOnSubmit={false}
-                    returnKeyType="send"
-                    onSubmitEditing={handleSendMessage}
-                    right={
-                      <TextInput.Icon
-                        icon="send"
-                        onPress={handleSendMessage}
-                        disabled={!messageInput.trim()}
-                      />
-                    }
-                  />
-                </View>
-            </Pressable>
-          </Card.Content>
-        </Card>
+        </View>
       </ScrollView>
 
       {/* Action Buttons */}
       <View style={styles.actionContainer}>
-        <Button
-          mode="outlined"
-          onPress={handleLeaveRoom}
-          style={styles.leaveButton}
-          icon={'exit-to-app'}
-        >
-          {t('room.leaveRoom')}
-        </Button>
-        {isOwner ? (
+        <View style={styles.actionContent}>
           <Button
-            mode="contained"
-            onPress={handleStartGame}
-            style={styles.startButton}
-            disabled={!allPlayersReady || loading || startGameCooldown}
-            loading={loading}
-            icon="play"
+            mode="outlined"
+            onPress={handleLeaveRoom}
+            style={styles.leaveButton}
+            icon={'exit-to-app'}
           >
-            {startGameCooldown ? t('common.waiting') : t('room.startGame')}
+            {t('room.leaveRoom')}
           </Button>
-        ) : (
-          <Button
-            mode={isReady ? 'outlined' : 'contained'}
-            onPress={handleReady}
-            style={isReady ? styles.notReadyButton : styles.readyButton}
-            icon={isReady ? 'close' : 'check'}
-          >
-            {isReady ? t('room.notReady') : t('room.ready')}
-          </Button>
-        )}
+          {isOwner ? (
+            <Button
+              mode="contained"
+              onPress={handleStartGame}
+              style={styles.startButton}
+              disabled={!allPlayersReady || loading || startGameCooldown}
+              loading={loading}
+              icon="play"
+            >
+              {startGameCooldown ? t('common.waiting') : t('room.startGame')}
+            </Button>
+          ) : (
+            <Button
+              mode={isReady ? 'outlined' : 'contained'}
+              onPress={handleReady}
+              style={isReady ? styles.notReadyButton : styles.readyButton}
+              icon={isReady ? 'close' : 'check'}
+            >
+              {isReady ? t('room.notReady') : t('room.ready')}
+            </Button>
+          )}
+        </View>
       </View>
 
       <Portal>
@@ -709,6 +726,7 @@ const RoomScreen = ({ navigation, route }) => {
           </Dialog.Actions>
         </Dialog>
       </Portal>
+        </View>
     </KeyboardAvoidingView>
   );
 };
@@ -718,9 +736,54 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F5F5',
   },
+  header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    zIndex: 20,
+    elevation: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    height: 56,
+    ...(Platform.OS === 'web' && {
+      position: 'fixed',
+    }),
+  },
+  headerIcon: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#212121',
+    textAlign: 'center',
+    marginHorizontal: 16,
+  },
+  headerPlaceholder: {
+    width: 44,
+  },
+  scrollView: {
+    flex: 1,
+    marginTop: 56,
+    ...(Platform.OS === 'web' && { overflowY: 'auto' }),
+  },
   scrollContent: {
     padding: 20,
     paddingBottom: 100,
+  },
+  maxWidthContent: {
+    width: '100%',
+    maxWidth: theme.layout?.maxContentWidth || 1100,
+    alignSelf: 'center',
   },
   card: {
     marginBottom: 20,
@@ -835,12 +898,17 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
     padding: 20,
     backgroundColor: '#FFFFFF',
     elevation: 10,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+  },
+  actionContent: {
+    width: '100%',
+    maxWidth: theme.layout?.maxContentWidth || 1100,
+    alignSelf: 'center',
+    flexDirection: 'row',
   },
   leaveButton: {
     flex: 1,

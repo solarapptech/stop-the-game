@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert, Clipboard } from 'react-native';
-import { Text, TextInput, Button, Switch, RadioButton, Card, Chip, Portal, Dialog, ActivityIndicator } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, Alert, Clipboard, Platform } from 'react-native';
+import { Text, TextInput, Button, Switch, RadioButton, Card, Chip, Portal, Dialog, ActivityIndicator, IconButton } from 'react-native-paper';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useGame } from '../contexts/GameContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -71,184 +72,198 @@ const CreateRoomScreen = ({ navigation }) => {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-      <Card style={styles.card}>
-        <Card.Content>
-          <Text style={styles.sectionTitle}>{t('createRoom.roomDetails')}</Text>
-          
-          <TextInput
-            label={t('createRoom.roomName')}
-            value={roomName}
-            onChangeText={setRoomName}
-            style={styles.input}
-            mode="outlined"
-            placeholder={t('createRoom.roomNamePlaceholder')}
-            left={<TextInput.Icon icon="home" />}
-          />
-
-          <View style={styles.switchContainer}>
-            <Text style={styles.switchLabel}>{t('createRoom.publicRoom')}</Text>
-            <Switch
-              value={isPublic}
-              onValueChange={setIsPublic}
-              color={theme.colors.primary}
-            />
-          </View>
-
-          <Text style={styles.label}>{t('createRoom.roomLanguage')}</Text>
-          <RadioButton.Group
-            onValueChange={(val) => {
-              if (val === language) {
-                setRoomLanguage(val);
-                return;
-              }
-              setPendingLanguage(val);
-              setLanguagePromptVisible(true);
-            }}
-            value={roomLanguage}
-          >
-            <View style={styles.radioContainer}>
-              <View style={styles.radioItem}>
-                <RadioButton value="en" color={theme.colors.primary} />
-                <Text>{t('settings.english')}</Text>
-              </View>
-              <View style={styles.radioItem}>
-                <RadioButton value="es" color={theme.colors.primary} />
-                <Text>{t('settings.spanish')}</Text>
-              </View>
-            </View>
-          </RadioButton.Group>
-
-          {!isPublic && (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <IconButton
+          icon="arrow-left"
+          size={24}
+          onPress={() => navigation.goBack()}
+          style={styles.headerIcon}
+        />
+        <Text style={styles.headerTitle}>{t('createRoom.createRoom')}</Text>
+        <View style={styles.headerPlaceholder} />
+      </View>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.maxWidthContent}>
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>{t('createRoom.roomDetails')}</Text>
+            
             <TextInput
-              label={t('createRoom.roomPassword')}
-              value={password}
-              onChangeText={setPassword}
+              label={t('createRoom.roomName')}
+              value={roomName}
+              onChangeText={setRoomName}
               style={styles.input}
               mode="outlined"
-              secureTextEntry
-              placeholder={t('createRoom.passwordPlaceholder')}
-              left={<TextInput.Icon icon="lock" />}
+              placeholder={t('createRoom.roomNamePlaceholder')}
+              left={<TextInput.Icon icon="home" />}
             />
-          )}
-        </Card.Content>
-      </Card>
 
-      <Card style={styles.card}>
-        <Card.Content>
-          <Text style={styles.sectionTitle}>{t('createRoom.gameSettings')}</Text>
-          <Text style={styles.label}>{t('createRoom.numberOfRounds')}</Text>
-          
-          <RadioButton.Group onValueChange={setRounds} value={rounds}>
-            <View style={styles.radioContainer}>
-              <View style={styles.radioItem}>
-                <RadioButton value="1" color={theme.colors.primary} />
-                <Text>{t('createRoom.roundQuick')}</Text>
-              </View>
-              <View style={styles.radioItem}>
-                <RadioButton value="3" color={theme.colors.primary} />
-                <Text>{t('createRoom.roundNormal')}</Text>
-              </View>
-              <View style={styles.radioItem}>
-                <RadioButton value="6" color={theme.colors.primary} />
-                <Text>{t('createRoom.roundExtended')}</Text>
-              </View>
-              <View style={styles.radioItem}>
-                <RadioButton value="9" color={theme.colors.primary} />
-                <Text>{t('createRoom.roundMarathon')}</Text>
-              </View>
+            <View style={styles.switchContainer}>
+              <Text style={styles.switchLabel}>{t('createRoom.publicRoom')}</Text>
+              <Switch
+                value={isPublic}
+                onValueChange={setIsPublic}
+                color={theme.colors.primary}
+              />
             </View>
-          </RadioButton.Group>
-        </Card.Content>
-      </Card>
 
-      <Card style={styles.card}>
-        <Card.Content>
-          <Text style={styles.sectionTitle}>{t('createRoom.roomFeatures')}</Text>
-          <View style={styles.featuresContainer}>
-            <Chip icon="timer" style={styles.chip}>{t('createRoom.timePerRound')}</Chip>
-            <Chip icon="account-group" style={styles.chip}>{t('createRoom.playersRange')}</Chip>
-            <Chip icon="robot" style={styles.chip}>{t('createRoom.aiValidation')}</Chip>
-            <Chip icon="trophy" style={styles.chip}>{t('createRoom.leaderboard')}</Chip>
-          </View>
-        </Card.Content>
-      </Card>
-
-      <Button
-        mode="contained"
-        onPress={handleCreateRoom}
-        style={styles.createButton}
-        loading={loading}
-        disabled={loading}
-        contentStyle={styles.buttonContent}
-        icon="plus"
-      >
-        {t('createRoom.createRoom')}
-      </Button>
-
-      <Portal>
-        <Dialog
-          visible={languagePromptVisible}
-          onDismiss={() => {
-            if (switchingLanguage) return;
-            setPendingLanguage(null);
-            setRoomLanguage(language);
-            setLanguagePromptVisible(false);
-          }}
-        >
-          <Dialog.Title>{t('createRoom.switchLanguagePromptTitle')}</Dialog.Title>
-          <Dialog.Content>
-            <Text>
-              {t('createRoom.switchLanguagePromptMessage', {
-                language: pendingLanguage === 'es' ? t('settings.spanish') : t('settings.english')
-              })}
-            </Text>
-            {switchingLanguage && (
-              <View style={{ marginTop: 12 }}>
-                <ActivityIndicator />
-              </View>
-            )}
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button
-              onPress={() => {
-                setPendingLanguage(null);
-                setRoomLanguage(language);
-                setLanguagePromptVisible(false);
-              }}
-              disabled={switchingLanguage}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onPress={async () => {
-                const target = pendingLanguage;
-                if (!target) return;
-                setSwitchingLanguage(true);
-                try {
-                  await changeLanguage(target);
-                  if (updateUserLanguage) {
-                    const res = await updateUserLanguage(target);
-                    if (!res?.success) throw new Error(res?.error || 'failed');
-                  }
-                  setRoomLanguage(target);
-                  setLanguagePromptVisible(false);
-                } catch (e) {
-                  Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
-                  setRoomLanguage(language);
-                } finally {
-                  setSwitchingLanguage(false);
-                  setPendingLanguage(null);
+            <Text style={styles.label}>{t('createRoom.roomLanguage')}</Text>
+            <RadioButton.Group
+              onValueChange={(val) => {
+                if (val === language) {
+                  setRoomLanguage(val);
+                  return;
                 }
+                setPendingLanguage(val);
+                setLanguagePromptVisible(true);
               }}
-              disabled={switchingLanguage}
+              value={roomLanguage}
             >
-              {t('createRoom.switchLanguageAndCreate')}
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
-    </ScrollView>
+              <View style={styles.radioContainer}>
+                <View style={styles.radioItem}>
+                  <RadioButton value="en" color={theme.colors.primary} />
+                  <Text>{t('settings.english')}</Text>
+                </View>
+                <View style={styles.radioItem}>
+                  <RadioButton value="es" color={theme.colors.primary} />
+                  <Text>{t('settings.spanish')}</Text>
+                </View>
+              </View>
+            </RadioButton.Group>
+
+            {!isPublic && (
+              <TextInput
+                label={t('createRoom.roomPassword')}
+                value={password}
+                onChangeText={setPassword}
+                style={styles.input}
+                mode="outlined"
+                secureTextEntry
+                placeholder={t('createRoom.passwordPlaceholder')}
+                left={<TextInput.Icon icon="lock" />}
+              />
+            )}
+          </Card.Content>
+        </Card>
+
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>{t('createRoom.gameSettings')}</Text>
+            <Text style={styles.label}>{t('createRoom.numberOfRounds')}</Text>
+            
+            <RadioButton.Group onValueChange={setRounds} value={rounds}>
+              <View style={styles.radioContainer}>
+                <View style={styles.radioItem}>
+                  <RadioButton value="1" color={theme.colors.primary} />
+                  <Text>{t('createRoom.roundQuick')}</Text>
+                </View>
+                <View style={styles.radioItem}>
+                  <RadioButton value="3" color={theme.colors.primary} />
+                  <Text>{t('createRoom.roundNormal')}</Text>
+                </View>
+                <View style={styles.radioItem}>
+                  <RadioButton value="6" color={theme.colors.primary} />
+                  <Text>{t('createRoom.roundExtended')}</Text>
+                </View>
+                <View style={styles.radioItem}>
+                  <RadioButton value="9" color={theme.colors.primary} />
+                  <Text>{t('createRoom.roundMarathon')}</Text>
+                </View>
+              </View>
+            </RadioButton.Group>
+          </Card.Content>
+        </Card>
+
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>{t('createRoom.roomFeatures')}</Text>
+            <View style={styles.featuresContainer}>
+              <Chip icon="timer" style={styles.chip}>{t('createRoom.timePerRound')}</Chip>
+              <Chip icon="account-group" style={styles.chip}>{t('createRoom.playersRange')}</Chip>
+              <Chip icon="robot" style={styles.chip}>{t('createRoom.aiValidation')}</Chip>
+              <Chip icon="trophy" style={styles.chip}>{t('createRoom.leaderboard')}</Chip>
+            </View>
+          </Card.Content>
+        </Card>
+
+        <Button
+          mode="contained"
+          onPress={handleCreateRoom}
+          style={styles.createButton}
+          loading={loading}
+          disabled={loading}
+          contentStyle={styles.buttonContent}
+          icon="plus"
+        >
+          {t('createRoom.createRoom')}
+        </Button>
+
+        <Portal>
+          <Dialog
+            visible={languagePromptVisible}
+            onDismiss={() => {
+              if (switchingLanguage) return;
+              setPendingLanguage(null);
+              setRoomLanguage(language);
+              setLanguagePromptVisible(false);
+            }}
+          >
+            <Dialog.Title>{t('createRoom.switchLanguagePromptTitle')}</Dialog.Title>
+            <Dialog.Content>
+              <Text>
+                {t('createRoom.switchLanguagePromptMessage', {
+                  language: pendingLanguage === 'es' ? t('settings.spanish') : t('settings.english')
+                })}
+              </Text>
+              {switchingLanguage && (
+                <View style={{ marginTop: 12 }}>
+                  <ActivityIndicator />
+                </View>
+              )}
+            </Dialog.Content>
+            <Dialog.Actions>
+              <Button
+                onPress={() => {
+                  setPendingLanguage(null);
+                  setRoomLanguage(language);
+                  setLanguagePromptVisible(false);
+                }}
+                disabled={switchingLanguage}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button
+                onPress={async () => {
+                  const target = pendingLanguage;
+                  if (!target) return;
+                  setSwitchingLanguage(true);
+                  try {
+                    await changeLanguage(target);
+                    if (updateUserLanguage) {
+                      const res = await updateUserLanguage(target);
+                      if (!res?.success) throw new Error(res?.error || 'failed');
+                    }
+                    setRoomLanguage(target);
+                    setLanguagePromptVisible(false);
+                  } catch (e) {
+                    Alert.alert(t('common.error'), t('menu.languageSwitchFailed'));
+                    setRoomLanguage(language);
+                  } finally {
+                    setSwitchingLanguage(false);
+                    setPendingLanguage(null);
+                  }
+                }}
+                disabled={switchingLanguage}
+              >
+                {t('createRoom.switchLanguageAndCreate')}
+              </Button>
+            </Dialog.Actions>
+          </Dialog>
+        </Portal>
+        </View>
+      </ScrollView>
+    </View>
   );
 };
 
@@ -257,9 +272,54 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F5F5',
   },
+  header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    zIndex: 20,
+    elevation: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    height: 56,
+    ...(Platform.OS === 'web' && {
+      position: 'fixed',
+    }),
+  },
+  headerIcon: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#212121',
+    textAlign: 'center',
+    marginHorizontal: 16,
+  },
+  headerPlaceholder: {
+    width: 44,
+  },
+  scrollView: {
+    flex: 1,
+    marginTop: 56,
+    ...(Platform.OS === 'web' && { overflowY: 'auto' }),
+  },
   scrollContent: {
     padding: 20,
     paddingBottom: 30,
+  },
+  maxWidthContent: {
+    width: '100%',
+    maxWidth: theme.layout?.maxContentWidth || 1100,
+    alignSelf: 'center',
   },
   card: {
     marginBottom: 20,

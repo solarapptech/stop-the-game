@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Alert, RefreshControl } from 'react-native';
-import { Text, TextInput, Button, Card, List, Chip, Dialog, Portal, ActivityIndicator } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, Alert, RefreshControl, Platform } from 'react-native';
+import { Text, TextInput, Button, Card, List, Chip, Dialog, Portal, ActivityIndicator, IconButton } from 'react-native-paper';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useGame } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -194,7 +195,18 @@ const JoinRoomScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
+      <View style={styles.header}>
+        <IconButton
+          icon="arrow-left"
+          size={24}
+          onPress={() => navigation.goBack()}
+          style={styles.headerIcon}
+        />
+        <Text style={styles.headerTitle}>{t('joinRoom.title')}</Text>
+        <View style={styles.headerPlaceholder} />
+      </View>
       <ScrollView 
+        style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
@@ -204,114 +216,116 @@ const JoinRoomScreen = ({ navigation }) => {
           />
         }
       >
-        {/* Join by Code */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>{t('joinRoom.joinWithCode')}</Text>
-            <View style={styles.codeInputContainer}>
-              <TextInput
-                label={t('joinRoom.inviteCode')}
-                value={inviteCode}
-                onChangeText={setInviteCode}
-                style={styles.codeInput}
-                mode="outlined"
-                placeholder={t('joinRoom.codePlaceholder')}
-                maxLength={6}
-                autoCapitalize="characters"
-                left={<TextInput.Icon icon="key" />}
-              />
-              <Button
-                mode="contained"
-                onPress={handleJoinByCode}
-                style={styles.joinButton}
-                loading={loading}
-                disabled={loading || inviteCode.length !== 6}
-              >
-                {t('joinRoom.join')}
-              </Button>
-            </View>
-          </Card.Content>
-        </Card>
-
-        {/* Public Rooms */}
-        <Card style={styles.card}>
-          <Card.Content>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{t('joinRoom.publicRooms')}</Text>
-              <Button
-                mode="outlined"
-                icon="refresh"
-                onPress={handleRefresh}
-                loading={refreshing}
-                disabled={refreshing}
-                compact
-                style={styles.refreshButton}
-              >
-                {t('joinRoom.refresh')}
-              </Button>
-            </View>
-
-            <View style={styles.languageFiltersRow}>
-              <Chip
-                selected={filterLanguage === 'en'}
-                onPress={() => setFilterLanguage('en')}
-                style={[styles.languageChip, filterLanguage === 'en' ? styles.languageChipSelected : null]}
-              >
-                {t('joinRoom.filterEnglish')}
-              </Chip>
-              <Chip
-                selected={filterLanguage === 'es'}
-                onPress={() => setFilterLanguage('es')}
-                style={[styles.languageChip, filterLanguage === 'es' ? styles.languageChipSelected : null]}
-              >
-                {t('joinRoom.filterSpanish')}
-              </Chip>
-            </View>
-
-            {loading && publicRooms.length === 0 ? (
-              <ActivityIndicator style={styles.loader} />
-            ) : publicRooms.length === 0 ? (
-              <Text style={styles.emptyText}>{t('joinRoom.noRooms')}</Text>
-            ) : (
-              <View>
-                {publicRooms
-                  .filter(r => (r.language || 'en') === filterLanguage)
-                  .map((room) => (
-                  <Card key={room.id} style={styles.roomCard}>
-                    <View style={styles.roomContainer}>
-                      <View style={styles.roomHeader}>
-                        <Text style={styles.roomTitle}>{room.name}</Text>
-                        <Button
-                          mode="outlined"
-                          onPress={() => handleJoinPublicRoom(room)}
-                          disabled={room.status !== 'waiting' || loading}
-                          style={styles.roomJoinButton}
-                        >
-                          {t('joinRoom.join')}
-                        </Button>
-                      </View>
-                      <View style={styles.roomMeta}>
-                        <Text style={styles.roomHost}>{t('joinRoom.host')}: {room.owner?.displayName || room.owner?.username || t('common.unknown')}</Text>
-                        <Chip style={styles.playersChip} icon="account-group" textStyle={styles.chipText}>
-                          {room.players.length}/{room.maxPlayers} {t('joinRoom.players')}
-                        </Chip>
-                      </View>
-                      <View style={styles.roomChipsWrap}>
-                        <Chip style={styles.roundChip} icon="timer-outline" textStyle={styles.chipText}>{room.rounds} {t('joinRoom.rounds')}</Chip>
-                        <Chip style={[styles.statusChip, room.status === 'in_progress' ? styles.playingChip : null]} textStyle={styles.chipText}>
-                          {room.status === 'in_progress' ? t('joinRoom.inGame') : t('joinRoom.waiting')}
-                        </Chip>
-                        {room.hasPassword && (
-                          <Chip style={styles.lockChip} icon="lock" textStyle={styles.chipText}>{t('joinRoom.private')}</Chip>
-                        )}
-                      </View>
-                    </View>
-                  </Card>
-                ))}
+        <View style={styles.maxWidthContent}>
+          {/* Join by Code */}
+          <Card style={styles.card}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>{t('joinRoom.joinWithCode')}</Text>
+              <View style={styles.codeInputContainer}>
+                <TextInput
+                  label={t('joinRoom.inviteCode')}
+                  value={inviteCode}
+                  onChangeText={setInviteCode}
+                  style={styles.codeInput}
+                  mode="outlined"
+                  placeholder={t('joinRoom.codePlaceholder')}
+                  maxLength={6}
+                  autoCapitalize="characters"
+                  left={<TextInput.Icon icon="key" />}
+                />
+                <Button
+                  mode="contained"
+                  onPress={handleJoinByCode}
+                  style={styles.joinButton}
+                  loading={loading}
+                  disabled={loading || inviteCode.length !== 6}
+                >
+                  {t('joinRoom.join')}
+                </Button>
               </View>
-            )}
-          </Card.Content>
-        </Card>
+            </Card.Content>
+          </Card>
+
+          {/* Public Rooms */}
+          <Card style={styles.card}>
+            <Card.Content>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>{t('joinRoom.publicRooms')}</Text>
+                <Button
+                  mode="outlined"
+                  icon="refresh"
+                  onPress={handleRefresh}
+                  loading={refreshing}
+                  disabled={refreshing}
+                  compact
+                  style={styles.refreshButton}
+                >
+                  {t('joinRoom.refresh')}
+                </Button>
+              </View>
+
+              <View style={styles.languageFiltersRow}>
+                <Chip
+                  selected={filterLanguage === 'en'}
+                  onPress={() => setFilterLanguage('en')}
+                  style={[styles.languageChip, filterLanguage === 'en' ? styles.languageChipSelected : null]}
+                >
+                  {t('joinRoom.filterEnglish')}
+                </Chip>
+                <Chip
+                  selected={filterLanguage === 'es'}
+                  onPress={() => setFilterLanguage('es')}
+                  style={[styles.languageChip, filterLanguage === 'es' ? styles.languageChipSelected : null]}
+                >
+                  {t('joinRoom.filterSpanish')}
+                </Chip>
+              </View>
+
+              {loading && publicRooms.length === 0 ? (
+                <ActivityIndicator style={styles.loader} />
+              ) : publicRooms.length === 0 ? (
+                <Text style={styles.emptyText}>{t('joinRoom.noRooms')}</Text>
+              ) : (
+                <View>
+                  {publicRooms
+                    .filter(r => (r.language || 'en') === filterLanguage)
+                    .map((room) => (
+                    <Card key={room.id} style={styles.roomCard}>
+                      <View style={styles.roomContainer}>
+                        <View style={styles.roomHeader}>
+                          <Text style={styles.roomTitle}>{room.name}</Text>
+                          <Button
+                            mode="outlined"
+                            onPress={() => handleJoinPublicRoom(room)}
+                            disabled={room.status !== 'waiting' || loading}
+                            style={styles.roomJoinButton}
+                          >
+                            {t('joinRoom.join')}
+                          </Button>
+                        </View>
+                        <View style={styles.roomMeta}>
+                          <Text style={styles.roomHost}>{t('joinRoom.host')}: {room.owner?.displayName || room.owner?.username || t('common.unknown')}</Text>
+                          <Chip style={styles.playersChip} icon="account-group" textStyle={styles.chipText}>
+                            {room.players.length}/{room.maxPlayers} {t('joinRoom.players')}
+                          </Chip>
+                        </View>
+                        <View style={styles.roomChipsWrap}>
+                          <Chip style={styles.roundChip} icon="timer-outline" textStyle={styles.chipText}>{room.rounds} {t('joinRoom.rounds')}</Chip>
+                          <Chip style={[styles.statusChip, room.status === 'in_progress' ? styles.playingChip : null]} textStyle={styles.chipText}>
+                            {room.status === 'in_progress' ? t('joinRoom.inGame') : t('joinRoom.waiting')}
+                          </Chip>
+                          {room.hasPassword && (
+                            <Chip style={styles.lockChip} icon="lock" textStyle={styles.chipText}>{t('joinRoom.private')}</Chip>
+                          )}
+                        </View>
+                      </View>
+                    </Card>
+                  ))}
+                </View>
+              )}
+            </Card.Content>
+          </Card>
+        </View>
       </ScrollView>
 
       {/* Password Dialog */}
@@ -342,7 +356,10 @@ const JoinRoomScreen = ({ navigation }) => {
             </Button>
           </Dialog.Actions>
         </Dialog>
+      </Portal>
 
+      {/* Password Dialog */}
+      <Portal>
         <Dialog visible={passwordDialog} onDismiss={() => setPasswordDialog(false)}>
           <Dialog.Title>{t('joinRoom.passwordRequired')}</Dialog.Title>
           <Dialog.Content>
@@ -382,9 +399,54 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F5F5',
   },
+  header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    zIndex: 20,
+    elevation: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    height: 56,
+    ...(Platform.OS === 'web' && {
+      position: 'fixed',
+    }),
+  },
+  headerIcon: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#212121',
+    textAlign: 'center',
+    marginHorizontal: 16,
+  },
+  headerPlaceholder: {
+    width: 44,
+  },
+  scrollView: {
+    flex: 1,
+    marginTop: 56,
+    ...(Platform.OS === 'web' && { overflowY: 'auto' }),
+  },
   scrollContent: {
     padding: 20,
     paddingBottom: 30,
+  },
+  maxWidthContent: {
+    width: '100%',
+    maxWidth: theme.layout?.maxContentWidth || 1100,
+    alignSelf: 'center',
   },
   card: {
     marginBottom: 20,

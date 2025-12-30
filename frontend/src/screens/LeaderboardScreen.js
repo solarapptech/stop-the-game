@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, StyleSheet, ScrollView, RefreshControl, Platform } from 'react-native';
 import { Text, Card, List, Avatar, Chip, SegmentedButtons, ActivityIndicator } from 'react-native-paper';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -88,25 +88,27 @@ const LeaderboardScreen = ({ navigation }) => {
 
       {/* User Rank Card (only for global) */}
       {selectedTab === 'global' && userRank && (
-        <Card style={styles.userRankCard}>
-          <Card.Content>
-            <View style={styles.userRankContent}>
-              <Avatar.Text
-                size={50}
-                label={(user?.displayName || user?.username)?.substring(0, 2).toUpperCase()}
-                style={{ backgroundColor: theme.colors.primary }}
-              />
-              <View style={styles.userRankInfo}>
-                <Text style={styles.userRankName}>{t('leaderboard.yourRank')}</Text>
-                <View style={styles.userRankStats}>
-                  <Chip style={styles.rankChip}>#{userRank.rank}</Chip>
-                  <Chip style={styles.pointsChip}>{userRank.winPoints} {t('leaderboard.pts')}</Chip>
-                  <Chip style={styles.percentileChip}>{t('leaderboard.top')} {userRank.percentile}%</Chip>
+        <View style={styles.maxWidthContent}>
+          <Card style={styles.userRankCard}>
+            <Card.Content>
+              <View style={styles.userRankContent}>
+                <Avatar.Text
+                  size={50}
+                  label={(user?.displayName || user?.username)?.substring(0, 2).toUpperCase()}
+                  style={{ backgroundColor: theme.colors.primary }}
+                />
+                <View style={styles.userRankInfo}>
+                  <Text style={styles.userRankName}>{t('leaderboard.yourRank')}</Text>
+                  <View style={styles.userRankStats}>
+                    <Chip style={styles.rankChip}>#{userRank.rank}</Chip>
+                    <Chip style={styles.pointsChip}>{userRank.winPoints} {t('leaderboard.pts')}</Chip>
+                    <Chip style={styles.percentileChip}>{t('leaderboard.top')} {userRank.percentile}%</Chip>
+                  </View>
                 </View>
               </View>
-            </View>
-          </Card.Content>
-        </Card>
+            </Card.Content>
+          </Card>
+        </View>
       )}
 
       {/* Leaderboard List */}
@@ -121,57 +123,59 @@ const LeaderboardScreen = ({ navigation }) => {
           />
         }
       >
-        {loading ? (
-          <ActivityIndicator size="large" style={styles.loader} />
-        ) : leaderboardData.length === 0 ? (
-          <Text style={styles.emptyText}>{t('leaderboard.noData')}</Text>
-        ) : (
-          <Card style={styles.leaderboardCard}>
-            <List.Section>
-              {leaderboardData.map((player, index) => (
-                <List.Item
-                  key={index}
-                  title={player.displayName || player.username}
-                  description={`${player.winPoints || player.weeklyPoints || 0} ${t('leaderboard.points')} • ${player.matchesPlayed || player.gamesPlayed || 0} ${t('leaderboard.games')}`}
-                  left={() => (
-                    <View style={styles.rankContainer}>
-                      {player.rank <= 3 && getRankIcon(player.rank) ? (
-                        <Avatar.Icon
-                          size={40}
-                          icon={getRankIcon(player.rank)}
-                          style={[styles.rankAvatar, { backgroundColor: getRankColor(player.rank) }]}
-                        />
-                      ) : (
-                        <Avatar.Text
-                          size={40}
-                          label={player.rank.toString()}
-                          style={[styles.rankAvatar, { backgroundColor: '#E0E0E0' }]}
-                        />
-                      )}
-                    </View>
-                  )}
-                  right={() => (
-                    <View style={styles.playerStats}>
-                      <Text style={styles.avgPoints}>
-                        {player.avgPoints} {t('leaderboard.avg')}
-                      </Text>
-                      {player.isYou && (
-                        <Chip style={styles.youChip}>{t('leaderboard.you')}</Chip>
-                      )}
-                    </View>
-                  )}
-                  style={[
-                    styles.listItem,
-                    player.isYou && styles.highlightedItem,
-                    player.rank === 1 && styles.firstPlace,
-                    player.rank === 2 && styles.secondPlace,
-                    player.rank === 3 && styles.thirdPlace,
-                  ]}
-                />
-              ))}
-            </List.Section>
-          </Card>
-        )}
+        <View style={styles.maxWidthContent}>
+          {loading ? (
+            <ActivityIndicator size="large" style={styles.loader} />
+          ) : leaderboardData.length === 0 ? (
+            <Text style={styles.emptyText}>{t('leaderboard.noData')}</Text>
+          ) : (
+            <Card style={styles.leaderboardCard}>
+              <List.Section>
+                {leaderboardData.map((player, index) => (
+                  <List.Item
+                    key={index}
+                    title={player.displayName || player.username}
+                    description={`${player.winPoints || player.weeklyPoints || 0} ${t('leaderboard.points')} • ${player.matchesPlayed || player.gamesPlayed || 0} ${t('leaderboard.games')}`}
+                    left={() => (
+                      <View style={styles.rankContainer}>
+                        {player.rank <= 3 && getRankIcon(player.rank) ? (
+                          <Avatar.Icon
+                            size={40}
+                            icon={getRankIcon(player.rank)}
+                            style={[styles.rankAvatar, { backgroundColor: getRankColor(player.rank) }]}
+                          />
+                        ) : (
+                          <Avatar.Text
+                            size={40}
+                            label={player.rank.toString()}
+                            style={[styles.rankAvatar, { backgroundColor: '#E0E0E0' }]}
+                          />
+                        )}
+                      </View>
+                    )}
+                    right={() => (
+                      <View style={styles.playerStats}>
+                        <Text style={styles.avgPoints}>
+                          {player.avgPoints} {t('leaderboard.avg')}
+                        </Text>
+                        {player.isYou && (
+                          <Chip style={styles.youChip}>{t('leaderboard.you')}</Chip>
+                        )}
+                      </View>
+                    )}
+                    style={[
+                      styles.listItem,
+                      player.isYou && styles.highlightedItem,
+                      player.rank === 1 && styles.firstPlace,
+                      player.rank === 2 && styles.secondPlace,
+                      player.rank === 3 && styles.thirdPlace,
+                    ]}
+                  />
+                ))}
+              </List.Section>
+            </Card>
+          )}
+        </View>
       </ScrollView>
     </View>
   );
@@ -181,6 +185,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+  },
+  maxWidthContent: {
+    width: '100%',
+    maxWidth: theme.layout?.maxContentWidth || 1100,
+    alignSelf: 'center',
   },
   tabContainer: {
     padding: 15,
@@ -230,6 +239,7 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    ...(Platform.OS === 'web' && { overflowY: 'auto' }),
   },
   scrollContent: {
     padding: 15,

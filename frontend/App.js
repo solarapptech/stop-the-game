@@ -147,17 +147,26 @@ export default function App() {
                 <Stack.Screen 
                   name="CreateRoom" 
                   component={CreateRoomScreen} 
-                  options={{ title: 'Create Room' }}
+                  options={{ 
+                    headerShown: false,
+                    title: 'Create Room'
+                  }}
                 />
                 <Stack.Screen 
                   name="JoinRoom" 
                   component={JoinRoomScreen} 
-                  options={{ title: 'Join Room' }}
+                  options={{ 
+                    headerShown: false,
+                    title: 'Join Room'
+                  }}
                 />
                 <Stack.Screen 
                   name="Room" 
                   component={RoomScreen} 
-                  options={{ title: 'Game Room' }}
+                  options={{ 
+                    headerShown: false,
+                    title: 'Game Room'
+                  }}
                 />
                 <Stack.Screen 
                   name="Gameplay" 
@@ -175,7 +184,10 @@ export default function App() {
                 <Stack.Screen 
                   name="Settings" 
                   component={SettingsScreen} 
-                  options={{ title: 'Settings' }}
+                  options={{ 
+                    headerShown: false,
+                    title: 'Settings'
+                  }}
                 />
                 <Stack.Screen 
                   name="Payment" 
@@ -185,7 +197,10 @@ export default function App() {
                 <Stack.Screen 
                   name="ChatZone" 
                   component={ChatZoneScreen} 
-                  options={{ title: 'Chat Zone' }}
+                  options={{ 
+                    headerShown: false,
+                    title: 'Chat Zone'
+                  }}
                 />
               </Stack.Navigator>
             </NavigationContainer>

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import axios from 'axios';
-import { ActivityIndicator, Button, Card, Menu, Text, TextInput } from 'react-native-paper';
+import { ActivityIndicator, Button, Card, Menu, Text, TextInput, IconButton } from 'react-native-paper';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSocket } from '../contexts/SocketContext';
@@ -221,133 +222,145 @@ const ChatZoneScreen = ({ navigation }) => {
         }}
       >
         <View style={styles.container}>
-          <Card style={styles.card}>
-            <Card.Content>
-              <View style={styles.headerRow}>
-                <Text style={styles.title}>{t('chatZone.welcome')}</Text>
-                <View style={styles.headerRight}>
-                  <View style={styles.statusRow}>
-                    <View style={[styles.statusDot, { backgroundColor: canChat ? '#95C159' : '#F44336' }]} />
-                    <Text style={styles.statusText}>{canChat ? t('menu.connected') : t('menu.disconnected')}</Text>
-                  </View>
-                  <Menu
-                    visible={languageMenuVisible}
-                    onDismiss={() => setLanguageMenuVisible(false)}
-                    anchor={
-                      <Button
-                        mode="outlined"
-                        onPress={() => setLanguageMenuVisible(true)}
-                        textColor={theme.colors.primary}
-                        style={styles.languageButton}
-                        disabled={historyLoading || historyLoadingMore}
-                      >
-                        {(chatLanguage === 'es') ? t('settings.spanish') : t('settings.english')}
-                      </Button>
-                    }
-                  >
-                    <Menu.Item
-                      onPress={() => {
-                        setLanguageMenuVisible(false);
-                        setChatLanguage('en');
-                      }}
-                      title={t('settings.english')}
-                    />
-                    <Menu.Item
-                      onPress={() => {
-                        setLanguageMenuVisible(false);
-                        setChatLanguage('es');
-                      }}
-                      title={t('settings.spanish')}
-                    />
-                  </Menu>
-                </View>
-              </View>
-            </Card.Content>
-          </Card>
-
-          <Card style={[styles.card, styles.chatCard]}>
-            <Card.Content>
-              <Pressable
-                style={{ flex: 1 }}
-                onPress={() => {
-                  setLanguageMenuVisible(false);
-                }}
-              >
-                <View style={styles.historyRow}>
-                  <Button
-                    mode="outlined"
-                    onPress={() => fetchHistory({ before: nextBefore, appendOlder: true })}
-                    disabled={!canChat || !hasMore || historyLoading || historyLoadingMore}
-                    textColor={theme.colors.primary}
-                    style={styles.loadMoreButton}
-                  >
-                    {t('chatZone.loadPrevious')}
-                  </Button>
-                  {(historyLoading || historyLoadingMore) && (
-                    <ActivityIndicator size={16} color={theme.colors.primary} />
-                  )}
-                </View>
-
-                <ScrollView
-                  ref={messagesRef}
-                  style={styles.messagesContainer}
-                  contentContainerStyle={styles.messagesContentContainer}
-                  keyboardShouldPersistTaps="always"
-                  keyboardDismissMode="on-drag"
-                  nestedScrollEnabled
-                  onTouchStart={() => {
-                    Keyboard.dismiss();
-                  }}
-                  onScroll={handleMessagesScroll}
-                  scrollEventThrottle={16}
-                  onContentSizeChange={handleMessagesContentSizeChange}
-                  showsVerticalScrollIndicator
-                >
-                  {messages.length === 0 ? (
-                    <Text style={styles.emptyText}>{t('chatZone.empty')}</Text>
-                  ) : (
-                    messages.map((msg, index) => (
-                      <View key={msg.id || index} style={styles.message}>
-                        <Text style={styles.chatMessage}>
-                          <Text style={styles.chatUsername}>{msg.displayName}: </Text>
-                          {msg.text}
-                        </Text>
-                      </View>
-                    ))
-                  )}
-                </ScrollView>
-
-                <View style={styles.chatInput}>
-                  <TextInput
-                    ref={inputRef}
-                    value={messageInput}
-                    onChangeText={setMessageInput}
-                    onFocus={() => setInputFocused(true)}
-                    onBlur={() => setInputFocused(false)}
-                    placeholder={t('chatZone.typeMessage')}
-                    style={styles.messageInput}
-                    mode="outlined"
-                    dense
-                    blurOnSubmit={false}
-                    returnKeyType="send"
-                    onSubmitEditing={handleSendMessage}
-                    disabled={!canChat}
-                    right={
-                      <TextInput.Icon
-                        icon="send"
-                        onPress={handleSendMessage}
-                        disabled={!canChat || !messageInput.trim()}
+          <View style={styles.header}>
+            <IconButton
+              icon="arrow-left"
+              size={24}
+              onPress={() => navigation.goBack()}
+              style={styles.headerIcon}
+            />
+            <Text style={styles.headerTitle}>{t('chatZone.title')}</Text>
+            <View style={styles.headerPlaceholder} />
+          </View>
+          <View style={styles.maxWidthContent}>
+            <Card style={styles.card}>
+              <Card.Content>
+                <View style={styles.headerRow}>
+                  <Text style={styles.title}>{t('chatZone.welcome')}</Text>
+                  <View style={styles.headerRight}>
+                    <View style={styles.statusRow}>
+                      <View style={[styles.statusDot, { backgroundColor: canChat ? '#95C159' : '#F44336' }]} />
+                      <Text style={styles.statusText}>{canChat ? t('menu.connected') : t('menu.disconnected')}</Text>
+                    </View>
+                    <Menu
+                      visible={languageMenuVisible}
+                      onDismiss={() => setLanguageMenuVisible(false)}
+                      anchor={
+                        <Button
+                          mode="outlined"
+                          onPress={() => setLanguageMenuVisible(true)}
+                          textColor={theme.colors.primary}
+                          style={styles.languageButton}
+                          disabled={historyLoading || historyLoadingMore}
+                        >
+                          {(chatLanguage === 'es') ? t('settings.spanish') : t('settings.english')}
+                        </Button>
+                      }
+                    >
+                      <Menu.Item
+                        onPress={() => {
+                          setLanguageMenuVisible(false);
+                          setChatLanguage('en');
+                        }}
+                        title={t('settings.english')}
                       />
-                    }
-                  />
+                      <Menu.Item
+                        onPress={() => {
+                          setLanguageMenuVisible(false);
+                          setChatLanguage('es');
+                        }}
+                        title={t('settings.spanish')}
+                      />
+                    </Menu>
+                  </View>
                 </View>
-              </Pressable>
-            </Card.Content>
-          </Card>
+              </Card.Content>
+            </Card>
 
-          {!canChat && (
-            <Text style={styles.footerHint}>{t('chatZone.notConnectedHint')}</Text>
-          )}
+            <Card style={[styles.card, styles.chatCard]}>
+              <Card.Content>
+                <Pressable
+                  style={{ flex: 1 }}
+                  onPress={() => {
+                    setLanguageMenuVisible(false);
+                  }}
+                >
+                  <View style={styles.historyRow}>
+                    <Button
+                      mode="outlined"
+                      onPress={() => fetchHistory({ before: nextBefore, appendOlder: true })}
+                      disabled={!canChat || !hasMore || historyLoading || historyLoadingMore}
+                      textColor={theme.colors.primary}
+                      style={styles.loadMoreButton}
+                    >
+                      {t('chatZone.loadPrevious')}
+                    </Button>
+                    {(historyLoading || historyLoadingMore) && (
+                      <ActivityIndicator size={16} color={theme.colors.primary} />
+                    )}
+                  </View>
+
+                  <ScrollView
+                    ref={messagesRef}
+                    style={styles.messagesContainer}
+                    contentContainerStyle={styles.messagesContentContainer}
+                    keyboardShouldPersistTaps="always"
+                    keyboardDismissMode="on-drag"
+                    nestedScrollEnabled
+                    onTouchStart={() => {
+                      Keyboard.dismiss();
+                    }}
+                    onScroll={handleMessagesScroll}
+                    scrollEventThrottle={16}
+                    onContentSizeChange={handleMessagesContentSizeChange}
+                    showsVerticalScrollIndicator
+                  >
+                    {messages.length === 0 ? (
+                      <Text style={styles.emptyText}>{t('chatZone.empty')}</Text>
+                    ) : (
+                      messages.map((msg, index) => (
+                        <View key={msg.id || index} style={styles.message}>
+                          <Text style={styles.chatMessage}>
+                            <Text style={styles.chatUsername}>{msg.displayName}: </Text>
+                            {msg.text}
+                          </Text>
+                        </View>
+                      ))
+                    )}
+                  </ScrollView>
+
+                  <View style={styles.chatInput}>
+                    <TextInput
+                      ref={inputRef}
+                      value={messageInput}
+                      onChangeText={setMessageInput}
+                      onFocus={() => setInputFocused(true)}
+                      onBlur={() => setInputFocused(false)}
+                      placeholder={t('chatZone.typeMessage')}
+                      style={styles.messageInput}
+                      mode="outlined"
+                      dense
+                      blurOnSubmit={false}
+                      returnKeyType="send"
+                      onSubmitEditing={handleSendMessage}
+                      disabled={!canChat}
+                      right={
+                        <TextInput.Icon
+                          icon="send"
+                          onPress={handleSendMessage}
+                          disabled={!canChat || !messageInput.trim()}
+                        />
+                      }
+                    />
+                  </View>
+                </Pressable>
+              </Card.Content>
+            </Card>
+
+            {!canChat && (
+              <Text style={styles.footerHint}>{t('chatZone.notConnectedHint')}</Text>
+            )}
+          </View>
         </View>
       </Pressable>
     </KeyboardAvoidingView>
@@ -357,8 +370,50 @@ const ChatZoneScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
     backgroundColor: '#F5F5F5',
+  },
+  header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    zIndex: 20,
+    elevation: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    height: 56,
+    ...(Platform.OS === 'web' && {
+      position: 'fixed',
+    }),
+  },
+  headerIcon: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#212121',
+    textAlign: 'center',
+    marginHorizontal: 16,
+  },
+  headerPlaceholder: {
+    width: 44,
+  },
+  maxWidthContent: {
+    flex: 1,
+    width: '100%',
+    maxWidth: theme.layout?.maxContentWidth || 1100,
+    alignSelf: 'center',
+    marginTop: 56,
+    padding: 16,
   },
   card: {
     marginBottom: 12,
@@ -413,6 +468,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 240,
     backgroundColor: '#FAFAFA',
+    ...(Platform.OS === 'web' && { overflowY: 'auto' }),
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 10,
